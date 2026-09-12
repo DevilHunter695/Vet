@@ -45,12 +45,15 @@ struct CircuitsListView: View {
                         actionTitle: "Join waitlist"
                     ) { }
                 } else {
-                    List(viewModel.circuits) { circuit in
+                    List(Array(viewModel.circuits.enumerated()), id: \.element.id) { index, circuit in
                         NavigationLink(value: circuit) {
                             CircuitRow(circuit: circuit)
                         }
+                        .appearAnimation(delay: Double(index) * 0.05)
                     }
                     .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .background(Color(.systemGroupedBackground))
                 }
             }
             .navigationTitle(selectedVertical.displayName)
@@ -60,6 +63,9 @@ struct CircuitsListView: View {
                         TriageView()
                     } label: {
                         Label("Not sure?", systemImage: "questionmark.circle")
+                            .labelStyle(.iconOnly)
+                            .font(.title3)
+                            .foregroundStyle(Theme.primary)
                     }
                 }
             }
@@ -83,18 +89,19 @@ struct CircuitRow: View {
     var body: some View {
         Card {
             HStack(spacing: 14) {
-                Image(systemName: "stethoscope")
-                    .font(.title2)
-                    .frame(width: 44, height: 44)
-                    .background(Color.accentColor.opacity(0.15))
-                    .foregroundStyle(Color.accentColor)
-                    .clipShape(Circle())
+                ZStack {
+                    Circle().fill(Theme.gradient)
+                    Image(systemName: "stethoscope")
+                        .font(.title3)
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 48, height: 48)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(circuit.vet?.name ?? "Veterinarian")
-                        .font(.headline)
+                        .font(.brandHeadline)
                     Text(circuit.clusterArea)
-                        .font(.subheadline)
+                        .font(.brandCaption)
                         .foregroundStyle(.secondary)
                     if let vet = circuit.vet {
                         HStack(spacing: 4) {

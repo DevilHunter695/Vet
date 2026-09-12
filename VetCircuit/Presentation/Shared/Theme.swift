@@ -1,0 +1,97 @@
+import SwiftUI
+
+// MARK: - Brand design system
+// A small, deliberate palette + motion language, applied consistently
+// instead of relying on default system styling everywhere.
+
+enum Theme {
+    // Deep teal + warm coral: calm/trustworthy (healthcare) with a warm,
+    // friendly accent (pets) — distinct from generic iOS blue.
+    static let primary = Color(hue: 0.52, saturation: 0.55, brightness: 0.55)      // deep teal
+    static let primaryLight = Color(hue: 0.52, saturation: 0.45, brightness: 0.72)
+    static let accent = Color(hue: 0.04, saturation: 0.78, brightness: 0.95)       // warm coral
+    static let accentSoft = Color(hue: 0.04, saturation: 0.35, brightness: 0.98)
+
+    static let gradient = LinearGradient(
+        colors: [primary, primaryLight],
+        startPoint: .topLeading, endPoint: .bottomTrailing
+    )
+
+    static let heroGradient = LinearGradient(
+        colors: [primary, Color(hue: 0.56, saturation: 0.6, brightness: 0.38)],
+        startPoint: .top, endPoint: .bottom
+    )
+
+    static let cardShadow = Color.black.opacity(0.08)
+
+    // Motion language: springy but not bouncy, consistent everywhere.
+    static let springQuick = Animation.spring(response: 0.32, dampingFraction: 0.75)
+    static let springSoft = Animation.spring(response: 0.55, dampingFraction: 0.82)
+    static let easeIn = Animation.easeOut(duration: 0.35)
+}
+
+// MARK: - Typography
+
+extension Font {
+    static let brandLargeTitle = Font.system(.largeTitle, design: .rounded, weight: .bold)
+    static let brandTitle = Font.system(.title2, design: .rounded, weight: .bold)
+    static let brandHeadline = Font.system(.headline, design: .rounded, weight: .semibold)
+    static let brandBody = Font.system(.body, design: .rounded)
+    static let brandCaption = Font.system(.caption, design: .rounded, weight: .medium)
+}
+
+// MARK: - Press animation modifier — subtle scale + shadow lift on tap
+
+struct PressableStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(Theme.springQuick, value: configuration.isPressed)
+    }
+}
+
+extension View {
+    /// Fades and scales a view in — use on hero content and cards appearing on screen.
+    func appearAnimation(delay: Double = 0) -> some View {
+        modifier(AppearAnimationModifier(delay: delay))
+    }
+}
+
+private struct AppearAnimationModifier: ViewModifier {
+    let delay: Double
+    @State private var isVisible = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isVisible ? 1 : 0)
+            .scaleEffect(isVisible ? 1 : 0.92)
+            .onAppear {
+                withAnimation(Theme.springSoft.delay(delay)) { isVisible = true }
+            }
+    }
+}
+
+// MARK: - Shimmering loading placeholder (used while data streams in)
+
+struct ShimmerView: View {
+    @State private var phase: CGFloat = -1
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color(.secondarySystemBackground))
+            .overlay(
+                LinearGradient(
+                    colors: [.clear, .white.opacity(0.5), .clear],
+                    startPoint: .leading, endPoint: .trailing
+                )
+                .rotationEffect(.degrees(20))
+                .offset(x: phase * 200)
+            )
+            .clipped()
+            .onAppear {
+                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                    phase = 2
+                }
+            }
+    }
+}

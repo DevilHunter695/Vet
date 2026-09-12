@@ -65,73 +65,104 @@ final class SignInViewModel {
 struct SignInView: View {
     @Environment(SessionStore.self) private var session
     @State private var viewModel = SignInViewModel()
+    @FocusState private var focusedField: Field?
+
+    private enum Field { case phone, otp }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                Spacer()
+            ZStack {
+                Theme.heroGradient.ignoresSafeArea()
 
-                VStack(spacing: 8) {
-                    Image(systemName: "pawprint.circle.fill")
-                        .font(.system(size: 56))
-                        .foregroundStyle(Color.accentColor)
-                    Text("VetCircuit")
-                        .font(.largeTitle.bold())
-                    Text("Home vet visits, scheduled around your neighborhood.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
+                VStack(spacing: 0) {
+                    Spacer(minLength: 24)
 
-                SignInWithAppleButton(.signIn) { request in
-                    request.requestedScopes = [.fullName]
-                } onCompletion: { result in
-                    Task {
-                        if let user = await viewModel.handleAppleSignIn(result: result) {
-                            session.currentUser = user
-                        }
+                    VStack(spacing: 14) {
+                        PawMascot(size: 104)
+                            .appearAnimation()
+
+                        Text("VetCircuit")
+                            .font(.brandLargeTitle)
+                            .foregroundStyle(.white)
+                            .appearAnimation(delay: 0.05)
+
+                        Text("Home vet visits, scheduled\naround your neighborhood.")
+                            .font(.brandBody)
+                            .foregroundStyle(.white.opacity(0.85))
+                            .multilineTextAlignment(.center)
+                            .appearAnimation(delay: 0.1)
                     }
-                }
-                .signInWithAppleButtonStyle(.black)
-                .frame(height: 50)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
 
-                Divider().padding(.vertical, 4)
+                    Spacer(minLength: 32)
 
-                VStack(spacing: 12) {
-                    TextField("Phone number", text: $viewModel.phone)
-                        .keyboardType(.phonePad)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("Phone number")
-
-                    if viewModel.isOTPSent {
-                        TextField("Enter OTP", text: $viewModel.otp)
-                            .keyboardType(.numberPad)
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityLabel("One-time passcode")
-
-                        PrimaryButton(title: "Verify & Continue", isLoading: viewModel.isLoading) {
+                    VStack(spacing: 14) {
+                        SignInWithAppleButton(.signIn) { request in
+                            request.requestedScopes = [.fullName]
+                        } onCompletion: { result in
                             Task {
-                                if let user = await viewModel.verifyOTP() {
-                                    session.currentUser = user
+                                if let user = await viewModel.handleAppleSignIn(result: result) {
+                                    withAnimation(Theme.springSoft) { session.currentUser = user }
                                 }
                             }
                         }
-                    } else {
-                        PrimaryButton(title: "Send OTP", isLoading: viewModel.isLoading) {
-                            Task { await viewModel.requestOTP() }
+                        .signInWithAppleButtonStyle(.white)
+                        .frame(height: 52)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                        HStack {
+                            Rectangle().fill(.white.opacity(0.25)).frame(height: 1)
+                            Text("or").font(.brandCaption).foregroundStyle(.white.opacity(0.7))
+                            Rectangle().fill(.white.opacity(0.25)).frame(height: 1)
                         }
-                    }
+                        .padding(.vertical, 2)
 
-                    if let errorMessage = viewModel.errorMessage {
-                        ErrorBanner(message: errorMessage)
+                        VStack(spacing: 12) {
+                            TextField("", text: $viewModel.phone, prompt: Text("Phone number").foregroundStyle(.white.opacity(0.6)))
+                                .keyboardType(.phonePad)
+                                .focused($focusedField, equals: .phone)
+                                .foregroundStyle(.white)
+                                .padding(14)
+                                .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
+                                .accessibilityLabel("Phone number")
+
+                            if viewModel.isOTPSent {
+                                TextField("", text: $viewModel.otp, prompt: Text("Enter OTP").foregroundStyle(.white.opacity(0.6)))
+                                    .keyboardType(.numberPad)
+                                    .focused($focusedField, equals: .otp)
+                                    .foregroundStyle(.white)
+                                    .padding(14)
+                                    .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
+                                    .accessibilityLabel("One-time passcode")
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+
+                                PrimaryButton(title: "Verify & Continue", isLoading: viewModel.isLoading) {
+                                    Task {
+                                        if let user = await viewModel.verifyOTP() {
+                                            withAnimation(Theme.springSoft) { session.currentUser = user }
+                                        }
+                                    }
+                                }
+                            } else {
+                                PrimaryButton(title: "Send OTP", isLoading: viewModel.isLoading) {
+                                    Task { await viewModel.requestOTP() }
+                                }
+                            }
+
+                            if let errorMessage = viewModel.errorMessage {
+                                ErrorBanner(message: errorMessage)
+                            }
+                        }
+                        .animation(Theme.springQuick, value: viewModel.isOTPSent)
                     }
+                    .padding(20)
+                    .appearAnimation(delay: 0.15)
+
+                    Spacer(minLength: 32)
                 }
-
-                Spacer()
-                Spacer()
+                .padding(24)
             }
-            .padding(24)
+            .toolbar(.hidden, for: .navigationBar)
+            .onTapGesture { focusedField = nil }
         }
     }
 }

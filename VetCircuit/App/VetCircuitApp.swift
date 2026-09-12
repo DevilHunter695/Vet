@@ -20,6 +20,7 @@ struct VetCircuitApp: App {
         WindowGroup {
             RootView()
                 .environment(session)
+                .tint(Theme.primary)
                 .task { await session.bootstrap() }
                 .task { await PushNotificationManager.shared.requestAuthorizationAndRegister() }
         }
@@ -53,27 +54,39 @@ struct RootView: View {
     var body: some View {
         Group {
             if session.isBootstrapping {
-                ProgressView()
+                ZStack {
+                    Theme.heroGradient.ignoresSafeArea()
+                    PawMascot(size: 88)
+                }
             } else if session.currentUser != nil {
                 MainTabView()
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
             } else {
                 SignInView()
+                    .transition(.opacity)
             }
         }
+        .animation(Theme.springSoft, value: session.currentUser != nil)
+        .animation(Theme.easeIn, value: session.isBootstrapping)
     }
 }
 
 struct MainTabView: View {
+    @State private var selectedTab = 0
+
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             CircuitsListView()
-                .tabItem { Label("Book", systemImage: "calendar.badge.plus") }
+                .tabItem { Label("Book", systemImage: selectedTab == 0 ? "calendar.badge.plus" : "calendar") }
+                .tag(0)
 
             VisitHistoryView()
-                .tabItem { Label("Visits", systemImage: "clock.arrow.circlepath") }
+                .tabItem { Label("Visits", systemImage: selectedTab == 1 ? "clock.fill" : "clock.arrow.circlepath") }
+                .tag(1)
 
             ProfileView()
-                .tabItem { Label("Profile", systemImage: "person.circle") }
+                .tabItem { Label("Profile", systemImage: selectedTab == 2 ? "person.crop.circle.fill" : "person.circle") }
+                .tag(2)
         }
     }
 }

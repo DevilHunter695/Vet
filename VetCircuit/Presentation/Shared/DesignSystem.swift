@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Small reusable component library — define once, reuse everywhere.
 
@@ -7,22 +8,31 @@ struct PrimaryButton: View {
     var isLoading: Bool = false
     let action: () -> Void
 
+    @State private var isPressed = false
+
     var body: some View {
-        Button(action: action) {
+        Button {
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
+            action()
+        } label: {
             ZStack {
                 if isLoading {
                     ProgressView().tint(.white)
                 } else {
-                    Text(title).fontWeight(.semibold)
+                    Text(title).font(.brandHeadline)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 15)
         }
-        .background(Color.accentColor)
+        .background(Theme.gradient)
         .foregroundStyle(.white)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: Theme.primary.opacity(0.3), radius: 10, y: 5)
+        .buttonStyle(PressableStyle())
         .disabled(isLoading)
+        .opacity(isLoading ? 0.85 : 1)
         .accessibilityLabel(title)
     }
 }
@@ -33,7 +43,11 @@ struct Card<Content: View>: View {
     var body: some View {
         content
             .padding()
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(.background)
+                    .shadow(color: Theme.cardShadow, radius: 12, y: 4)
+            )
     }
 }
 
@@ -43,16 +57,26 @@ struct StatusBadge: View {
     private var color: Color {
         switch status {
         case .requested: return .orange
-        case .confirmed: return .blue
+        case .confirmed: return Theme.primary
         case .enRoute: return .purple
         case .completed: return .green
         case .cancelled: return .gray
         }
     }
 
+    private var icon: String {
+        switch status {
+        case .requested: return "clock.fill"
+        case .confirmed: return "checkmark.circle.fill"
+        case .enRoute: return "figure.walk.motion"
+        case .completed: return "checkmark.seal.fill"
+        case .cancelled: return "xmark.circle.fill"
+        }
+    }
+
     var body: some View {
-        Text(status.displayText)
-            .font(.caption).fontWeight(.semibold)
+        Label(status.displayText, systemImage: icon)
+            .font(.brandCaption)
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(color.opacity(0.15))
             .foregroundStyle(color)
@@ -69,12 +93,14 @@ struct ChatBubble: View {
         HStack {
             if isMine { Spacer(minLength: 40) }
             Text(message.body)
+                .font(.brandBody)
                 .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(isMine ? Color.accentColor : Color(.secondarySystemBackground))
+                .background(isMine ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color(.secondarySystemBackground)))
                 .foregroundStyle(isMine ? .white : .primary)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             if !isMine { Spacer(minLength: 40) }
         }
+        .transition(.asymmetric(insertion: .move(edge: isMine ? .trailing : .leading).combined(with: .opacity), removal: .opacity))
     }
 }
 
@@ -86,18 +112,21 @@ struct EmptyStateView: View {
     var action: (() -> Void)? = nil
 
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
-            Text(title).font(.headline)
+        VStack(spacing: 14) {
+            PawMascot(size: 72, animated: true)
+                .opacity(0.9)
+            Text(title).font(.brandHeadline)
             Text(message)
-                .font(.subheadline)
+                .font(.brandBody)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .buttonStyle(.borderedProminent)
+                    .font(.brandHeadline)
+                    .padding(.horizontal, 20).padding(.vertical, 10)
+                    .background(Theme.accentSoft)
+                    .foregroundStyle(Theme.accent)
+                    .clipShape(Capsule())
                     .padding(.top, 4)
             }
         }
@@ -118,5 +147,6 @@ struct ErrorBanner: View {
             .foregroundStyle(.red)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .accessibilityLabel("Error: \(message)")
+            .transition(.opacity.combined(with: .move(edge: .top)))
     }
 }
