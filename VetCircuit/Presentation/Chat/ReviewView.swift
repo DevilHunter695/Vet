@@ -40,53 +40,63 @@ struct ReviewView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 28) {
-                PawMascot(size: 64, animated: viewModel.rating >= 4)
-                    .appearAnimation()
+            ZStack {
+                if viewModel.didSubmit && viewModel.rating >= 4 {
+                    ConfettiView()
+                }
 
-                HStack(spacing: 6) {
-                    ForEach(1...5, id: \.self) { star in
-                        Image(systemName: star <= viewModel.rating ? "star.fill" : "star")
-                            .font(.system(size: 34))
-                            .foregroundStyle(star <= viewModel.rating ? .yellow : Color(.tertiaryLabel))
-                            .scaleEffect(star <= viewModel.rating ? 1.08 : 1)
-                            .animation(Theme.springQuick, value: viewModel.rating)
-                            .onTapGesture {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                withAnimation(Theme.springQuick) { viewModel.rating = star }
-                            }
+                VStack(spacing: 28) {
+                    PawMascot(size: 64, animated: viewModel.rating >= 4)
+                        .appearAnimation()
+
+                    HStack(spacing: 6) {
+                        ForEach(1...5, id: \.self) { star in
+                            Image(systemName: star <= viewModel.rating ? "star.fill" : "star")
+                                .font(.system(size: 34))
+                                .foregroundStyle(star <= viewModel.rating ? .yellow : Color(.tertiaryLabel))
+                                .scaleEffect(star <= viewModel.rating ? 1.08 : 1)
+                                .animation(Theme.springQuick, value: viewModel.rating)
+                                .onTapGesture {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    withAnimation(Theme.springQuick) { viewModel.rating = star }
+                                }
+                        }
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Rating")
+                    .accessibilityValue("\(viewModel.rating) out of 5 stars")
+                    .accessibilityAdjustableAction { direction in
+                        switch direction {
+                        case .increment: viewModel.rating = min(5, viewModel.rating + 1)
+                        case .decrement: viewModel.rating = max(1, viewModel.rating - 1)
+                        @unknown default: break
+                        }
+                    }
+
+                    TextField("Leave a comment (optional)", text: $viewModel.comment, axis: .vertical)
+                        .font(.brandBody)
+                        .padding(12)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+                        .lineLimit(3...6)
+
+                    if let errorMessage = viewModel.errorMessage {
+                        ErrorBanner(message: errorMessage)
+                    }
+
+                    PrimaryButton(title: "Submit review", isLoading: viewModel.isSubmitting) {
+                        Task { if let user = session.currentUser { await viewModel.submit(userId: user.id) } }
                     }
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Rating")
-                .accessibilityValue("\(viewModel.rating) out of 5 stars")
-                .accessibilityAdjustableAction { direction in
-                    switch direction {
-                    case .increment: viewModel.rating = min(5, viewModel.rating + 1)
-                    case .decrement: viewModel.rating = max(1, viewModel.rating - 1)
-                    @unknown default: break
-                    }
-                }
-
-                TextField("Leave a comment (optional)", text: $viewModel.comment, axis: .vertical)
-                    .font(.brandBody)
-                    .padding(12)
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-                    .lineLimit(3...6)
-
-                if let errorMessage = viewModel.errorMessage {
-                    ErrorBanner(message: errorMessage)
-                }
-
-                PrimaryButton(title: "Submit review", isLoading: viewModel.isSubmitting) {
-                    Task { if let user = session.currentUser { await viewModel.submit(userId: user.id) } }
-                }
+                .padding()
+                .disabled(viewModel.didSubmit)
             }
-            .padding()
             .navigationTitle("Rate your visit")
             .navigationBarTitleDisplayMode(.inline)
             .onChange(of: viewModel.didSubmit) { _, submitted in
-                if submitted { dismiss() }
+                guard submitted else { return }
+                // Let the celebration play for a beat before dismissing.
+                let delay = viewModel.rating >= 4 ? 1.1 : 0.3
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { dismiss() }
             }
         }
     }

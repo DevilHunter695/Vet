@@ -146,34 +146,38 @@ struct BookingConfirmedView: View {
     @State private var ringOpacity: Double = 0
 
     var body: some View {
-        VStack(spacing: 18) {
-            ZStack {
-                Circle()
-                    .stroke(Color.green.opacity(0.25), lineWidth: 8)
-                    .frame(width: 96, height: 96)
-                    .scaleEffect(ringOpacity == 0 ? 0.6 : 1.3)
-                    .opacity(1 - ringOpacity)
+        ZStack {
+            ConfettiView()
 
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 68))
-                    .foregroundStyle(.green)
-                    .scaleEffect(checkmarkScale)
-            }
-            .onAppear {
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.55)) { checkmarkScale = 1 }
-                withAnimation(.easeOut(duration: 0.9).delay(0.1)) { ringOpacity = 1 }
-            }
+            VStack(spacing: 18) {
+                ZStack {
+                    Circle()
+                        .stroke(Color.green.opacity(0.25), lineWidth: 8)
+                        .frame(width: 96, height: 96)
+                        .scaleEffect(ringOpacity == 0 ? 0.6 : 1.3)
+                        .opacity(1 - ringOpacity)
 
-            Text("Booking requested!").font(.brandTitle)
-            Text("We'll notify you once the vet confirms your slot.")
-                .font(.brandBody)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            StatusBadge(status: visit.status)
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 68))
+                        .foregroundStyle(.green)
+                        .scaleEffect(checkmarkScale)
+                }
+                .onAppear {
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.55)) { checkmarkScale = 1 }
+                    withAnimation(.easeOut(duration: 0.9).delay(0.1)) { ringOpacity = 1 }
+                }
+
+                Text("Booking requested!").font(.brandTitle)
+                Text("We'll notify you once the vet confirms your slot.")
+                    .font(.brandBody)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                StatusBadge(status: visit.status)
+            }
+            .padding()
+            .appearAnimation()
         }
-        .padding()
         .navigationBarBackButtonHidden()
-        .appearAnimation()
     }
 }
 
