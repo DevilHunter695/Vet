@@ -2,11 +2,11 @@ name: iOS CI
 
 on:
   push:
-    branches: [main, develop]
   pull_request:
+  workflow_dispatch:
 
 jobs:
-  build-and-test:
+  build-test-and-run:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -23,18 +23,48 @@ jobs:
       - name: Resolve Swift package dependencies
         run: xcodebuild -resolvePackageDependencies -project VetCircuit.xcodeproj
 
-      - name: Build
+      - name: Build for testing
         run: |
           xcodebuild build \
             -project VetCircuit.xcodeproj \
             -scheme VetCircuit \
             -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Test
+      - name: Unit tests
         run: |
           xcodebuild test \
             -project VetCircuit.xcodeproj \
             -scheme VetCircuit \
             -destination "platform=iOS Simulator,name=iPhone 16,OS=latest" \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Boot simulator, install and launch app
+        run: |
+          set -euo pipefail
+          DEVICE_ID=$(xcrun simctl list devices available -j | \
+            python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; \
+            print(next(x['udid'] for v in d.values() for x in v if 'iPhone 16' in x['name']))")
+          echo "Using device $DEVICE_ID"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+
+          APP_PATH=$(find build/Build/Products -maxdepth 1 -name "*.app" -path "*iphonesimulator*" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find build/Build/Products -maxdepth 2 -name "VetCircuit.app" | head -1)
+          fi
+          echo "App path: $APP_PATH"
+
+          xcrun simctl install "$DEVICE_ID" "$APP_PATH"
+          xcrun simctl launch "$DEVICE_ID" com.vetcircuit.app
+          sleep 5
+
+          mkdir -p artifacts
+          xcrun simctl io "$DEVICE_ID" screenshot artifacts/vetcircuit-simulator.png
+
+      - name: Upload simulator screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: vetcircuit-simulator-screenshot
+          path: artifacts/vetcircuit-simulator.png
