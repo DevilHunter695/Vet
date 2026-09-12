@@ -49,17 +49,24 @@ struct LiveTrackingView: View {
             .frame(height: 320)
 
             Card {
-                HStack {
-                    Image(systemName: "figure.walk.motion").foregroundStyle(.purple)
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle().fill(Color.purple.opacity(0.15))
+                        Image(systemName: "figure.walk.motion").foregroundStyle(.purple)
+                    }
+                    .frame(width: 40, height: 40)
+
                     if let eta = viewModel.location?.etaMinutes {
-                        Text("Arriving in about \(eta) min").fontWeight(.semibold)
+                        Text("Arriving in about \(eta) min").font(.brandHeadline)
                     } else {
-                        Text("Waiting for location…").foregroundStyle(.secondary)
+                        Text("Waiting for location…").font(.brandBody).foregroundStyle(.secondary)
                     }
                     Spacer()
                 }
+                .animation(Theme.springQuick, value: viewModel.location?.etaMinutes)
             }
             .padding()
+            .appearAnimation()
 
             Spacer()
         }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @Observable
 @MainActor
@@ -39,13 +40,21 @@ struct ReviewView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                HStack {
+            VStack(spacing: 28) {
+                PawMascot(size: 64, animated: viewModel.rating >= 4)
+                    .appearAnimation()
+
+                HStack(spacing: 6) {
                     ForEach(1...5, id: \.self) { star in
                         Image(systemName: star <= viewModel.rating ? "star.fill" : "star")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.yellow)
-                            .onTapGesture { viewModel.rating = star }
+                            .font(.system(size: 34))
+                            .foregroundStyle(star <= viewModel.rating ? .yellow : Color(.tertiaryLabel))
+                            .scaleEffect(star <= viewModel.rating ? 1.08 : 1)
+                            .animation(Theme.springQuick, value: viewModel.rating)
+                            .onTapGesture {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                withAnimation(Theme.springQuick) { viewModel.rating = star }
+                            }
                     }
                 }
                 .accessibilityElement(children: .ignore)
@@ -60,7 +69,9 @@ struct ReviewView: View {
                 }
 
                 TextField("Leave a comment (optional)", text: $viewModel.comment, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
+                    .font(.brandBody)
+                    .padding(12)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
                     .lineLimit(3...6)
 
                 if let errorMessage = viewModel.errorMessage {

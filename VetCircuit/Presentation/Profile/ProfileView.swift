@@ -49,8 +49,8 @@ final class ProfileViewModel {
         }
     }
 
-    func subscribe(userId: UUID, plan: Subscription.PlanType) async -> URL? {
-        try? await subscribeToPlanUseCase.execute(userId: userId, plan: plan)
+    func subscribe(userId: UUID, plan: Subscription.PlanType, seatCount: Int = 1) async -> URL? {
+        try? await subscribeToPlanUseCase.execute(userId: userId, plan: plan, seatCount: seatCount)
     }
 }
 
@@ -71,10 +71,21 @@ struct ProfileView: View {
         NavigationStack {
             List {
                 if let user = session.currentUser {
-                    Section("Account") {
-                        LabeledContent("Name", value: user.name)
-                        if let phone = user.phone { LabeledContent("Phone", value: phone) }
+                    Section {
+                        HStack(spacing: 14) {
+                            PawMascot(size: 56, animated: false)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(user.name).font(.brandTitle)
+                                if let phone = user.phone {
+                                    Text(phone).font(.brandCaption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                        }
+                        .padding(.vertical, 6)
+                        .listRowBackground(Color.clear)
                     }
+                    .appearAnimation()
                 }
 
                 Section("Care type") {
@@ -89,28 +100,56 @@ struct ProfileView: View {
 
                 if let loyalty = viewModel.loyaltyAccount {
                     Section("Rewards") {
-                        HStack {
-                            Label("\(loyalty.points) points", systemImage: "star.circle.fill")
-                            Spacer()
-                            Text(loyalty.tier.rawValue.capitalized)
-                                .font(.caption).fontWeight(.semibold)
-                                .padding(.horizontal, 10).padding(.vertical, 4)
-                                .background(Color.yellow.opacity(0.2))
-                                .clipShape(Capsule())
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Label("\(loyalty.points) points", systemImage: "star.circle.fill")
+                                    .font(.brandHeadline)
+                                    .foregroundStyle(tierColor(loyalty.tier))
+                                Spacer()
+                                Text(loyalty.tier.rawValue.capitalized)
+                                    .font(.brandCaption)
+                                    .padding(.horizontal, 10).padding(.vertical, 4)
+                                    .background(tierColor(loyalty.tier).opacity(0.15))
+                                    .foregroundStyle(tierColor(loyalty.tier))
+                                    .clipShape(Capsule())
+                            }
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color(.tertiarySystemFill)).frame(height: 6)
+                                    Capsule().fill(tierColor(loyalty.tier))
+                                        .frame(width: geo.size.width * tierProgress(loyalty), height: 6)
+                                        .animation(Theme.springSoft, value: loyalty.points)
+                                }
+                            }
+                            .frame(height: 6)
                         }
+                        .padding(.vertical, 4)
                     }
                 }
 
                 Section("Subscription") {
                     if let subscription = viewModel.subscription, subscription.status == .active {
-                        LabeledContent("Plan", value: subscription.planType.rawValue.capitalized)
+                        LabeledContent("Plan", value: subscription.planType.displayName)
                         LabeledContent("Renews", value: subscription.renewalDate.formatted(date: .abbreviated, time: .omitted))
+                        if subscription.planType.isBulk {
+                            LabeledContent("Seats", value: "\(subscription.seatCount)")
+                        }
                     } else {
                         ForEach([Subscription.PlanType.monthly, .quarterly, .annual], id: \.self) { plan in
-                            Button("Subscribe — \(plan.rawValue.capitalized)") {
+                            Button("Subscribe — \(plan.displayName)") {
                                 Task {
                                     if let user = session.currentUser {
                                         checkoutURL = await viewModel.subscribe(userId: user.id, plan: plan)
+                                    }
+                                }
+                            }
+                        }
+
+                        NavigationLink("Corporate / RWA bulk plan") {
+                            CorporatePlanView { seatCount in
+                                Task {
+                                    if let user = session.currentUser {
+                                        checkoutURL = await viewModel.subscribe(userId: user.id, plan: .corporate, seatCount: seatCount)
                                     }
                                 }
                             }
@@ -159,6 +198,24 @@ struct ProfileView: View {
                 CheckoutWebView(url: url)
             }
         }
+    }
+
+    private func tierColor(_ tier: LoyaltyAccount.Tier) -> Color {
+        switch tier {
+        case .bronze: return .orange
+        case .silver: return .gray
+        case .gold: return .yellow
+        }
+    }
+
+    private func tierProgress(_ account: LoyaltyAccount) -> CGFloat {
+        let raw: CGFloat
+        switch account.tier {
+        case .bronze: raw = CGFloat(account.points) / 200
+        case .silver: raw = CGFloat(account.points - 200) / 400
+        case .gold: raw = 1
+        }
+        return min(max(raw, 0), 1)
     }
 }
 

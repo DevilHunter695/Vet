@@ -64,13 +64,17 @@ struct VisitHistoryView: View {
                             }
                         }
                         Section("History") {
-                            ForEach(viewModel.visits.filter { $0.id != activeVisit?.id }) { visit in
+                            ForEach(Array(viewModel.visits.filter { $0.id != activeVisit?.id }.enumerated()), id: \.element.id) { index, visit in
                                 VisitRow(visit: visit, isPrimary: false) {
                                     Task { await viewModel.cancel(visit) }
                                 }
+                                .appearAnimation(delay: Double(index) * 0.04)
                             }
                         }
                     }
+                    .scrollContentBackground(.hidden)
+                    .background(Color(.systemGroupedBackground))
+                    .animation(Theme.springQuick, value: viewModel.visits.count)
                 }
             }
             .navigationTitle("Your visits")
@@ -85,19 +89,34 @@ private struct VisitRow: View {
     let isPrimary: Bool
     let onCancel: () -> Void
 
+    @State private var pulse = false
+
     var body: some View {
         NavigationLink {
             VisitDetailView(visit: visit)
         } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(visit.scheduledAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(isPrimary ? .headline : .subheadline)
-                    Spacer()
-                    StatusBadge(status: visit.status)
+            HStack(spacing: 12) {
+                if isPrimary {
+                    Circle()
+                        .fill(visit.status == .enRoute ? Color.purple : Theme.primary)
+                        .frame(width: 8, height: 8)
+                        .scaleEffect(pulse ? 1.8 : 1)
+                        .opacity(pulse ? 0 : 1)
+                        .overlay(Circle().fill(visit.status == .enRoute ? Color.purple : Theme.primary).frame(width: 8, height: 8))
+                        .onAppear {
+                            withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { pulse = true }
+                        }
                 }
-                if isPrimary, visit.status == .enRoute {
-                    Text("Vet is on the way").font(.caption).foregroundStyle(.purple)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(visit.scheduledAt.formatted(date: .abbreviated, time: .shortened))
+                            .font(isPrimary ? .brandHeadline : .brandBody)
+                        Spacer()
+                        StatusBadge(status: visit.status)
+                    }
+                    if isPrimary, visit.status == .enRoute {
+                        Text("Vet is on the way").font(.brandCaption).foregroundStyle(.purple)
+                    }
                 }
             }
             .padding(.vertical, 4)

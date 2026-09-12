@@ -48,17 +48,19 @@ struct ChatView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 8) {
+                    LazyVStack(spacing: 10) {
                         ForEach(viewModel.messages) { message in
                             ChatBubble(message: message, isMine: message.senderId == session.currentUser?.id)
                                 .id(message.id)
                         }
                     }
                     .padding()
+                    .animation(Theme.springQuick, value: viewModel.messages.count)
                 }
+                .background(Color(.systemGroupedBackground))
                 .onChange(of: viewModel.messages.count) {
                     if let last = viewModel.messages.last {
-                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                        withAnimation(Theme.springQuick) { proxy.scrollTo(last.id, anchor: .bottom) }
                     }
                 }
             }
@@ -67,19 +69,31 @@ struct ChatView: View {
                 ErrorBanner(message: errorMessage).padding(.horizontal)
             }
 
-            HStack {
+            HStack(spacing: 10) {
                 TextField("Message", text: $viewModel.draft, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
+                    .font(.brandBody)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(Color(.secondarySystemBackground), in: Capsule())
                     .accessibilityLabel("Message input")
+
+                let canSend = !viewModel.draft.trimmingCharacters(in: .whitespaces).isEmpty
                 Button {
                     Task { await viewModel.send() }
                 } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.title)
+                    Image(systemName: "arrow.up")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(canSend ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color.gray.opacity(0.4)))
+                        .clipShape(Circle())
                 }
-                .disabled(viewModel.draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                .buttonStyle(PressableStyle())
+                .disabled(!canSend)
+                .animation(Theme.springQuick, value: canSend)
                 .accessibilityLabel("Send message")
             }
             .padding()
+            .background(.regularMaterial)
         }
         .navigationTitle("Chat")
         .navigationBarTitleDisplayMode(.inline)

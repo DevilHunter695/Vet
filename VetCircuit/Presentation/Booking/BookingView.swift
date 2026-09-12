@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @Observable
 @MainActor
@@ -112,19 +113,29 @@ private struct SelectableRow: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            UISelectionFeedbackGenerator().selectionChanged()
+            withAnimation(Theme.springQuick) { action() }
+        } label: {
             HStack {
-                Text(title)
+                Text(title).font(.brandBody)
                 Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
-                }
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Theme.primary)
+                    .opacity(isSelected ? 1 : 0)
+                    .scaleEffect(isSelected ? 1 : 0.5)
             }
             .padding()
-            .background(isSelected ? Color.accentColor.opacity(0.1) : Color(.secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(isSelected ? AnyShapeStyle(Theme.accentSoft) : AnyShapeStyle(Color(.secondarySystemBackground)))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(isSelected ? Theme.primary.opacity(0.4) : .clear, lineWidth: 1.5)
+            )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }

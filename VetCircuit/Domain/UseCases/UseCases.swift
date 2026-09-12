@@ -49,8 +49,13 @@ struct SubscribeToPlanUseCase {
     let subscriptionRepository: SubscriptionRepository
     let paymentRepository: PaymentRepository
 
-    func execute(userId: UUID, plan: Subscription.PlanType) async throws -> URL {
-        try await paymentRepository.createCheckout(forSubscription: plan)
+    func execute(userId: UUID, plan: Subscription.PlanType, seatCount: Int = 1) async throws -> URL {
+        if plan.isBulk {
+            guard seatCount >= 5 else {
+                throw DomainError.validation("Corporate/RWA plans require at least 5 seats.")
+            }
+        }
+        return try await paymentRepository.createCheckout(forSubscription: plan)
     }
 }
 

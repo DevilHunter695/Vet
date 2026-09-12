@@ -97,6 +97,19 @@ Data (Repositories)           — Supabase SDK / mocks, SwiftData cache, Keychai
 - AI-assisted symptom pre-triage (`Domain/UseCases/TriageUseCase.swift`, `Presentation/Circuits/TriageView.swift`)
 - Multi-vertical support: the same app/backend toggles between vet / elder-care / physio circuits (`Vertical` model, Profile's "Care type" picker, circuit filtering)
 - Loyalty/rewards: points + bronze/silver/gold tiers, awarded on review submission (`Presentation/Profile`, `LoyaltyAccount`)
+- Corporate/RWA bulk subscriptions: a seat-based plan for an apartment complex or office (`Presentation/Profile/CorporatePlanView.swift`)
+
+## Design system
+
+The app has a real visual identity instead of default system styling:
+`Presentation/Shared/Theme.swift` defines a brand palette (deep teal +
+warm coral), rounded typography, and a shared spring-based motion language;
+`Presentation/Shared/Mascot.swift` draws a paw-print mascot entirely from
+SwiftUI shapes (no image assets needed) used on the sign-in hero, empty
+states, and launch screen. Every primary screen uses staggered entrance
+animations, haptic-backed press feedback, and animated state transitions
+(booking confirmation, chat bubbles, loyalty progress, star ratings) built
+on top of that shared language rather than one-off, per-screen styling.
 
 Deliberately deferred: Apple Watch companion, Android app, corporate/RWA bulk subscriptions — see the technical plan for the full prioritization rationale.
 

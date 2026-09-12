@@ -43,17 +43,26 @@ struct ReferralView: View {
     var body: some View {
         List {
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Your referral code").font(.headline)
+                VStack(spacing: 14) {
+                    PawMascot(size: 56, animated: false)
+                    Text("Your referral code").font(.brandCaption).foregroundStyle(.secondary)
                     Text(viewModel.code)
-                        .font(.system(.title2, design: .monospaced))
-                        .padding(.vertical, 4)
+                        .font(.system(.title2, design: .monospaced, weight: .bold))
+                        .padding(.horizontal, 18).padding(.vertical, 10)
+                        .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+
                     ShareLink(item: "Join me on VetCircuit and get your first vet visit discounted! Use my code: \(viewModel.code)") {
                         Label("Share invite", systemImage: "square.and.arrow.up")
+                            .font(.brandHeadline)
                     }
+                    .buttonStyle(PressableStyle())
+                    .padding(.top, 4)
                 }
-                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .appearAnimation()
             }
+            .listRowBackground(Color.clear)
 
             Section("Invite by phone") {
                 HStack {

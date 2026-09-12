@@ -92,9 +92,21 @@ struct Subscription: Identifiable, Codable, Equatable, Hashable {
     var planType: PlanType
     var status: Status
     var renewalDate: Date
+    var seatCount: Int = 1
 
-    enum PlanType: String, Codable {
-        case monthly, quarterly, annual
+    enum PlanType: String, Codable, CaseIterable {
+        case monthly, quarterly, annual, corporate
+
+        var displayName: String {
+            switch self {
+            case .monthly: return "Monthly"
+            case .quarterly: return "Quarterly"
+            case .annual: return "Annual"
+            case .corporate: return "Corporate / RWA bulk"
+            }
+        }
+
+        var isBulk: Bool { self == .corporate }
     }
 
     enum Status: String, Codable {
