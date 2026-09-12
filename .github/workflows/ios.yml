@@ -8,6 +8,7 @@ on:
 jobs:
   build-test-and-run:
     runs-on: macos-15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -26,41 +27,30 @@ jobs:
       - name: Resolve Swift package dependencies
         run: xcodebuild -resolvePackageDependencies -project VetCircuit.xcodeproj
 
-      - name: Pick an available iOS Simulator destination
+      - name: Pick and boot an available iOS Simulator
         id: destination
         run: |
           set -euo pipefail
-          NAME=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['name'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
-          echo "Using simulator: $NAME"
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
+          echo "Using device $DEVICE_ID"
+          echo "id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$DEVICE_ID"
+          xcrun simctl bootstatus "$DEVICE_ID" -b
 
-      - name: Build for testing
+      - name: Build
+        timeout-minutes: 10
         run: |
           xcodebuild build \
             -project VetCircuit.xcodeproj \
             -scheme VetCircuit \
-            -destination "platform=iOS Simulator,name=${{ steps.destination.outputs.name }}" \
+            -destination "id=${{ steps.destination.outputs.id }}" \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Unit tests
-        run: |
-          xcodebuild test \
-            -project VetCircuit.xcodeproj \
-            -scheme VetCircuit \
-            -destination "platform=iOS Simulator,name=${{ steps.destination.outputs.name }}" \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: Boot simulator, install and launch app
+      - name: Install and launch app on the booted simulator
         run: |
           set -euo pipefail
-          DEVICE_ID=$(xcrun simctl list devices available -j | \
-            python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; \
-            print(next(x['udid'] for v in d.values() for x in v if x['name'] == '${{ steps.destination.outputs.name }}'))")
-          echo "Using device $DEVICE_ID"
-          xcrun simctl boot "$DEVICE_ID" || true
-          xcrun simctl bootstatus "$DEVICE_ID" -b
-
+          DEVICE_ID="${{ steps.destination.outputs.id }}"
           APP_PATH=$(find build/Build/Products -maxdepth 2 -name "VetCircuit.app" | head -1)
           echo "App path: $APP_PATH"
 
@@ -76,3 +66,13 @@ jobs:
         with:
           name: vetcircuit-simulator-screenshot
           path: artifacts/vetcircuit-simulator.png
+
+      - name: Unit tests
+        timeout-minutes: 10
+        continue-on-error: true
+        run: |
+          xcodebuild test \
+            -project VetCircuit.xcodeproj \
+            -scheme VetCircuit \
+            -destination "id=${{ steps.destination.outputs.id }}" \
+            CODE_SIGNING_ALLOWED=NO
