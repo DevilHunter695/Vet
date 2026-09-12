@@ -43,7 +43,7 @@ final class SupabaseAuthRepository: AuthRepository {
     }
 
     private func fetchProfile(authId: UUID) async throws -> User {
-        let response: [UserRow] = try await client
+        let response: [SupabaseUserRow] = try await client
             .from("users")
             .select("*, pets(*)")
             .eq("id", value: authId)
@@ -61,12 +61,12 @@ final class SupabaseCircuitRepository: CircuitRepository {
     func listCircuits(area: String?) async throws -> [Circuit] {
         var query = client.from("circuits").select("*, vet:vets(*), schedule:schedule_slots(*)")
         if let area { query = query.eq("cluster_area", value: area) }
-        let rows: [CircuitRow] = try await query.execute().value
+        let rows: [SupabaseCircuitRow] = try await query.execute().value
         return rows.map { $0.toDomain() }
     }
 
     func circuit(id: UUID) async throws -> Circuit {
-        let rows: [CircuitRow] = try await client
+        let rows: [SupabaseCircuitRow] = try await client
             .from("circuits")
             .select("*, vet:vets(*), schedule:schedule_slots(*)")
             .eq("id", value: id)
@@ -82,17 +82,17 @@ final class SupabaseVisitRepository: VisitRepository {
     init(client: SupabaseClient) { self.client = client }
 
     func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot) async throws -> Visit {
-        let insert = VisitInsert(
+        let insert = SupabaseVisitInsert(
             petId: petId, vetId: vetId, circuitId: circuitId,
             status: Visit.VisitStatus.requested.rawValue, scheduledAt: slot.startTime
         )
-        let rows: [VisitRow] = try await client.from("visits").insert(insert).select().execute().value
+        let rows: [SupabaseVisitRow] = try await client.from("visits").insert(insert).select().execute().value
         guard let row = rows.first else { throw DomainError.unknown }
         return row.toDomain()
     }
 
     func listVisits(userId: UUID) async throws -> [Visit] {
-        let rows: [VisitRow] = try await client
+        let rows: [SupabaseVisitRow] = try await client
             .from("visits").select().eq("user_id", value: userId)
             .order("scheduled_at", ascending: false)
             .execute().value
@@ -100,14 +100,14 @@ final class SupabaseVisitRepository: VisitRepository {
     }
 
     func visit(id: UUID) async throws -> Visit {
-        let rows: [VisitRow] = try await client.from("visits").select().eq("id", value: id).execute().value
+        let rows: [SupabaseVisitRow] = try await client.from("visits").select().eq("id", value: id).execute().value
         guard let row = rows.first else { throw DomainError.notFound("Visit") }
         return row.toDomain()
     }
 
     func updateStatus(visitId: UUID, status: Visit.VisitStatus) async throws -> Visit {
         // Server-side RLS restricts this update to the assigned vet or an admin role.
-        let rows: [VisitRow] = try await client
+        let rows: [SupabaseVisitRow] = try await client
             .from("visits").update(["status": status.rawValue])
             .eq("id", value: visitId).select().execute().value
         guard let row = rows.first else { throw DomainError.notFound("Visit") }
@@ -121,13 +121,13 @@ final class SupabaseVisitRepository: VisitRepository {
 }
 
 // Row DTOs matching the Postgres schema (backend/supabase/migrations).
-private struct UserRow: Decodable {
+private struct SupabaseUserRow: Decodable {
     let id: UUID
     let phone: String?
     let name: String
     let email: String?
     let createdAt: Date
-    let pets: [PetRow]?
+    let pets: [SupabasePetRow]?
 
     enum CodingKeys: String, CodingKey { case id, phone, name, email, createdAt = "created_at", pets }
 
@@ -136,7 +136,7 @@ private struct UserRow: Decodable {
     }
 }
 
-private struct PetRow: Decodable {
+private struct SupabasePetRow: Decodable {
     let id: UUID
     let ownerId: UUID
     let name: String
@@ -151,21 +151,23 @@ private struct PetRow: Decodable {
     }
 }
 
-private struct CircuitRow: Decodable {
+private struct SupabaseCircuitRow: Decodable {
     let id: UUID
     let vetId: UUID
     let clusterArea: String
-    let vet: VetRow?
-    let schedule: [ScheduleRow]?
+    let vertical: String
+    let vet: SupabaseVetRow?
+    let schedule: [SupabaseScheduleRow]?
 
-    enum CodingKeys: String, CodingKey { case id, vetId = "vet_id", clusterArea = "cluster_area", vet, schedule }
+    enum CodingKeys: String, CodingKey { case id, vetId = "vet_id", clusterArea = "cluster_area", vertical, vet, schedule }
 
     func toDomain() -> Circuit {
-        Circuit(id: id, vetId: vetId, vet: vet?.toDomain(), clusterArea: clusterArea, schedule: (schedule ?? []).map { $0.toDomain() })
+        Circuit(id: id, vetId: vetId, vet: vet?.toDomain(), clusterArea: clusterArea,
+                schedule: (schedule ?? []).map { $0.toDomain() }, vertical: Vertical(rawValue: vertical) ?? .vet)
     }
 }
 
-private struct VetRow: Decodable {
+private struct SupabaseVetRow: Decodable {
     let id: UUID
     let name: String
     let licenseNumber: String
@@ -185,7 +187,7 @@ private struct VetRow: Decodable {
     }
 }
 
-private struct ScheduleRow: Decodable {
+private struct SupabaseScheduleRow: Decodable {
     let id: UUID
     let dayOfWeek: Int
     let startTime: Date
@@ -201,7 +203,7 @@ private struct ScheduleRow: Decodable {
     }
 }
 
-private struct VisitRow: Decodable {
+private struct SupabaseVisitRow: Decodable {
     let id: UUID
     let userId: UUID
     let petId: UUID
@@ -225,7 +227,7 @@ private struct VisitRow: Decodable {
     }
 }
 
-private struct VisitInsert: Encodable {
+private struct SupabaseVisitInsert: Encodable {
     let petId: UUID
     let vetId: UUID
     let circuitId: UUID
