@@ -16,7 +16,9 @@ final class TriageViewModel {
         isLoading = true
         defer { isLoading = false }
         do {
-            result = try await runTriageUseCase.execute(species: species, symptoms: symptoms)
+            withAnimation(Theme.springQuick) { result = nil }
+            let outcome = try await runTriageUseCase.execute(species: species, symptoms: symptoms)
+            withAnimation(Theme.springSoft) { result = outcome }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -31,11 +33,16 @@ struct TriageView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Tell us what's going on")
-                    .font(.title3.bold())
-                Text("This isn't a diagnosis — it helps us point you to the right next step.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        PawMascot(size: 44, animated: false)
+                        Text("Tell us what's going on").font(.brandTitle)
+                    }
+                    Text("This isn't a diagnosis — it helps us point you to the right next step.")
+                        .font(.brandBody)
+                        .foregroundStyle(.secondary)
+                }
+                .appearAnimation()
 
                 Picker("Pet type", selection: $viewModel.species) {
                     ForEach(Pet.Species.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
@@ -43,7 +50,9 @@ struct TriageView: View {
                 .pickerStyle(.segmented)
 
                 TextField("e.g. Not eating since yesterday, seems tired", text: $viewModel.symptoms, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
+                    .font(.brandBody)
+                    .padding(12)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
                     .lineLimit(3...6)
 
                 if let errorMessage = viewModel.errorMessage {
@@ -56,10 +65,12 @@ struct TriageView: View {
 
                 if let result = viewModel.result {
                     TriageResultCard(result: result)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
                 }
             }
             .padding()
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("Symptom check")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -76,6 +87,14 @@ private struct TriageResultCard: View {
         }
     }
 
+    private var icon: String {
+        switch result.recommendation {
+        case .bookVisitUrgently: return "exclamationmark.triangle.fill"
+        case .bookVisit: return "stethoscope"
+        case .selfCare: return "checkmark.seal.fill"
+        }
+    }
+
     private var title: String {
         switch result.recommendation {
         case .bookVisitUrgently: return "Book a visit now"
@@ -86,18 +105,27 @@ private struct TriageResultCard: View {
 
     var body: some View {
         Card {
-            VStack(alignment: .leading, spacing: 10) {
-                Label(title, systemImage: "stethoscope")
-                    .font(.headline)
-                    .foregroundStyle(accent)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle().fill(accent.opacity(0.15))
+                        Image(systemName: icon).foregroundStyle(accent)
+                    }
+                    .frame(width: 36, height: 36)
+                    Text(title).font(.brandHeadline).foregroundStyle(accent)
+                }
                 Text(result.message)
+                    .font(.brandBody)
                     .foregroundStyle(.secondary)
 
                 if result.recommendation != .selfCare {
-                    NavigationLink("Browse circuits to book") {
+                    NavigationLink {
                         CircuitsListView()
+                    } label: {
+                        Text("Browse circuits to book")
+                            .font(.brandHeadline)
                     }
-                    .font(.subheadline.weight(.semibold))
+                    .buttonStyle(PressableStyle())
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

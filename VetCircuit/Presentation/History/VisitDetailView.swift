@@ -10,51 +10,52 @@ struct VisitDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 16) {
                 Card {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("Visit status").font(.headline)
+                            Text("Visit status").font(.brandHeadline)
                             Spacer()
                             StatusBadge(status: visit.status)
                         }
                         Text(visit.scheduledAt.formatted(date: .long, time: .shortened))
+                            .font(.brandBody)
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .appearAnimation()
 
                 if visit.status == .enRoute {
                     NavigationLink {
                         LiveTrackingView(visitId: visit.id)
                     } label: {
-                        Label("Track your vet live", systemImage: "location.fill")
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.purple.opacity(0.12))
-                            .foregroundStyle(.purple)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        ActionRow(title: "Track your vet live", systemImage: "location.fill", tint: .purple)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableStyle())
+                    .appearAnimation(delay: 0.05)
                 }
 
                 if let notes = visit.notes, !notes.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Vet notes").font(.headline)
-                        Text(notes)
+                    Card {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Vet notes", systemImage: "note.text")
+                                .font(.brandHeadline)
+                                .foregroundStyle(Theme.primary)
+                            Text(notes).font(.brandBody)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .appearAnimation(delay: 0.08)
                 }
 
                 NavigationLink {
                     ChatView(visitId: visit.id)
                 } label: {
-                    Label("Message your vet", systemImage: "message.fill")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color(.secondarySystemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    ActionRow(title: "Message your vet", systemImage: "message.fill", tint: Theme.primary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableStyle())
+                .appearAnimation(delay: 0.1)
 
                 if visit.status == .requested || visit.status == .confirmed {
                     Button {
@@ -63,13 +64,10 @@ struct VisitDetailView: View {
                             catch { callErrorMessage = error.localizedDescription }
                         }
                     } label: {
-                        Label("Quick call with vet", systemImage: "video.fill")
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color(.secondarySystemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        ActionRow(title: "Quick call with vet", systemImage: "video.fill", tint: Theme.accent)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableStyle())
+                    .appearAnimation(delay: 0.15)
                 }
 
                 if let callErrorMessage {
@@ -78,10 +76,12 @@ struct VisitDetailView: View {
 
                 if visit.status == .completed {
                     PrimaryButton(title: "Rate this visit") { showingReview = true }
+                        .appearAnimation(delay: 0.1)
                 }
             }
             .padding()
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("Visit details")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingReview) {
@@ -90,6 +90,29 @@ struct VisitDetailView: View {
         .sheet(item: $callURL) { url in
             CheckoutWebView(url: url)
         }
+    }
+}
+
+private struct ActionRow: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(tint.opacity(0.15))
+                Image(systemName: systemImage).foregroundStyle(tint)
+            }
+            .frame(width: 36, height: 36)
+
+            Text(title).font(.brandHeadline).foregroundStyle(.primary)
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+        }
+        .padding()
+        .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .shadow(color: Theme.cardShadow, radius: 8, y: 3)
     }
 }
 
