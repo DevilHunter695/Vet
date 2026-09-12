@@ -83,4 +83,11 @@ Data (Repositories)           — Supabase SDK / mocks, SwiftData cache, Keychai
 - Rate & review after a completed visit
 - Multi-pet profiles
 
-Deliberately deferred to V2/V3 per the plan: live map tracking, voice/video call, referrals, AI triage, Android/watch apps — see the technical plan for the full prioritization rationale.
+## V2 (in progress)
+
+- Live vet location tracking during "en route" (MapKit + polling/subscription abstraction, `Presentation/Tracking`)
+- Quick call handoff from a visit (`StartCallUseCase` — stubbed via a web checkout-style handoff pending a real video SDK)
+- Referral program: personal code, share sheet, invite by phone (`Presentation/Referral`)
+- Push notification registration (APNs) + local subscription-renewal reminders (`App/PushNotificationManager.swift`)
+
+Deliberately deferred to V3 per the plan: AI-assisted triage, multi-vertical support, loyalty/rewards, Apple Watch companion, Android app — see the technical plan for the full prioritization rationale.

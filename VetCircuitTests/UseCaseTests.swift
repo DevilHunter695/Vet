@@ -103,6 +103,34 @@ struct SubmitReviewUseCaseTests {
     }
 }
 
+@Suite("SendReferralUseCase")
+struct SendReferralUseCaseTests {
+    @Test("rejects an invalid phone number")
+    func rejectsInvalidPhone() async {
+        let useCase = SendReferralUseCase(referralRepository: MockReferralRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(userId: UUID(), phone: "123")
+        }
+    }
+
+    @Test("sends a valid invite")
+    func sendsValidInvite() async throws {
+        let useCase = SendReferralUseCase(referralRepository: MockReferralRepository())
+        let referral = try await useCase.execute(userId: UUID(), phone: "9876543210")
+        #expect(referral.status == .pending)
+    }
+}
+
+@Suite("TrackVetUseCase")
+struct TrackVetUseCaseTests {
+    @Test("returns the vet's current location")
+    func returnsLocation() async throws {
+        let useCase = TrackVetUseCase(liveTrackingRepository: MockLiveTrackingRepository())
+        let location = try await useCase.execute(visitId: UUID())
+        #expect(location != nil)
+    }
+}
+
 @Suite("ManagePetsUseCase")
 struct ManagePetsUseCaseTests {
     @Test("rejects a pet with an empty name")

@@ -128,6 +128,18 @@ create table reviews (
   created_at timestamptz not null default now()
 );
 
+create table referrals (
+  id uuid primary key default gen_random_uuid(),
+  referrer_id uuid not null references users(id) on delete cascade,
+  code text not null,
+  invited_phone text,
+  status text not null default 'pending' check (status in ('pending', 'joined', 'rewarded')),
+  reward_applied boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create index referrals_referrer_id_idx on referrals(referrer_id);
+
 create table device_tokens (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references users(id) on delete cascade,
@@ -168,6 +180,7 @@ alter table payments enable row level security;
 alter table chat_messages enable row level security;
 alter table reviews enable row level security;
 alter table device_tokens enable row level security;
+alter table referrals enable row level security;
 
 -- Helper: is the current auth user an admin?
 create table admins (user_id uuid primary key references auth.users(id) on delete cascade);
@@ -268,3 +281,8 @@ create policy "reviews insert own" on reviews for insert
 create policy "device_tokens all own" on device_tokens for all
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
+
+-- referrals: referrer manages their own invites
+create policy "referrals all own" on referrals for all
+  using (referrer_id = auth.uid() or is_admin())
+  with check (referrer_id = auth.uid());

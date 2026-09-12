@@ -134,6 +134,30 @@ struct Review: Identifiable, Codable, Equatable, Hashable {
     var createdAt: Date
 }
 
+// MARK: - Live tracking & referrals (V2)
+
+struct VetLocation: Codable, Equatable, Hashable {
+    var visitId: UUID
+    var latitude: Double
+    var longitude: Double
+    var updatedAt: Date
+    var etaMinutes: Int?
+}
+
+struct Referral: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var referrerId: UUID
+    var code: String
+    var invitedPhone: String?
+    var status: Status
+    var rewardApplied: Bool
+    var createdAt: Date
+
+    enum Status: String, Codable {
+        case pending, joined, rewarded
+    }
+}
+
 // MARK: - Domain errors
 
 enum DomainError: Error, LocalizedError, Equatable {

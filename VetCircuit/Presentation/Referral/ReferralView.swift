@@ -1,0 +1,93 @@
+import SwiftUI
+
+@Observable
+@MainActor
+final class ReferralViewModel {
+    var code: String = ""
+    var invitePhone: String = ""
+    var referrals: [Referral] = []
+    var isSending = false
+    var errorMessage: String?
+
+    private let sendReferralUseCase = DependencyContainer.shared.sendReferralUseCase()
+    private let referralRepository = DependencyContainer.shared.referralRepository
+
+    func load(userId: UUID) async {
+        do {
+            code = try await referralRepository.myReferralCode(userId: userId)
+            referrals = try await referralRepository.listReferrals(userId: userId)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func sendInvite(userId: UUID) async {
+        errorMessage = nil
+        isSending = true
+        defer { isSending = false }
+        do {
+            let referral = try await sendReferralUseCase.execute(userId: userId, phone: invitePhone)
+            referrals.insert(referral, at: 0)
+            invitePhone = ""
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+/// V2: invite a friend, both get a discounted visit once they complete their first booking.
+struct ReferralView: View {
+    @Environment(SessionStore.self) private var session
+    @State private var viewModel = ReferralViewModel()
+
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Your referral code").font(.headline)
+                    Text(viewModel.code)
+                        .font(.system(.title2, design: .monospaced))
+                        .padding(.vertical, 4)
+                    ShareLink(item: "Join me on VetCircuit and get your first vet visit discounted! Use my code: \(viewModel.code)") {
+                        Label("Share invite", systemImage: "square.and.arrow.up")
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+
+            Section("Invite by phone") {
+                HStack {
+                    TextField("Friend's phone number", text: $viewModel.invitePhone)
+                        .keyboardType(.phonePad)
+                    Button("Invite") {
+                        Task { if let user = session.currentUser { await viewModel.sendInvite(userId: user.id) } }
+                    }
+                    .disabled(viewModel.invitePhone.isEmpty || viewModel.isSending)
+                }
+                if let errorMessage = viewModel.errorMessage {
+                    ErrorBanner(message: errorMessage)
+                }
+            }
+
+            if !viewModel.referrals.isEmpty {
+                Section("Your invites") {
+                    ForEach(viewModel.referrals) { referral in
+                        HStack {
+                            Text(referral.invitedPhone ?? "—")
+                            Spacer()
+                            Text(referral.status.rawValue.capitalized)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Invite friends")
+        .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
+    }
+}
+
+#Preview {
+    NavigationStack { ReferralView().environment(SessionStore()) }
+}

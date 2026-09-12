@@ -55,3 +55,23 @@ protocol PetRepository: Sendable {
 protocol PushTokenRepository: Sendable {
     func registerDeviceToken(_ token: String, userId: UUID) async throws
 }
+
+// MARK: - V2: live tracking, calling, referrals
+
+protocol LiveTrackingRepository: Sendable {
+    /// Latest known location for the vet servicing this visit, if they're en route.
+    func currentLocation(visitId: UUID) async throws -> VetLocation?
+    /// Streams location updates for the duration of the visit's "en route" state.
+    func subscribeToLocation(visitId: UUID, onUpdate: @escaping @Sendable (VetLocation) -> Void) -> AnyObject
+}
+
+protocol CallRepository: Sendable {
+    /// Creates (or joins) a call room for a visit and returns a joinable URL/token payload.
+    func startCall(visitId: UUID) async throws -> URL
+}
+
+protocol ReferralRepository: Sendable {
+    func myReferralCode(userId: UUID) async throws -> String
+    func sendInvite(userId: UUID, phone: String) async throws -> Referral
+    func listReferrals(userId: UUID) async throws -> [Referral]
+}

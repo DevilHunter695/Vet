@@ -107,3 +107,37 @@ struct StartCheckoutUseCase {
         return try await paymentRepository.createCheckout(forVisit: visitId, amountMinorUnits: amountMinorUnits)
     }
 }
+
+// MARK: - V2 use cases
+
+struct TrackVetUseCase {
+    let liveTrackingRepository: LiveTrackingRepository
+
+    func execute(visitId: UUID) async throws -> VetLocation? {
+        try await liveTrackingRepository.currentLocation(visitId: visitId)
+    }
+
+    func subscribe(visitId: UUID, onUpdate: @escaping @Sendable (VetLocation) -> Void) -> AnyObject {
+        liveTrackingRepository.subscribeToLocation(visitId: visitId, onUpdate: onUpdate)
+    }
+}
+
+struct StartCallUseCase {
+    let callRepository: CallRepository
+
+    func execute(visitId: UUID) async throws -> URL {
+        try await callRepository.startCall(visitId: visitId)
+    }
+}
+
+struct SendReferralUseCase {
+    let referralRepository: ReferralRepository
+
+    func execute(userId: UUID, phone: String) async throws -> Referral {
+        let digitsOnly = phone.filter(\.isNumber)
+        guard digitsOnly.count >= 10 else {
+            throw DomainError.validation("Enter a valid phone number to invite.")
+        }
+        return try await referralRepository.sendInvite(userId: userId, phone: phone)
+    }
+}

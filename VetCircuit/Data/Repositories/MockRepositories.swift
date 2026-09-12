@@ -149,6 +149,49 @@ actor MockPushTokenRepository: PushTokenRepository {
     func registerDeviceToken(_ token: String, userId: UUID) async throws {}
 }
 
+actor MockLiveTrackingRepository: LiveTrackingRepository {
+    func currentLocation(visitId: UUID) async throws -> VetLocation? {
+        // Bengaluru-ish coordinate, jittered slightly so the map shows movement.
+        VetLocation(visitId: visitId, latitude: 12.9352 + Double.random(in: -0.002...0.002),
+                    longitude: 77.6146 + Double.random(in: -0.002...0.002), updatedAt: .now, etaMinutes: Int.random(in: 3...20))
+    }
+
+    nonisolated func subscribeToLocation(visitId: UUID, onUpdate: @escaping @Sendable (VetLocation) -> Void) -> AnyObject {
+        let timer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in
+            let location = VetLocation(visitId: visitId, latitude: 12.9352 + Double.random(in: -0.003...0.003),
+                                        longitude: 77.6146 + Double.random(in: -0.003...0.003), updatedAt: .now,
+                                        etaMinutes: Int.random(in: 1...15))
+            onUpdate(location)
+        }
+        return timer
+    }
+}
+
+actor MockCallRepository: CallRepository {
+    func startCall(visitId: UUID) async throws -> URL {
+        URL(string: "https://call.example.com/visit/\(visitId)")!
+    }
+}
+
+actor MockReferralRepository: ReferralRepository {
+    private var referrals: [Referral] = []
+
+    func myReferralCode(userId: UUID) async throws -> String {
+        "VC-" + userId.uuidString.prefix(6).uppercased()
+    }
+
+    func sendInvite(userId: UUID, phone: String) async throws -> Referral {
+        let referral = Referral(id: UUID(), referrerId: userId, code: try await myReferralCode(userId: userId),
+                                 invitedPhone: phone, status: .pending, rewardApplied: false, createdAt: .now)
+        referrals.append(referral)
+        return referral
+    }
+
+    func listReferrals(userId: UUID) async throws -> [Referral] {
+        referrals.filter { $0.referrerId == userId }
+    }
+}
+
 // MARK: - Shared fixture data
 
 enum MockData {

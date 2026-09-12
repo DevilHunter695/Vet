@@ -17,6 +17,9 @@ final class ProfileViewModel {
         do {
             pets = try await managePetsUseCase.list(ownerId: userId)
             subscription = try await subscriptionRepository.currentSubscription(userId: userId)
+            if let subscription, subscription.status == .active {
+                PushNotificationManager.shared.scheduleRenewalReminder(subscription: subscription)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -100,6 +103,12 @@ struct ProfileView: View {
                             Task { if let user = session.currentUser { await viewModel.addPet(ownerId: user.id) } }
                         }
                         .disabled(viewModel.newPetName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+
+                Section {
+                    NavigationLink("Invite friends") {
+                        ReferralView()
                     }
                 }
 

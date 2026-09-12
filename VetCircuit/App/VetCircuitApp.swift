@@ -3,6 +3,7 @@ import SwiftData
 
 @main
 struct VetCircuitApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var session = SessionStore()
 
     var sharedModelContainer: ModelContainer = {
@@ -20,6 +21,7 @@ struct VetCircuitApp: App {
             RootView()
                 .environment(session)
                 .task { await session.bootstrap() }
+                .task { await PushNotificationManager.shared.requestAuthorizationAndRegister() }
         }
         .modelContainer(sharedModelContainer)
     }
@@ -29,7 +31,9 @@ struct VetCircuitApp: App {
 @MainActor
 @Observable
 final class SessionStore {
-    var currentUser: User?
+    var currentUser: User? {
+        didSet { UserDefaults.standard.set(currentUser?.id.uuidString, forKey: "vc.current_user_id") }
+    }
     var isBootstrapping = true
 
     func bootstrap() async {

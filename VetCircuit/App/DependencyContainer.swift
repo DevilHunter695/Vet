@@ -15,6 +15,9 @@ final class DependencyContainer {
     let reviewRepository: ReviewRepository
     let petRepository: PetRepository
     let pushTokenRepository: PushTokenRepository
+    let liveTrackingRepository: LiveTrackingRepository
+    let callRepository: CallRepository
+    let referralRepository: ReferralRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -28,6 +31,9 @@ final class DependencyContainer {
         self.reviewRepository = MockReviewRepository()
         self.petRepository = MockPetRepository()
         self.pushTokenRepository = MockPushTokenRepository()
+        self.liveTrackingRepository = MockLiveTrackingRepository()
+        self.callRepository = MockCallRepository()
+        self.referralRepository = MockReferralRepository()
     }
 
     // MARK: Use case factories
@@ -43,4 +49,7 @@ final class DependencyContainer {
     func submitReviewUseCase() -> SubmitReviewUseCase { SubmitReviewUseCase(reviewRepository: reviewRepository) }
     func managePetsUseCase() -> ManagePetsUseCase { ManagePetsUseCase(petRepository: petRepository) }
     func startCheckoutUseCase() -> StartCheckoutUseCase { StartCheckoutUseCase(paymentRepository: paymentRepository) }
+    func trackVetUseCase() -> TrackVetUseCase { TrackVetUseCase(liveTrackingRepository: liveTrackingRepository) }
+    func startCallUseCase() -> StartCallUseCase { StartCallUseCase(callRepository: callRepository) }
+    func sendReferralUseCase() -> SendReferralUseCase { SendReferralUseCase(referralRepository: referralRepository) }
 }
