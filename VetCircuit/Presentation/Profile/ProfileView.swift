@@ -100,30 +100,7 @@ struct ProfileView: View {
 
                 if let loyalty = viewModel.loyaltyAccount {
                     Section("Rewards") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Label("\(loyalty.points) points", systemImage: "star.circle.fill")
-                                    .font(.brandHeadline)
-                                    .foregroundStyle(tierColor(loyalty.tier))
-                                Spacer()
-                                Text(loyalty.tier.rawValue.capitalized)
-                                    .font(.brandCaption)
-                                    .padding(.horizontal, 10).padding(.vertical, 4)
-                                    .background(tierColor(loyalty.tier).opacity(0.15))
-                                    .foregroundStyle(tierColor(loyalty.tier))
-                                    .clipShape(Capsule())
-                            }
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(Color(.tertiarySystemFill)).frame(height: 6)
-                                    Capsule().fill(tierColor(loyalty.tier))
-                                        .frame(width: geo.size.width * tierProgress(loyalty), height: 6)
-                                        .animation(Theme.springSoft, value: loyalty.points)
-                                }
-                            }
-                            .frame(height: 6)
-                        }
-                        .padding(.vertical, 4)
+                        LoyaltyProgressCard(account: loyalty, color: tierColor(loyalty.tier), progress: tierProgress(loyalty))
                     }
                 }
 
@@ -216,6 +193,56 @@ struct ProfileView: View {
         case .gold: raw = 1
         }
         return min(max(raw, 0), 1)
+    }
+}
+
+private struct LoyaltyProgressCard: View {
+    let account: LoyaltyAccount
+    let color: Color
+    let progress: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("\(account.points) points", systemImage: "star.circle.fill")
+                    .font(.brandHeadline)
+                    .foregroundStyle(color)
+                Spacer()
+                TierBadge(tier: account.tier, color: color)
+            }
+            ProgressTrack(color: color, progress: progress)
+                .frame(height: 6)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct TierBadge: View {
+    let tier: LoyaltyAccount.Tier
+    let color: Color
+
+    var body: some View {
+        Text(tier.rawValue.capitalized)
+            .font(.brandCaption)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(color.opacity(0.15))
+            .foregroundStyle(color)
+            .clipShape(Capsule())
+    }
+}
+
+private struct ProgressTrack: View {
+    let color: Color
+    let progress: CGFloat
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color(.tertiarySystemFill))
+                Capsule().fill(color).frame(width: geo.size.width * progress)
+            }
+        }
+        .animation(Theme.springSoft, value: progress)
     }
 }
 

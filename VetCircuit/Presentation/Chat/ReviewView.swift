@@ -51,15 +51,9 @@ struct ReviewView: View {
 
                     HStack(spacing: 6) {
                         ForEach(1...5, id: \.self) { star in
-                            Image(systemName: star <= viewModel.rating ? "star.fill" : "star")
-                                .font(.system(size: 34))
-                                .foregroundStyle(star <= viewModel.rating ? .yellow : Color(.tertiaryLabel))
-                                .scaleEffect(star <= viewModel.rating ? 1.08 : 1)
-                                .animation(Theme.springQuick, value: viewModel.rating)
-                                .onTapGesture {
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    withAnimation(Theme.springQuick) { viewModel.rating = star }
-                                }
+                            StarRatingButton(star: star, rating: viewModel.rating) {
+                                withAnimation(Theme.springQuick) { viewModel.rating = star }
+                            }
                         }
                     }
                     .accessibilityElement(children: .ignore)
@@ -99,6 +93,26 @@ struct ReviewView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) { dismiss() }
             }
         }
+    }
+}
+
+private struct StarRatingButton: View {
+    let star: Int
+    let rating: Int
+    let onTap: () -> Void
+
+    private var isFilled: Bool { star <= rating }
+
+    var body: some View {
+        Image(systemName: isFilled ? "star.fill" : "star")
+            .font(.system(size: 34))
+            .foregroundStyle(isFilled ? Color.yellow : Color(.tertiaryLabel))
+            .scaleEffect(isFilled ? 1.08 : 1)
+            .animation(Theme.springQuick, value: rating)
+            .onTapGesture {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onTap()
+            }
     }
 }
 

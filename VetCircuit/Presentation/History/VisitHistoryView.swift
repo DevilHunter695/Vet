@@ -96,23 +96,13 @@ private struct VisitRow: View {
     let isPrimary: Bool
     let onCancel: () -> Void
 
-    @State private var pulse = false
-
     var body: some View {
         NavigationLink {
             VisitDetailView(visit: visit)
         } label: {
             HStack(spacing: 12) {
                 if isPrimary {
-                    Circle()
-                        .fill(visit.status == .enRoute ? Color.purple : Theme.primary)
-                        .frame(width: 8, height: 8)
-                        .scaleEffect(pulse ? 1.8 : 1)
-                        .opacity(pulse ? 0 : 1)
-                        .overlay(Circle().fill(visit.status == .enRoute ? Color.purple : Theme.primary).frame(width: 8, height: 8))
-                        .onAppear {
-                            withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { pulse = true }
-                        }
+                    PulsingDot(color: visit.status == .enRoute ? .purple : Theme.primary)
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -132,6 +122,25 @@ private struct VisitRow: View {
             if visit.status == .requested || visit.status == .confirmed {
                 Button("Cancel", role: .destructive, action: onCancel)
             }
+        }
+    }
+}
+
+private struct PulsingDot: View {
+    let color: Color
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+                .scaleEffect(pulse ? 1.8 : 1)
+                .opacity(pulse ? 0 : 1)
+        }
+        .onAppear {
+            withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { pulse = true }
         }
     }
 }
