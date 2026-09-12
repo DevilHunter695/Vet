@@ -15,6 +15,7 @@ VetCircuitTests/       Unit tests for the Domain layer (use cases)
 backend/supabase/
   migrations/          Postgres schema + Row Level Security policies
   functions/           Edge Functions (payment gateway webhook)
+partner-web/           Vet/para-vet web dashboard (Next.js) — circuit + visits + notes
 project.yml            XcodeGen spec — generates VetCircuit.xcodeproj
 .github/workflows/     CI: build + test on every push/PR
 ```
