@@ -32,7 +32,14 @@ struct CircuitsListView: View {
         NavigationStack {
             Group {
                 if viewModel.isLoading && viewModel.circuits.isEmpty {
-                    ProgressView()
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(0..<4, id: \.self) { _ in
+                                ShimmerView().frame(height: 84)
+                            }
+                        }
+                        .padding()
+                    }
                 } else if let errorMessage = viewModel.errorMessage {
                     EmptyStateView(
                         systemImage: "wifi.slash", title: "Couldn't load circuits",

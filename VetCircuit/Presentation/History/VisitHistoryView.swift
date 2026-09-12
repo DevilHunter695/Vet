@@ -50,7 +50,14 @@ struct VisitHistoryView: View {
         NavigationStack {
             Group {
                 if viewModel.isLoading && viewModel.visits.isEmpty {
-                    ProgressView()
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(0..<3, id: \.self) { _ in
+                                ShimmerView().frame(height: 64)
+                            }
+                        }
+                        .padding()
+                    }
                 } else if viewModel.visits.isEmpty {
                     EmptyStateView(systemImage: "calendar.badge.clock", title: "No visits yet",
                                    message: "Once you book a visit, you'll be able to track it here from request to completion.")

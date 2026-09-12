@@ -60,13 +60,18 @@ extension View {
 private struct AppearAnimationModifier: ViewModifier {
     let delay: Double
     @State private var isVisible = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
             .opacity(isVisible ? 1 : 0)
-            .scaleEffect(isVisible ? 1 : 0.92)
+            .scaleEffect(reduceMotion ? 1 : (isVisible ? 1 : 0.92))
             .onAppear {
-                withAnimation(Theme.springSoft.delay(delay)) { isVisible = true }
+                if reduceMotion {
+                    isVisible = true
+                } else {
+                    withAnimation(Theme.springSoft.delay(delay)) { isVisible = true }
+                }
             }
     }
 }

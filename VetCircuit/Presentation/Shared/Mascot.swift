@@ -8,6 +8,7 @@ struct PawMascot: View {
     var animated: Bool = true
 
     @State private var bounce = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -22,7 +23,7 @@ struct PawMascot: View {
                 .offset(y: bounce ? -size * 0.02 : size * 0.02)
         }
         .onAppear {
-            guard animated else { return }
+            guard animated, !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
                 bounce = true
             }
