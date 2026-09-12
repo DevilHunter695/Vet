@@ -103,6 +103,31 @@ struct SubmitReviewUseCaseTests {
     }
 }
 
+@Suite("RunTriageUseCase")
+struct RunTriageUseCaseTests {
+    @Test("rejects empty symptom description")
+    func rejectsEmpty() async {
+        let useCase = RunTriageUseCase(triageRepository: MockTriageRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(species: .dog, symptoms: "  ")
+        }
+    }
+
+    @Test("flags urgent symptoms")
+    func flagsUrgent() async throws {
+        let useCase = RunTriageUseCase(triageRepository: MockTriageRepository())
+        let result = try await useCase.execute(species: .dog, symptoms: "He is bleeding heavily from a cut")
+        #expect(result.recommendation == .bookVisitUrgently)
+    }
+
+    @Test("routes mild symptoms to self-care")
+    func routesMildToSelfCare() async throws {
+        let useCase = RunTriageUseCase(triageRepository: MockTriageRepository())
+        let result = try await useCase.execute(species: .cat, symptoms: "Seems a little sleepy today")
+        #expect(result.recommendation == .selfCare)
+    }
+}
+
 @Suite("SendReferralUseCase")
 struct SendReferralUseCaseTests {
     @Test("rejects an invalid phone number")

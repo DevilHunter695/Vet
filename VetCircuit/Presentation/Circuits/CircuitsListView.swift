@@ -51,6 +51,15 @@ struct CircuitsListView: View {
                 }
             }
             .navigationTitle("Book a visit")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink {
+                        TriageView()
+                    } label: {
+                        Label("Not sure?", systemImage: "questionmark.circle")
+                    }
+                }
+            }
             .searchable(text: $viewModel.searchArea, prompt: "Search by area")
             .onSubmit(of: .search) { Task { await viewModel.load() } }
             .navigationDestination(for: Circuit.self) { circuit in
