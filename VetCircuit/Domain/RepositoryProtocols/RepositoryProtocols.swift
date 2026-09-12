@@ -75,3 +75,9 @@ protocol ReferralRepository: Sendable {
     func sendInvite(userId: UUID, phone: String) async throws -> Referral
     func listReferrals(userId: UUID) async throws -> [Referral]
 }
+
+protocol LoyaltyRepository: Sendable {
+    func account(userId: UUID) async throws -> LoyaltyAccount
+    /// Called when a visit completes; awards points and returns the updated account.
+    func awardPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount
+}

@@ -5,9 +5,11 @@ import Foundation
 struct GetCircuitsUseCase {
     let repository: CircuitRepository
 
-    func execute(area: String?) async throws -> [Circuit] {
+    func execute(area: String?, vertical: Vertical = .vet) async throws -> [Circuit] {
         let circuits = try await repository.listCircuits(area: area)
-        return circuits.sorted { $0.clusterArea < $1.clusterArea }
+        return circuits
+            .filter { $0.vertical == vertical }
+            .sorted { $0.clusterArea < $1.clusterArea }
     }
 }
 
@@ -127,6 +129,14 @@ struct StartCallUseCase {
 
     func execute(visitId: UUID) async throws -> URL {
         try await callRepository.startCall(visitId: visitId)
+    }
+}
+
+struct GetLoyaltyAccountUseCase {
+    let loyaltyRepository: LoyaltyRepository
+
+    func execute(userId: UUID) async throws -> LoyaltyAccount {
+        try await loyaltyRepository.account(userId: userId)
     }
 }
 

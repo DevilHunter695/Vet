@@ -103,6 +103,36 @@ struct SubmitReviewUseCaseTests {
     }
 }
 
+@Suite("GetCircuitsUseCase")
+struct GetCircuitsUseCaseTests {
+    @Test("filters circuits by vertical")
+    func filtersByVertical() async throws {
+        let useCase = GetCircuitsUseCase(repository: MockCircuitRepository())
+        let vetCircuits = try await useCase.execute(area: nil, vertical: .vet)
+        let elderCareCircuits = try await useCase.execute(area: nil, vertical: .elderCare)
+        #expect(!vetCircuits.isEmpty)
+        #expect(elderCareCircuits.isEmpty)
+    }
+}
+
+@Suite("GetLoyaltyAccountUseCase")
+struct GetLoyaltyAccountUseCaseTests {
+    @Test("starts at zero points and bronze tier")
+    func startsAtBronze() async throws {
+        let useCase = GetLoyaltyAccountUseCase(loyaltyRepository: MockLoyaltyRepository())
+        let account = try await useCase.execute(userId: UUID())
+        #expect(account.points == 0)
+        #expect(account.tier == .bronze)
+    }
+
+    @Test("awarding points can move the tier to silver")
+    func awardingMovesTier() async throws {
+        let repo = MockLoyaltyRepository()
+        let account = try await repo.awardPoints(userId: UUID(), points: 250)
+        #expect(account.tier == .silver)
+    }
+}
+
 @Suite("RunTriageUseCase")
 struct RunTriageUseCaseTests {
     @Test("rejects empty symptom description")

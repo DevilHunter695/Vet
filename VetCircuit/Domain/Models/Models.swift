@@ -44,6 +44,7 @@ struct Circuit: Identifiable, Codable, Equatable, Hashable {
     var vet: Vet?
     var clusterArea: String
     var schedule: [ScheduleSlot]
+    var vertical: Vertical = .vet
 }
 
 struct ScheduleSlot: Identifiable, Codable, Equatable, Hashable {
@@ -132,6 +133,51 @@ struct Review: Identifiable, Codable, Equatable, Hashable {
     var rating: Int // 1...5
     var comment: String?
     var createdAt: Date
+}
+
+// MARK: - Multi-vertical & loyalty (V3)
+
+/// The same app/backend can serve more than one home-visit vertical — the
+/// plan's V3 "toggle between vet / elder-care / physio circuits". A user
+/// picks one at a time; circuits are filtered by it.
+enum Vertical: String, Codable, CaseIterable, Identifiable {
+    case vet, elderCare = "elder_care", physio
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .vet: return "Vet visits"
+        case .elderCare: return "Elder care"
+        case .physio: return "Physiotherapy"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .vet: return "pawprint.fill"
+        case .elderCare: return "figure.wave"
+        case .physio: return "figure.strengthtraining.traditional"
+        }
+    }
+}
+
+struct LoyaltyAccount: Codable, Equatable {
+    var userId: UUID
+    var points: Int
+    var tier: Tier
+
+    enum Tier: String, Codable {
+        case bronze, silver, gold
+
+        static func forPoints(_ points: Int) -> Tier {
+            switch points {
+            case ..<200: return .bronze
+            case 200..<600: return .silver
+            default: return .gold
+            }
+        }
+    }
 }
 
 // MARK: - Live tracking & referrals (V2)

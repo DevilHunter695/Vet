@@ -10,12 +10,12 @@ final class CircuitsListViewModel {
 
     private let getCircuitsUseCase = DependencyContainer.shared.getCircuitsUseCase()
 
-    func load() async {
+    func load(vertical: Vertical) async {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
         do {
-            circuits = try await getCircuitsUseCase.execute(area: searchArea.isEmpty ? nil : searchArea)
+            circuits = try await getCircuitsUseCase.execute(area: searchArea.isEmpty ? nil : searchArea, vertical: vertical)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -24,6 +24,9 @@ final class CircuitsListViewModel {
 
 struct CircuitsListView: View {
     @State private var viewModel = CircuitsListViewModel()
+    @AppStorage("vc.selected_vertical") private var selectedVerticalRaw: String = Vertical.vet.rawValue
+
+    private var selectedVertical: Vertical { Vertical(rawValue: selectedVerticalRaw) ?? .vet }
 
     var body: some View {
         NavigationStack {
@@ -34,7 +37,7 @@ struct CircuitsListView: View {
                     EmptyStateView(
                         systemImage: "wifi.slash", title: "Couldn't load circuits",
                         message: errorMessage, actionTitle: "Retry"
-                    ) { Task { await viewModel.load() } }
+                    ) { Task { await viewModel.load(vertical: selectedVertical) } }
                 } else if viewModel.circuits.isEmpty {
                     EmptyStateView(
                         systemImage: "map", title: "No circuits available in your area yet",
@@ -50,7 +53,7 @@ struct CircuitsListView: View {
                     .listStyle(.plain)
                 }
             }
-            .navigationTitle("Book a visit")
+            .navigationTitle(selectedVertical.displayName)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
@@ -61,12 +64,15 @@ struct CircuitsListView: View {
                 }
             }
             .searchable(text: $viewModel.searchArea, prompt: "Search by area")
-            .onSubmit(of: .search) { Task { await viewModel.load() } }
+            .onSubmit(of: .search) { Task { await viewModel.load(vertical: selectedVertical) } }
             .navigationDestination(for: Circuit.self) { circuit in
                 BookingView(circuit: circuit)
             }
-            .task { await viewModel.load() }
-            .refreshable { await viewModel.load() }
+            .task { await viewModel.load(vertical: selectedVertical) }
+            .refreshable { await viewModel.load(vertical: selectedVertical) }
+            .onChange(of: selectedVerticalRaw) {
+                Task { await viewModel.load(vertical: selectedVertical) }
+            }
         }
     }
 }

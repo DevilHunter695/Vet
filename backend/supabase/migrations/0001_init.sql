@@ -45,6 +45,7 @@ create table circuits (
   id uuid primary key default gen_random_uuid(),
   vet_id uuid not null references vets(id) on delete cascade,
   cluster_area text not null,
+  vertical text not null default 'vet' check (vertical in ('vet', 'elder_care', 'physio')),
   created_at timestamptz not null default now()
 );
 
@@ -128,6 +129,12 @@ create table reviews (
   created_at timestamptz not null default now()
 );
 
+create table loyalty_accounts (
+  user_id uuid primary key references users(id) on delete cascade,
+  points integer not null default 0 check (points >= 0),
+  tier text not null default 'bronze' check (tier in ('bronze', 'silver', 'gold'))
+);
+
 create table referrals (
   id uuid primary key default gen_random_uuid(),
   referrer_id uuid not null references users(id) on delete cascade,
@@ -181,6 +188,7 @@ alter table chat_messages enable row level security;
 alter table reviews enable row level security;
 alter table device_tokens enable row level security;
 alter table referrals enable row level security;
+alter table loyalty_accounts enable row level security;
 
 -- Helper: is the current auth user an admin?
 create table admins (user_id uuid primary key references auth.users(id) on delete cascade);
@@ -286,3 +294,9 @@ create policy "device_tokens all own" on device_tokens for all
 create policy "referrals all own" on referrals for all
   using (referrer_id = auth.uid() or is_admin())
   with check (referrer_id = auth.uid());
+
+-- loyalty_accounts: owner reads their own; points are only ever awarded
+-- server-side (a trigger or edge function using the service role key), never
+-- directly writable by the client.
+create policy "loyalty select own" on loyalty_accounts for select
+  using (user_id = auth.uid() or is_admin());

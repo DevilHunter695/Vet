@@ -92,4 +92,14 @@ Data (Repositories)           — Supabase SDK / mocks, SwiftData cache, Keychai
 - Referral program: personal code, share sheet, invite by phone (`Presentation/Referral`)
 - Push notification registration (APNs) + local subscription-renewal reminders (`App/PushNotificationManager.swift`)
 
-Deliberately deferred to V3 per the plan: AI-assisted triage, multi-vertical support, loyalty/rewards, Apple Watch companion, Android app — see the technical plan for the full prioritization rationale.
+## V3 (in progress)
+
+- AI-assisted symptom pre-triage (`Domain/UseCases/TriageUseCase.swift`, `Presentation/Circuits/TriageView.swift`)
+- Multi-vertical support: the same app/backend toggles between vet / elder-care / physio circuits (`Vertical` model, Profile's "Care type" picker, circuit filtering)
+- Loyalty/rewards: points + bronze/silver/gold tiers, awarded on review submission (`Presentation/Profile`, `LoyaltyAccount`)
+
+Deliberately deferred: Apple Watch companion, Android app, corporate/RWA bulk subscriptions — see the technical plan for the full prioritization rationale.
+
+## Note on running in an iOS Simulator
+
+This repository is developed from a Linux sandbox with no Xcode/macOS available, so an iOS Simulator can't be booted directly in that environment. `.github/workflows/ios.yml` runs the closest real equivalent on a macOS GitHub Actions runner: it generates the Xcode project, builds, runs the unit tests, then actually boots a simulator, installs the built app, launches it, and uploads a screenshot as a build artifact. To run it yourself on a Mac: `xcodegen generate && open VetCircuit.xcodeproj`, then hit Run.

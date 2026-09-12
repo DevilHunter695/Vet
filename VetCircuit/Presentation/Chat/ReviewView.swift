@@ -11,15 +11,18 @@ final class ReviewViewModel {
     var didSubmit = false
 
     private let submitReviewUseCase = DependencyContainer.shared.submitReviewUseCase()
+    private let loyaltyRepository = DependencyContainer.shared.loyaltyRepository
 
     init(visitId: UUID) { self.visitId = visitId }
 
-    func submit() async {
+    func submit(userId: UUID) async {
         isSubmitting = true
         errorMessage = nil
         defer { isSubmitting = false }
         do {
             _ = try await submitReviewUseCase.execute(visitId: visitId, rating: rating, comment: comment.isEmpty ? nil : comment)
+            // Reward loyalty points for completing the feedback loop.
+            _ = try? await loyaltyRepository.awardPoints(userId: userId, points: 20)
             didSubmit = true
         } catch {
             errorMessage = error.localizedDescription
@@ -29,6 +32,7 @@ final class ReviewViewModel {
 
 struct ReviewView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(SessionStore.self) private var session
     @State private var viewModel: ReviewViewModel
 
     init(visitId: UUID) { _viewModel = State(initialValue: ReviewViewModel(visitId: visitId)) }
@@ -64,7 +68,7 @@ struct ReviewView: View {
                 }
 
                 PrimaryButton(title: "Submit review", isLoading: viewModel.isSubmitting) {
-                    Task { await viewModel.submit() }
+                    Task { if let user = session.currentUser { await viewModel.submit(userId: user.id) } }
                 }
             }
             .padding()
@@ -78,5 +82,5 @@ struct ReviewView: View {
 }
 
 #Preview {
-    ReviewView(visitId: UUID())
+    ReviewView(visitId: UUID()).environment(SessionStore())
 }

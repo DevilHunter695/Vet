@@ -8,15 +8,18 @@ final class ProfileViewModel {
     var errorMessage: String?
     var newPetName: String = ""
     var newPetSpecies: Pet.Species = .dog
+    var loyaltyAccount: LoyaltyAccount?
 
     private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
     private let subscriptionRepository = DependencyContainer.shared.subscriptionRepository
     private let subscribeToPlanUseCase = DependencyContainer.shared.subscribeToPlanUseCase()
+    private let getLoyaltyAccountUseCase = DependencyContainer.shared.getLoyaltyAccountUseCase()
 
     func load(userId: UUID) async {
         do {
             pets = try await managePetsUseCase.list(ownerId: userId)
             subscription = try await subscriptionRepository.currentSubscription(userId: userId)
+            loyaltyAccount = try await getLoyaltyAccountUseCase.execute(userId: userId)
             if let subscription, subscription.status == .active {
                 PushNotificationManager.shared.scheduleRenewalReminder(subscription: subscription)
             }
@@ -55,6 +58,14 @@ struct ProfileView: View {
     @Environment(SessionStore.self) private var session
     @State private var viewModel = ProfileViewModel()
     @State private var checkoutURL: URL?
+    @AppStorage("vc.selected_vertical") private var selectedVerticalRaw: String = Vertical.vet.rawValue
+
+    private var selectedVertical: Binding<Vertical> {
+        Binding(
+            get: { Vertical(rawValue: selectedVerticalRaw) ?? .vet },
+            set: { selectedVerticalRaw = $0.rawValue }
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -63,6 +74,30 @@ struct ProfileView: View {
                     Section("Account") {
                         LabeledContent("Name", value: user.name)
                         if let phone = user.phone { LabeledContent("Phone", value: phone) }
+                    }
+                }
+
+                Section("Care type") {
+                    Picker("Care type", selection: selectedVertical) {
+                        ForEach(Vertical.allCases) { vertical in
+                            Label(vertical.displayName, systemImage: vertical.systemImage).tag(vertical)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                }
+
+                if let loyalty = viewModel.loyaltyAccount {
+                    Section("Rewards") {
+                        HStack {
+                            Label("\(loyalty.points) points", systemImage: "star.circle.fill")
+                            Spacer()
+                            Text(loyalty.tier.rawValue.capitalized)
+                                .font(.caption).fontWeight(.semibold)
+                                .padding(.horizontal, 10).padding(.vertical, 4)
+                                .background(Color.yellow.opacity(0.2))
+                                .clipShape(Capsule())
+                        }
                     }
                 }
 

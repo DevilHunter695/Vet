@@ -173,6 +173,22 @@ actor MockCallRepository: CallRepository {
     }
 }
 
+actor MockLoyaltyRepository: LoyaltyRepository {
+    private var accounts: [UUID: LoyaltyAccount] = [:]
+
+    func account(userId: UUID) async throws -> LoyaltyAccount {
+        accounts[userId] ?? LoyaltyAccount(userId: userId, points: 0, tier: .bronze)
+    }
+
+    func awardPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount {
+        var current = try await account(userId: userId)
+        current.points += points
+        current.tier = .forPoints(current.points)
+        accounts[userId] = current
+        return current
+    }
+}
+
 actor MockReferralRepository: ReferralRepository {
     private var referrals: [Referral] = []
 
