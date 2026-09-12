@@ -1,0 +1,52 @@
+name: VetCircuit
+options:
+  bundleIdPrefix: com.vetcircuit
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  SWIFT_VERSION: "6.0"
+packages:
+  Supabase:
+    url: https://github.com/supabase-community/supabase-swift
+    from: 2.0.0
+targets:
+  VetCircuit:
+    type: application
+    platform: iOS
+    sources:
+      - path: VetCircuit
+        excludes:
+          - Resources/Info.plist
+    resources:
+      - path: VetCircuit/Resources
+        excludes:
+          - Info.plist
+    info:
+      path: VetCircuit/Resources/Info.plist
+      properties:
+        UILaunchScreen: {}
+    entitlements:
+      path: VetCircuit/VetCircuit.entitlements
+      properties:
+        com.apple.developer.applesignin:
+          - Default
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vetcircuit.app
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPABASE_URL: ""
+        SUPABASE_ANON_KEY: ""
+    dependencies:
+      - package: Supabase
+    scheme:
+      testTargets:
+        - VetCircuitTests
+      gatherCoverageData: true
+  VetCircuitTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: VetCircuitTests
+    dependencies:
+      - target: VetCircuit

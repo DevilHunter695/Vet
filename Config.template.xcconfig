@@ -1,0 +1,4 @@
+// Copy to Config.xcconfig (gitignored), fill in real values, and reference it
+// from the VetCircuit target's build settings in Xcode.
+SUPABASE_URL = https:/$()/your-project.supabase.co
+SUPABASE_ANON_KEY = your-anon-key-here

@@ -1,0 +1,155 @@
+import SwiftUI
+
+@Observable
+@MainActor
+final class BookingViewModel {
+    let circuit: Circuit
+    var pets: [Pet] = []
+    var selectedPet: Pet?
+    var selectedSlot: ScheduleSlot?
+    var isLoading = false
+    var errorMessage: String?
+    var bookedVisit: Visit?
+
+    private let bookVisitUseCase = DependencyContainer.shared.bookVisitUseCase()
+    private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
+
+    init(circuit: Circuit) { self.circuit = circuit }
+
+    func loadPets(ownerId: UUID) async {
+        do {
+            pets = try await managePetsUseCase.list(ownerId: ownerId)
+            selectedPet = pets.first
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// One primary action per screen: confirm the booking once pet + slot are chosen.
+    func confirmBooking() async {
+        guard let pet = selectedPet, let slot = selectedSlot else {
+            errorMessage = "Choose a pet and a time slot to continue."
+            return
+        }
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            bookedVisit = try await bookVisitUseCase.execute(
+                petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+struct BookingView: View {
+    @Environment(SessionStore.self) private var session
+    @State private var viewModel: BookingViewModel
+
+    init(circuit: Circuit) {
+        _viewModel = State(initialValue: BookingViewModel(circuit: circuit))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Card {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(viewModel.circuit.vet?.name ?? "Veterinarian").font(.title3.bold())
+                        Text(viewModel.circuit.clusterArea).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Which pet?").font(.headline)
+                    if viewModel.pets.isEmpty {
+                        Text("Add a pet in your profile first.").foregroundStyle(.secondary)
+                    } else {
+                        ForEach(viewModel.pets) { pet in
+                            SelectableRow(title: "\(pet.name) · \(pet.species.rawValue.capitalized)",
+                                          isSelected: viewModel.selectedPet?.id == pet.id) {
+                                viewModel.selectedPet = pet
+                            }
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Pick a time slot").font(.headline)
+                    ForEach(viewModel.circuit.schedule.filter(\.isAvailable)) { slot in
+                        SelectableRow(title: slot.startTime.formatted(date: .abbreviated, time: .shortened),
+                                      isSelected: viewModel.selectedSlot?.id == slot.id) {
+                            viewModel.selectedSlot = slot
+                        }
+                    }
+                }
+
+                if let errorMessage = viewModel.errorMessage {
+                    ErrorBanner(message: errorMessage)
+                }
+
+                PrimaryButton(title: "Confirm booking", isLoading: viewModel.isLoading) {
+                    Task { await viewModel.confirmBooking() }
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("Book visit")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { if let user = session.currentUser { await viewModel.loadPets(ownerId: user.id) } }
+        .navigationDestination(item: $viewModel.bookedVisit) { visit in
+            BookingConfirmedView(visit: visit)
+        }
+    }
+}
+
+private struct SelectableRow: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
+                }
+            }
+            .padding()
+            .background(isSelected ? Color.accentColor.opacity(0.1) : Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+}
+
+struct BookingConfirmedView: View {
+    let visit: Visit
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 60))
+                .foregroundStyle(.green)
+            Text("Booking requested!").font(.title2.bold())
+            Text("We'll notify you once the vet confirms your slot.")
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            StatusBadge(status: visit.status)
+        }
+        .padding()
+        .navigationBarBackButtonHidden()
+    }
+}
+
+#Preview {
+    NavigationStack {
+        BookingView(circuit: MockData.circuits[0]).environment(SessionStore())
+    }
+}

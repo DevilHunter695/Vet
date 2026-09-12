@@ -1,0 +1,71 @@
+// Supabase Edge Function: payment gateway webhook (Razorpay/Stripe).
+//
+// This is the ONLY place a payment is ever marked "succeeded". The client
+// never self-reports payment success — the gateway calls this endpoint
+// server-to-server, we verify its signature, then update Postgres using the
+// service role key (which bypasses RLS, since this is a trusted server context).
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const webhookSecret = Deno.env.get("PAYMENT_GATEWAY_WEBHOOK_SECRET")!;
+
+const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+function verifySignature(rawBody: string, signatureHeader: string | null): boolean {
+  if (!signatureHeader) return false;
+  const expected = createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
+  const expectedBuf = Buffer.from(expected, "utf8");
+  const givenBuf = Buffer.from(signatureHeader, "utf8");
+  return expectedBuf.length === givenBuf.length && timingSafeEqual(expectedBuf, givenBuf);
+}
+
+Deno.serve(async (req) => {
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
+  }
+
+  const rawBody = await req.text();
+  const signature = req.headers.get("x-gateway-signature");
+
+  if (!verifySignature(rawBody, signature)) {
+    return new Response("Invalid signature", { status: 401 });
+  }
+
+  const event = JSON.parse(rawBody);
+  const gatewayReference: string | undefined = event.payment_id ?? event.id;
+  const status: string = event.status; // "captured" | "failed" | "refunded"
+
+  if (!gatewayReference) {
+    return new Response("Missing payment reference", { status: 400 });
+  }
+
+  const mappedStatus =
+    status === "captured" ? "succeeded" :
+    status === "refunded" ? "refunded" :
+    "failed";
+
+  const { error } = await supabase
+    .from("payments")
+    .update({ status: mappedStatus })
+    .eq("gateway_reference", gatewayReference);
+
+  if (error) {
+    console.error("Failed to update payment status", error);
+    return new Response("Internal error", { status: 500 });
+  }
+
+  // If a subscription payment succeeded, extend its renewal date.
+  if (mappedStatus === "succeeded" && event.subscription_id) {
+    const nextRenewal = new Date();
+    nextRenewal.setMonth(nextRenewal.getMonth() + 1);
+    await supabase
+      .from("subscriptions")
+      .update({ status: "active", renewal_date: nextRenewal.toISOString() })
+      .eq("id", event.subscription_id);
+  }
+
+  return new Response("ok", { status: 200 });
+});
