@@ -1,0 +1,5 @@
+-- Run manually after creating your own auth user (e.g. via the Supabase
+-- dashboard or `supabase auth users create`), substituting the real UUID.
+-- There is deliberately no self-service "become an admin" flow.
+--
+-- insert into admins (user_id) values ('00000000-0000-0000-0000-000000000000');

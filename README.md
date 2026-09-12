@@ -16,6 +16,7 @@ backend/supabase/
   migrations/          Postgres schema + Row Level Security policies
   functions/           Edge Functions (payment gateway webhook)
 partner-web/           Vet/para-vet web dashboard (Next.js) — circuit + visits + notes
+admin-web/              Internal admin dashboard (Next.js) — vet verification, circuits, disputes, metrics
 project.yml            XcodeGen spec — generates VetCircuit.xcodeproj
 .github/workflows/     CI: build + test on every push/PR
 ```
