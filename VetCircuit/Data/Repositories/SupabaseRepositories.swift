@@ -2436,4 +2436,106 @@ private struct SupabaseSupportRefundAuditRow: Decodable {
     }
 }
 
+// MARK: - J8: SMS/WhatsApp fallback when push fails.
+//
+// No real gateway (Twilio/MSG91/...) is wired into this codebase — this
+// calls the `send-sms-fallback` Edge Function, whose body is a clearly
+// marked stub that logs the intent server-side (append-only
+// `sms_fallback_log`, service-role only) rather than placing a live call.
+// See NotificationDeliveryPolicy/SendTransactionalNotificationUseCase for
+// the decision this repository is invoked from.
+final class SupabaseSMSFallbackRepository: SMSFallbackRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func sendFallback(
+        userId: UUID, phone: String, category: TransactionalNotificationCategory,
+        body: String, reason: NotificationDeliveryDecision.FallbackReason
+    ) async throws -> SMSFallbackRecord {
+        struct Body: Encodable {
+            let userId: UUID
+            let phone: String
+            let category: String
+            let body: String
+            let reason: String
+            enum CodingKeys: String, CodingKey {
+                case userId = "user_id", phone, category, body, reason
+            }
+        }
+        let requestBody = Body(userId: userId, phone: phone, category: category.rawValue, body: body, reason: reason.rawValue)
+        let row: SupabaseSMSFallbackRow = try await client.functions.invoke("send-sms-fallback", options: .init(body: requestBody))
+        return row.toDomain()
+    }
+}
+
+private struct SupabaseSMSFallbackRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let phone: String
+    let category: String
+    let body: String
+    let reason: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, phone, category, body, reason
+        case userId = "user_id", createdAt = "created_at"
+    }
+
+    func toDomain() -> SMSFallbackRecord {
+        SMSFallbackRecord(
+            id: id, userId: userId, phone: phone,
+            category: TransactionalNotificationCategory(rawValue: category) ?? .visitConfirmed,
+            body: body, reason: NotificationDeliveryDecision.FallbackReason(rawValue: reason) ?? .noPushToken,
+            createdAt: createdAt
+        )
+    }
+}
+
+// MARK: - K6: lab test reports — select-only for the client; reports are
+// uploaded ops-side (see 0041_lab_test_reports.sql's RLS: no insert policy).
+final class SupabaseLabTestReportRepository: LabTestReportRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func reports(petId: UUID) async throws -> [LabTestReport] {
+        let rows: [SupabaseLabTestReportRow] = try await client
+            .from("lab_test_reports").select().eq("pet_id", value: petId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func reports(visitId: UUID) async throws -> [LabTestReport] {
+        let rows: [SupabaseLabTestReportRow] = try await client
+            .from("lab_test_reports").select().eq("visit_id", value: visitId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+private struct SupabaseLabTestReportRow: Decodable {
+    let id: UUID
+    let visitId: UUID
+    let petId: UUID
+    let testName: String
+    let status: String
+    let reportFilePath: String?
+    let resultSummary: String?
+    let availableAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, status
+        case visitId = "visit_id", petId = "pet_id", testName = "test_name"
+        case reportFilePath = "report_file_path", resultSummary = "result_summary"
+        case availableAt = "available_at"
+    }
+
+    func toDomain() -> LabTestReport {
+        LabTestReport(
+            id: id, visitId: visitId, petId: petId, testName: testName,
+            status: LabTestReport.Status(rawValue: status) ?? .pending,
+            reportFileURL: reportFilePath.flatMap { URL(string: "mock-storage://\($0)") },
+            resultSummary: resultSummary, availableAt: availableAt
+        )
+    }
+}
+
 #endif
