@@ -76,6 +76,9 @@ final class DependencyContainer {
     func subscribeToPlanUseCase() -> SubscribeToPlanUseCase {
         SubscribeToPlanUseCase(subscriptionRepository: subscriptionRepository, paymentRepository: paymentRepository)
     }
+    func manageSubscriptionUseCase() -> ManageSubscriptionUseCase {
+        ManageSubscriptionUseCase(subscriptionRepository: subscriptionRepository)
+    }
     func sendChatMessageUseCase() -> SendChatMessageUseCase { SendChatMessageUseCase(chatRepository: chatRepository) }
     func submitReviewUseCase() -> SubmitReviewUseCase { SubmitReviewUseCase(reviewRepository: reviewRepository) }
     func managePetsUseCase() -> ManagePetsUseCase { ManagePetsUseCase(petRepository: petRepository) }

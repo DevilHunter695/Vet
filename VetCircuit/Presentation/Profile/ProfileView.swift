@@ -125,11 +125,15 @@ struct ProfileView: View {
                 }
 
                 Section("Subscription") {
-                    if let subscription = viewModel.subscription, subscription.status == .active {
+                    if let subscription = viewModel.subscription, subscription.status != .cancelled {
                         LabeledContent("Plan", value: subscription.planType.displayName)
+                        LabeledContent("Status", value: subscription.status.rawValue.capitalized)
                         LabeledContent("Renews", value: subscription.renewalDate.formatted(date: .abbreviated, time: .omitted))
                         if subscription.planType.isBulk {
                             LabeledContent("Seats", value: "\(subscription.seatCount)")
+                        }
+                        NavigationLink("Manage subscription") {
+                            ManageSubscriptionView()
                         }
                     } else {
                         ForEach([Subscription.PlanType.monthly, .quarterly, .annual], id: \.self) { plan in

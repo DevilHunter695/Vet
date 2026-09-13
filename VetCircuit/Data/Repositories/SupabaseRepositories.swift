@@ -519,6 +519,41 @@ private struct SupabaseConsentRow: Decodable {
     }
 }
 
+private struct SupabaseSubscriptionRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let planType: String
+    let status: String
+    let renewalDate: Date
+    let seatCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, status
+        case userId = "user_id", planType = "plan_type", renewalDate = "renewal_date", seatCount = "seat_count"
+    }
+
+    func toDomain() -> Subscription {
+        Subscription(id: id, userId: userId, planType: Subscription.PlanType(rawValue: planType) ?? .monthly,
+                      status: Subscription.Status(rawValue: status) ?? .active, renewalDate: renewalDate,
+                      seatCount: seatCount ?? 1)
+    }
+}
+
+private struct SupabaseDunningRow: Decodable {
+    let id: UUID
+    let failedAttempts: Int
+    let nextRetryAt: Date?
+    let gracePeriodEndsAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, failedAttempts = "failed_attempts", nextRetryAt = "next_retry_at", gracePeriodEndsAt = "grace_period_ends_at"
+    }
+
+    func toDomain() -> DunningState {
+        DunningState(subscriptionId: id, failedAttempts: failedAttempts, nextRetryAt: nextRetryAt, gracePeriodEndsAt: gracePeriodEndsAt)
+    }
+}
+
 private struct SupabaseRefundRow: Decodable {
     let id: UUID
     let visitId: UUID
@@ -766,6 +801,88 @@ private struct SupabaseScheduleRow: Decodable {
 
     func toDomain() -> ScheduleSlot {
         ScheduleSlot(id: id, dayOfWeek: dayOfWeek, startTime: startTime, endTime: endTime, capacity: capacity, bookedCount: bookedCount)
+    }
+}
+
+final class SupabaseSubscriptionRepository: SubscriptionRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func currentSubscription(userId: UUID) async throws -> Subscription? {
+        let rows: [SupabaseSubscriptionRow] = try await client.from("subscriptions")
+            .select().eq("user_id", value: userId).order("created_at", ascending: false).limit(1).execute().value
+        return rows.first?.toDomain()
+    }
+
+    func subscribe(userId: UUID, plan: Subscription.PlanType) async throws -> Subscription {
+        struct Insert: Encodable {
+            let userId: UUID, planType: String, renewalDate: String
+            enum CodingKeys: String, CodingKey { case userId = "user_id", planType = "plan_type", renewalDate = "renewal_date" }
+        }
+        let renewal = Calendar.current.date(byAdding: .month, value: 1, to: .now) ?? .now
+        let rows: [SupabaseSubscriptionRow] = try await client.from("subscriptions")
+            .insert(Insert(userId: userId, planType: plan.rawValue, renewalDate: ISO8601DateFormatter().string(from: renewal)))
+            .select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func cancel(subscriptionId: UUID) async throws {
+        try await client.from("subscriptions").update(["status": Subscription.Status.cancelled.rawValue])
+            .eq("id", value: subscriptionId).execute()
+    }
+
+    // Manage (H3): the "subscriptions all own" RLS policy (0001_init.sql)
+    // already lets the owner update their own row, so these are plain
+    // updates — the validation that matters (upgrade/downgrade legality,
+    // corporate seat floor) already ran in ManageSubscriptionUseCase.
+    func changePlan(subscriptionId: UUID, to plan: Subscription.PlanType) async throws -> Subscription {
+        let rows: [SupabaseSubscriptionRow] = try await client.from("subscriptions")
+            .update(["plan_type": plan.rawValue]).eq("id", value: subscriptionId).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Subscription") }
+        return row.toDomain()
+    }
+
+    func pause(subscriptionId: UUID) async throws -> Subscription {
+        let rows: [SupabaseSubscriptionRow] = try await client.from("subscriptions")
+            .update(["status": Subscription.Status.paused.rawValue]).eq("id", value: subscriptionId).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Subscription") }
+        return row.toDomain()
+    }
+
+    func resume(subscriptionId: UUID) async throws -> Subscription {
+        let rows: [SupabaseSubscriptionRow] = try await client.from("subscriptions")
+            .update(["status": Subscription.Status.active.rawValue]).eq("id", value: subscriptionId).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Subscription") }
+        return row.toDomain()
+    }
+
+    // Dunning (H5): failed_attempts/next_retry_at/grace_period_ends_at live on
+    // the subscriptions row itself (migration 0015) rather than a separate
+    // table — there is exactly one live dunning cycle per subscription at a
+    // time, unlike visit_events' append-only history of many transitions.
+    func dunningState(subscriptionId: UUID) async throws -> DunningState? {
+        let rows: [SupabaseDunningRow] = try await client.from("subscriptions")
+            .select("id, failed_attempts, next_retry_at, grace_period_ends_at").eq("id", value: subscriptionId).execute().value
+        guard let row = rows.first, row.failedAttempts > 0 else { return nil }
+        return row.toDomain()
+    }
+
+    func recordDunningState(_ state: DunningState) async throws {
+        struct Update: Encodable {
+            let failedAttempts: Int
+            let nextRetryAt: String?
+            let gracePeriodEndsAt: String?
+            enum CodingKeys: String, CodingKey {
+                case failedAttempts = "failed_attempts", nextRetryAt = "next_retry_at", gracePeriodEndsAt = "grace_period_ends_at"
+            }
+        }
+        let update = Update(
+            failedAttempts: state.failedAttempts,
+            nextRetryAt: state.nextRetryAt.map { ISO8601DateFormatter().string(from: $0) },
+            gracePeriodEndsAt: state.gracePeriodEndsAt.map { ISO8601DateFormatter().string(from: $0) }
+        )
+        try await client.from("subscriptions").update(update).eq("id", value: state.subscriptionId).execute()
     }
 }
 

@@ -234,9 +234,9 @@ Service (Home consultation)
 |---|---|---|---|
 | H1 | Plan catalog with visible inclusions & fair-use limits | P0 | 🔨 |
 | H2 | Purchase via gateway **recurring mandate (UPI Autopay / e-mandate)** | P0 | 🔨 |
-| H3 | Manage: upgrade, downgrade, **pause**, **cancel**, view next renewal | **P0** | ⛔ |
+| H3 | Manage: upgrade, downgrade, **pause**, **cancel**, view next renewal | **P0** | 🔨 |
 | H4 | Renewal reminders (T-7, T-1) + receipt | P0 | 🔨 |
-| H5 | Dunning: failed renewal → retry ladder → grace → downgrade | P1 | ⛔ |
+| H5 | Dunning: failed renewal → retry ladder → grace → downgrade | P1 | 🔨 |
 | H6 | Subscription credits consumed by bookings (entitlement engine) | P1 | ⛔ |
 | H7 | Corporate/RWA seat-based plan + seat assignment | P2 | 🔨 |
 

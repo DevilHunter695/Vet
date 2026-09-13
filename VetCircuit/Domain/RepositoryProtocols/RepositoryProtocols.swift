@@ -74,6 +74,18 @@ protocol SubscriptionRepository: Sendable {
     func currentSubscription(userId: UUID) async throws -> Subscription?
     func subscribe(userId: UUID, plan: Subscription.PlanType) async throws -> Subscription
     func cancel(subscriptionId: UUID) async throws
+
+    // H3: manage — upgrade/downgrade/pause/resume. Each returns the updated
+    // row rather than Void so the UI can show the new renewal date/plan
+    // without a second round trip.
+    func changePlan(subscriptionId: UUID, to plan: Subscription.PlanType) async throws -> Subscription
+    func pause(subscriptionId: UUID) async throws -> Subscription
+    func resume(subscriptionId: UUID) async throws -> Subscription
+
+    // H5: dunning state, read/written by the retry-ladder job (plan §6.5)
+    // and surfaced read-only to the customer app ("payment failed, retrying...").
+    func dunningState(subscriptionId: UUID) async throws -> DunningState?
+    func recordDunningState(_ state: DunningState) async throws
 }
 
 protocol PaymentRepository: Sendable {

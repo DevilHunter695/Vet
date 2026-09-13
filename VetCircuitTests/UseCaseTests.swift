@@ -699,3 +699,212 @@ struct GetCatalogUseCaseTests {
         }
     }
 }
+
+// MARK: - H3: subscription management
+
+@Suite("SubscriptionManagementPolicy")
+struct SubscriptionManagementPolicyTests {
+    private func subscription(plan: Subscription.PlanType, status: Subscription.Status, seatCount: Int = 1) -> Subscription {
+        Subscription(id: UUID(), userId: UUID(), planType: plan, status: status, renewalDate: .now.addingTimeInterval(86400 * 20), seatCount: seatCount)
+    }
+
+    @Test("upgrading to a higher tier is allowed")
+    func upgradeAllowed() {
+        let sub = subscription(plan: .monthly, status: .active)
+        #expect(SubscriptionManagementPolicy.validate(.upgrade, subscription: sub, targetPlan: .annual) == nil)
+    }
+
+    @Test("upgrading to a lower or equal tier is rejected")
+    func upgradeToLowerRejected() {
+        let sub = subscription(plan: .annual, status: .active)
+        #expect(SubscriptionManagementPolicy.validate(.upgrade, subscription: sub, targetPlan: .monthly) != nil)
+        #expect(SubscriptionManagementPolicy.validate(.upgrade, subscription: sub, targetPlan: .annual) != nil)
+    }
+
+    @Test("downgrading to a higher or equal tier is rejected")
+    func downgradeToHigherRejected() {
+        let sub = subscription(plan: .monthly, status: .active)
+        #expect(SubscriptionManagementPolicy.validate(.downgrade, subscription: sub, targetPlan: .annual) != nil)
+    }
+
+    @Test("downgrading to a lower tier is allowed")
+    func downgradeAllowed() {
+        let sub = subscription(plan: .annual, status: .active)
+        #expect(SubscriptionManagementPolicy.validate(.downgrade, subscription: sub, targetPlan: .monthly) == nil)
+    }
+
+    @Test("cannot change plan on a cancelled subscription")
+    func cannotChangeCancelled() {
+        let sub = subscription(plan: .monthly, status: .cancelled)
+        #expect(SubscriptionManagementPolicy.validate(.upgrade, subscription: sub, targetPlan: .annual) != nil)
+    }
+
+    @Test("cannot upgrade/downgrade a corporate plan through the individual ladder")
+    func corporateExcludedFromLadder() {
+        let sub = subscription(plan: .corporate, status: .active, seatCount: 10)
+        #expect(SubscriptionManagementPolicy.validate(.upgrade, subscription: sub, targetPlan: .annual) != nil)
+        let individual = subscription(plan: .monthly, status: .active)
+        #expect(SubscriptionManagementPolicy.validate(.upgrade, subscription: individual, targetPlan: .corporate) != nil)
+    }
+
+    @Test("pausing an active individual plan is allowed")
+    func pauseAllowed() {
+        let sub = subscription(plan: .monthly, status: .active)
+        #expect(SubscriptionManagementPolicy.validate(.pause, subscription: sub) == nil)
+    }
+
+    @Test("pausing an already-paused or cancelled subscription is rejected")
+    func pauseRejectedWhenNotActive() {
+        #expect(SubscriptionManagementPolicy.validate(.pause, subscription: subscription(plan: .monthly, status: .paused)) != nil)
+        #expect(SubscriptionManagementPolicy.validate(.pause, subscription: subscription(plan: .monthly, status: .cancelled)) != nil)
+    }
+
+    @Test("pausing a corporate plan with fewer than 5 seats is rejected — cancel instead")
+    func pauseRejectedBelowCorporateSeatFloor() {
+        let sub = subscription(plan: .corporate, status: .active, seatCount: 3)
+        #expect(SubscriptionManagementPolicy.validate(.pause, subscription: sub) != nil)
+    }
+
+    @Test("pausing a corporate plan at or above 5 seats is allowed")
+    func pauseAllowedAtCorporateSeatFloor() {
+        let sub = subscription(plan: .corporate, status: .active, seatCount: 5)
+        #expect(SubscriptionManagementPolicy.validate(.pause, subscription: sub) == nil)
+    }
+
+    @Test("resuming a paused subscription is allowed; resuming a non-paused one is rejected")
+    func resumeRequiresPaused() {
+        #expect(SubscriptionManagementPolicy.validate(.resume, subscription: subscription(plan: .monthly, status: .paused)) == nil)
+        #expect(SubscriptionManagementPolicy.validate(.resume, subscription: subscription(plan: .monthly, status: .active)) != nil)
+    }
+
+    @Test("cancelling an already-cancelled subscription is rejected")
+    func cancelIdempotencyGuard() {
+        #expect(SubscriptionManagementPolicy.validate(.cancel, subscription: subscription(plan: .monthly, status: .cancelled)) != nil)
+        #expect(SubscriptionManagementPolicy.validate(.cancel, subscription: subscription(plan: .monthly, status: .active)) == nil)
+    }
+}
+
+@Suite("ManageSubscriptionUseCase")
+struct ManageSubscriptionUseCaseTests {
+    @Test("upgrade persists the new plan through the repository")
+    func upgradePersists() async throws {
+        let repo = MockSubscriptionRepository()
+        let userId = UUID()
+        _ = try await repo.subscribe(userId: userId, plan: .monthly)
+        let useCase = ManageSubscriptionUseCase(subscriptionRepository: repo)
+        let current = try await repo.currentSubscription(userId: userId)!
+        let updated = try await useCase.upgrade(subscriptionId: current.id, userId: userId, to: .annual)
+        #expect(updated.planType == .annual)
+    }
+
+    @Test("invalid downgrade throws and never touches the repository")
+    func invalidDowngradeThrows() async throws {
+        let repo = MockSubscriptionRepository()
+        let userId = UUID()
+        _ = try await repo.subscribe(userId: userId, plan: .monthly)
+        let useCase = ManageSubscriptionUseCase(subscriptionRepository: repo)
+        let current = try await repo.currentSubscription(userId: userId)!
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.downgrade(subscriptionId: current.id, userId: userId, to: .annual)
+        }
+        let unchanged = try await repo.currentSubscription(userId: userId)
+        #expect(unchanged?.planType == .monthly)
+    }
+
+    @Test("pause then resume round-trips status")
+    func pauseThenResume() async throws {
+        let repo = MockSubscriptionRepository()
+        let userId = UUID()
+        _ = try await repo.subscribe(userId: userId, plan: .monthly)
+        let useCase = ManageSubscriptionUseCase(subscriptionRepository: repo)
+        let current = try await repo.currentSubscription(userId: userId)!
+        let paused = try await useCase.pause(subscriptionId: current.id, userId: userId)
+        #expect(paused.status == .paused)
+        let resumed = try await useCase.resume(subscriptionId: current.id, userId: userId)
+        #expect(resumed.status == .active)
+    }
+
+    @Test("cancel marks the subscription cancelled")
+    func cancelMarksCancelled() async throws {
+        let repo = MockSubscriptionRepository()
+        let userId = UUID()
+        _ = try await repo.subscribe(userId: userId, plan: .monthly)
+        let useCase = ManageSubscriptionUseCase(subscriptionRepository: repo)
+        let current = try await repo.currentSubscription(userId: userId)!
+        try await useCase.cancel(subscriptionId: current.id, userId: userId)
+        let after = try await repo.currentSubscription(userId: userId)
+        #expect(after?.status == .cancelled)
+    }
+
+    @Test("acting on a subscription id that isn't the caller's throws notFound")
+    func mismatchedSubscriptionIdThrows() async throws {
+        let repo = MockSubscriptionRepository()
+        let userId = UUID()
+        _ = try await repo.subscribe(userId: userId, plan: .monthly)
+        let useCase = ManageSubscriptionUseCase(subscriptionRepository: repo)
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.upgrade(subscriptionId: UUID(), userId: userId, to: .annual)
+        }
+    }
+}
+
+// MARK: - H5: dunning
+
+@Suite("DunningPolicy")
+struct DunningPolicyTests {
+    @Test("first failed charge schedules a retry 1 day out")
+    func firstFailureSchedulesRetryAt1Day() {
+        let now = Date()
+        let outcome = DunningPolicy.onChargeFailed(state: nil, subscriptionId: UUID(), now: now)
+        guard case .retryScheduled(let state) = outcome else {
+            Issue.record("expected retryScheduled")
+            return
+        }
+        #expect(state.failedAttempts == 1)
+        let expected = Calendar.current.date(byAdding: .day, value: 1, to: now)!
+        #expect(abs(state.nextRetryAt!.timeIntervalSince(expected)) < 1)
+    }
+
+    @Test("second and third failures follow the +3 and +7 day ladder")
+    func subsequentFailuresFollowLadder() {
+        let now = Date()
+        let first = DunningState(subscriptionId: UUID(), failedAttempts: 1, nextRetryAt: now, gracePeriodEndsAt: nil)
+        let secondOutcome = DunningPolicy.onChargeFailed(state: first, subscriptionId: first.subscriptionId, now: now)
+        guard case .retryScheduled(let secondState) = secondOutcome else { Issue.record("expected retryScheduled"); return }
+        #expect(secondState.failedAttempts == 2)
+        #expect(abs(secondState.nextRetryAt!.timeIntervalSince(Calendar.current.date(byAdding: .day, value: 3, to: now)!)) < 1)
+
+        let thirdOutcome = DunningPolicy.onChargeFailed(state: secondState, subscriptionId: first.subscriptionId, now: now)
+        guard case .retryScheduled(let thirdState) = thirdOutcome else { Issue.record("expected retryScheduled"); return }
+        #expect(thirdState.failedAttempts == 3)
+        #expect(abs(thirdState.nextRetryAt!.timeIntervalSince(Calendar.current.date(byAdding: .day, value: 7, to: now)!)) < 1)
+    }
+
+    @Test("fourth failure exhausts the ladder and starts the grace period")
+    func fourthFailureStartsGrace() {
+        let now = Date()
+        let third = DunningState(subscriptionId: UUID(), failedAttempts: 3, nextRetryAt: now, gracePeriodEndsAt: nil)
+        let outcome = DunningPolicy.onChargeFailed(state: third, subscriptionId: third.subscriptionId, now: now)
+        guard case .graceStarted(let state) = outcome else {
+            Issue.record("expected graceStarted")
+            return
+        }
+        #expect(state.failedAttempts == 4)
+        #expect(state.nextRetryAt == nil)
+        #expect(abs(state.gracePeriodEndsAt!.timeIntervalSince(Calendar.current.date(byAdding: .day, value: 7, to: now)!)) < 1)
+    }
+
+    @Test("auto-downgrade fires once grace has elapsed, not before")
+    func autoDowngradeTiming() {
+        let now = Date()
+        let state = DunningState(subscriptionId: UUID(), failedAttempts: 4, nextRetryAt: nil, gracePeriodEndsAt: now.addingTimeInterval(3600))
+        #expect(!DunningPolicy.shouldAutoDowngrade(state: state, now: now))
+        #expect(DunningPolicy.shouldAutoDowngrade(state: state, now: now.addingTimeInterval(3601)))
+    }
+
+    @Test("a state with no grace period never auto-downgrades")
+    func noGraceMeansNoDowngrade() {
+        let state = DunningState(subscriptionId: UUID(), failedAttempts: 1, nextRetryAt: .now, gracePeriodEndsAt: nil)
+        #expect(!DunningPolicy.shouldAutoDowngrade(state: state, now: .now.addingTimeInterval(86400 * 30)))
+    }
+}

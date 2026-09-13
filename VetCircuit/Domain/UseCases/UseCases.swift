@@ -103,6 +103,50 @@ struct SubscribeToPlanUseCase {
     }
 }
 
+/// H3: upgrade/downgrade/pause/resume/cancel, each validated against
+/// `SubscriptionManagementPolicy` before touching the repository — the
+/// repository is a dumb writer, the use case is where the real rules live.
+struct ManageSubscriptionUseCase {
+    let subscriptionRepository: SubscriptionRepository
+
+    private func currentOrThrow(_ subscriptionId: UUID, userId: UUID) async throws -> Subscription {
+        guard let subscription = try await subscriptionRepository.currentSubscription(userId: userId), subscription.id == subscriptionId else {
+            throw DomainError.notFound("Subscription")
+        }
+        return subscription
+    }
+
+    func upgrade(subscriptionId: UUID, userId: UUID, to plan: Subscription.PlanType) async throws -> Subscription {
+        let current = try await currentOrThrow(subscriptionId, userId: userId)
+        if let error = SubscriptionManagementPolicy.validate(.upgrade, subscription: current, targetPlan: plan) { throw error }
+        return try await subscriptionRepository.changePlan(subscriptionId: subscriptionId, to: plan)
+    }
+
+    func downgrade(subscriptionId: UUID, userId: UUID, to plan: Subscription.PlanType) async throws -> Subscription {
+        let current = try await currentOrThrow(subscriptionId, userId: userId)
+        if let error = SubscriptionManagementPolicy.validate(.downgrade, subscription: current, targetPlan: plan) { throw error }
+        return try await subscriptionRepository.changePlan(subscriptionId: subscriptionId, to: plan)
+    }
+
+    func pause(subscriptionId: UUID, userId: UUID) async throws -> Subscription {
+        let current = try await currentOrThrow(subscriptionId, userId: userId)
+        if let error = SubscriptionManagementPolicy.validate(.pause, subscription: current) { throw error }
+        return try await subscriptionRepository.pause(subscriptionId: subscriptionId)
+    }
+
+    func resume(subscriptionId: UUID, userId: UUID) async throws -> Subscription {
+        let current = try await currentOrThrow(subscriptionId, userId: userId)
+        if let error = SubscriptionManagementPolicy.validate(.resume, subscription: current) { throw error }
+        return try await subscriptionRepository.resume(subscriptionId: subscriptionId)
+    }
+
+    func cancel(subscriptionId: UUID, userId: UUID) async throws {
+        let current = try await currentOrThrow(subscriptionId, userId: userId)
+        if let error = SubscriptionManagementPolicy.validate(.cancel, subscription: current) { throw error }
+        try await subscriptionRepository.cancel(subscriptionId: subscriptionId)
+    }
+}
+
 struct SendChatMessageUseCase {
     let chatRepository: ChatRepository
 
