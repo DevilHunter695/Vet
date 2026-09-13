@@ -187,6 +187,20 @@ protocol MedicationReminderRepository: Sendable {
 
 protocol PushTokenRepository: Sendable {
     func registerDeviceToken(_ token: String, userId: UUID) async throws
+    /// J8: whether this user currently has any registered device token —
+    /// the delivery policy's first signal for "can push even reach them".
+    func hasDeviceToken(userId: UUID) async throws -> Bool
+}
+
+/// J8: records the intent to send an SMS/WhatsApp fallback when push isn't
+/// viable. No real gateway (Twilio/MSG91/...) is wired into this codebase —
+/// see the type comment on `TransactionalNotificationCategory` and the
+/// `send-sms-fallback` Edge Function for exactly where that call would go.
+protocol SMSFallbackRepository: Sendable {
+    func sendFallback(
+        userId: UUID, phone: String, category: TransactionalNotificationCategory,
+        body: String, reason: NotificationDeliveryDecision.FallbackReason
+    ) async throws -> SMSFallbackRecord
 }
 
 // MARK: - V2: live tracking, calling, referrals
@@ -438,6 +452,15 @@ protocol PetDocumentRepository: Sendable {
     /// now the mock just fabricates a placeholder URL from that filename.
     func upload(petId: UUID, uploaderId: UUID, title: String, data: Data) async throws -> PetDocument
     func delete(id: UUID) async throws
+}
+
+/// K6: lab test reports attached to a visit. No client insert/update method
+/// on purpose — reports are uploaded ops-side once results are back, matching
+/// `SupportRepository`'s "the client reads state, never writes it after
+/// creation" pattern.
+protocol LabTestReportRepository: Sendable {
+    func reports(petId: UUID) async throws -> [LabTestReport]
+    func reports(visitId: UUID) async throws -> [LabTestReport]
 }
 
 /// L4/L5: a reporter can create and read only their own reports — ops-side

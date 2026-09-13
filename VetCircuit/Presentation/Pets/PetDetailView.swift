@@ -151,6 +151,7 @@ struct PetDetailView: View {
                 }
 
                 documentVaultLink.appearAnimation(delay: 0.22)
+                labTestReportsLink.appearAnimation(delay: 0.22)
 
                 Button {
                     if let url = viewModel.generateHealthSummaryFile() {
@@ -369,6 +370,24 @@ struct PetDetailView: View {
             Card {
                 HStack {
                     Label("Document vault", systemImage: "doc.text.fill")
+                        .font(.brandHeadline).foregroundStyle(Theme.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Lab test reports (K6)
+
+    private var labTestReportsLink: some View {
+        NavigationLink {
+            LabTestReportsView(petId: viewModel.pet.id, visitId: nil)
+        } label: {
+            Card {
+                HStack {
+                    Label("Lab test reports", systemImage: "cross.vial.fill")
                         .font(.brandHeadline).foregroundStyle(Theme.primary)
                     Spacer()
                     Image(systemName: "chevron.right").foregroundStyle(.secondary)

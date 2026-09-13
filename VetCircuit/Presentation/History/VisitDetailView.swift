@@ -169,6 +169,17 @@ struct VisitDetailView: View {
                 .buttonStyle(PressableStyle())
                 .appearAnimation(delay: 0.1)
 
+                // K6: always reachable from a visit's detail page — the view
+                // itself renders an empty state when this pet has no lab
+                // test reports (most visits won't).
+                NavigationLink {
+                    LabTestReportsView(petId: visit.petId, visitId: visit.id)
+                } label: {
+                    ActionRow(title: "Lab test reports", systemImage: "cross.vial.fill", tint: Theme.accent)
+                }
+                .buttonStyle(PressableStyle())
+                .appearAnimation(delay: 0.1)
+
                 // L5: safety-specific, separate from "Report a problem with
                 // this visit" below (a billing/service dispute) — see the
                 // doc comment on IncidentReport. Available at any visit
