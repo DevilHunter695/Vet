@@ -167,7 +167,7 @@ struct BookingConfirmedView: View {
                     withAnimation(.easeOut(duration: 0.9).delay(0.1)) { ringOpacity = 1 }
                 }
 
-                Text("Booking requested!").font(.brandTitle)
+                Text("Booking requested!").font(.brandTitle).brandDisplayText()
                 Text("We'll notify you once the vet confirms your slot.")
                     .font(.brandBody)
                     .foregroundStyle(.secondary)

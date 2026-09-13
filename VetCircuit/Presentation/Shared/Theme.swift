@@ -53,6 +53,15 @@ extension Font {
     static let brandCaption = Font.system(.caption, design: .rounded, weight: .medium)
 }
 
+extension View {
+    /// Apple's typography guidance: tracking is size-specific, never one
+    /// fixed value. Large display text reads too loose at full tracking, so
+    /// tighten it as size grows; leave body/caption text near zero.
+    func brandDisplayText() -> some View {
+        self.tracking(-0.5)
+    }
+}
+
 // MARK: - Press animation modifier — subtle scale + shadow lift on tap
 
 struct PressableStyle: ButtonStyle {

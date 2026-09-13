@@ -75,7 +75,7 @@ struct ProfileView: View {
                         HStack(spacing: 14) {
                             PawMascot(size: 56, animated: false)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(user.name).font(.brandTitle)
+                                Text(user.name).font(.brandTitle).brandDisplayText()
                                 if let phone = user.phone {
                                     Text(phone).font(.brandCaption).foregroundStyle(.secondary)
                                 }

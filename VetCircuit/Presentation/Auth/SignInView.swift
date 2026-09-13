@@ -83,6 +83,7 @@ struct SignInView: View {
 
                         Text("VetCircuit")
                             .font(.brandLargeTitle)
+                            .brandDisplayText()
                             .foregroundStyle(.white)
                             .appearAnimation(delay: 0.05)
 

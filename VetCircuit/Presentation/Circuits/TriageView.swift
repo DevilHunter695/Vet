@@ -36,7 +36,7 @@ struct TriageView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 10) {
                         PawMascot(size: 44, animated: false)
-                        Text("Tell us what's going on").font(.brandTitle)
+                        Text("Tell us what's going on").font(.brandTitle).brandDisplayText()
                     }
                     Text("This isn't a diagnosis — it helps us point you to the right next step.")
                         .font(.brandBody)
