@@ -698,3 +698,22 @@ enum MockData {
         ),
     ]
 }
+
+actor MockNotificationPreferencesRepository: NotificationPreferencesRepository {
+    private var stored: [UUID: NotificationPreferences] = [:]
+
+    func preferences(userId: UUID) async throws -> NotificationPreferences {
+        stored[userId] ?? NotificationPreferences(userId: userId)
+    }
+
+    func save(_ preferences: NotificationPreferences) async throws -> NotificationPreferences {
+        stored[preferences.userId] = preferences
+        return preferences
+    }
+}
+
+actor MockAppConfigRepository: AppConfigRepository {
+    var config = RemoteAppConfig(minSupportedVersion: "1.0", isMaintenanceMode: false, maintenanceMessage: nil)
+
+    func fetchConfig() async throws -> RemoteAppConfig { config }
+}
