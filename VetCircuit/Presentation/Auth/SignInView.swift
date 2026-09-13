@@ -1,5 +1,4 @@
 import SwiftUI
-import AuthenticationServices
 
 @Observable
 @MainActor
@@ -40,26 +39,6 @@ final class SignInViewModel {
         }
     }
 
-    func handleAppleSignIn(result: Result<ASAuthorization, Error>) async -> User? {
-        switch result {
-        case .failure(let error):
-            errorMessage = error.localizedDescription
-            return nil
-        case .success(let authorization):
-            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
-                  let tokenData = credential.identityToken,
-                  let token = String(data: tokenData, encoding: .utf8) else {
-                errorMessage = "Apple sign-in failed."
-                return nil
-            }
-            do {
-                return try await authRepository.signInWithApple(identityToken: token, nonce: UUID().uuidString)
-            } catch {
-                errorMessage = error.localizedDescription
-                return nil
-            }
-        }
-    }
 }
 
 struct SignInView: View {
@@ -97,26 +76,6 @@ struct SignInView: View {
                     Spacer(minLength: 32)
 
                     VStack(spacing: 14) {
-                        SignInWithAppleButton(.signIn) { request in
-                            request.requestedScopes = [.fullName]
-                        } onCompletion: { result in
-                            Task {
-                                if let user = await viewModel.handleAppleSignIn(result: result) {
-                                    Haptics.success(); withAnimation(Theme.springSoft) { session.currentUser = user }
-                                }
-                            }
-                        }
-                        .signInWithAppleButtonStyle(.white)
-                        .frame(height: 52)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-                        HStack {
-                            Rectangle().fill(.white.opacity(0.25)).frame(height: 1)
-                            Text("or").font(.brandCaption).foregroundStyle(.white.opacity(0.7))
-                            Rectangle().fill(.white.opacity(0.25)).frame(height: 1)
-                        }
-                        .padding(.vertical, 2)
-
                         VStack(spacing: 12) {
                             TextField("", text: $viewModel.phone, prompt: Text("Phone number").foregroundStyle(.white.opacity(0.6)))
                                 .keyboardType(.phonePad)

@@ -26,11 +26,6 @@ targets:
       path: VetCircuit/Resources/Info.plist
       properties:
         UILaunchScreen: {}
-    entitlements:
-      path: VetCircuit/VetCircuit.entitlements
-      properties:
-        com.apple.developer.applesignin:
-          - Default
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.vetcircuit.app
