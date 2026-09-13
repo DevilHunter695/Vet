@@ -25,6 +25,8 @@ final class DependencyContainer {
     let slotHoldRepository: SlotHoldRepository
     let cartRepository: CartRepository
     let quoteRepository: QuoteRepository
+    let refundRepository: RefundRepository
+    let invoiceRepository: InvoiceRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -48,13 +50,16 @@ final class DependencyContainer {
         self.slotHoldRepository = MockSlotHoldRepository()
         self.cartRepository = MockCartRepository()
         self.quoteRepository = MockQuoteRepository()
+        self.refundRepository = MockRefundRepository()
+        self.invoiceRepository = MockInvoiceRepository()
     }
 
     // MARK: Use case factories
 
     func getCircuitsUseCase() -> GetCircuitsUseCase { GetCircuitsUseCase(repository: circuitRepository) }
     func bookVisitUseCase() -> BookVisitUseCase { BookVisitUseCase(visitRepository: visitRepository) }
-    func cancelVisitUseCase() -> CancelVisitUseCase { CancelVisitUseCase(visitRepository: visitRepository) }
+    func cancelVisitUseCase() -> CancelVisitUseCase { CancelVisitUseCase(visitRepository: visitRepository, refundRepository: refundRepository) }
+    func rescheduleVisitUseCase() -> RescheduleVisitUseCase { RescheduleVisitUseCase(visitRepository: visitRepository) }
     func getVisitHistoryUseCase() -> GetVisitHistoryUseCase { GetVisitHistoryUseCase(visitRepository: visitRepository) }
     func subscribeToPlanUseCase() -> SubscribeToPlanUseCase {
         SubscribeToPlanUseCase(subscriptionRepository: subscriptionRepository, paymentRepository: paymentRepository)

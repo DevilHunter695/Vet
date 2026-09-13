@@ -244,6 +244,61 @@ struct Address: Identifiable, Codable, Equatable, Hashable {
     var isServed: Bool { clusterArea != nil }
 }
 
+// MARK: - Cancellation policy, refunds & invoices (plan §F4, §G4-G5)
+
+/// F4: cancellation policy as code, not a support-team judgment call —
+/// free >4h before the slot, 50% refund <4h, 100% charged on no-show.
+struct CancellationPolicy {
+    static let freeWindowHours: Double = 4
+
+    struct Outcome: Equatable {
+        var refundPercent: Int       // 0, 50, or 100
+        var refundMinorUnits: Int
+        var paidMinorUnits: Int
+        var isPastVisitTime: Bool    // UI copy differs for "too late" vs. "within the fee window"
+    }
+
+    /// `paidMinorUnits` is what was actually charged for the visit; `now`
+    /// is injected for testability rather than reading `Date()` inline.
+    /// Presentation formats `Outcome` into the plan §9 rule-3 copy
+    /// ("Cancelling now refunds ₹X of ₹Y") — domain stays framework-free.
+    static func evaluate(scheduledAt: Date, paidMinorUnits: Int, now: Date = .now) -> Outcome {
+        let hoursUntilVisit = scheduledAt.timeIntervalSince(now) / 3600
+        if hoursUntilVisit >= freeWindowHours {
+            return Outcome(refundPercent: 100, refundMinorUnits: paidMinorUnits, paidMinorUnits: paidMinorUnits, isPastVisitTime: false)
+        } else if hoursUntilVisit >= 0 {
+            let refund = paidMinorUnits / 2
+            return Outcome(refundPercent: 50, refundMinorUnits: refund, paidMinorUnits: paidMinorUnits, isPastVisitTime: false)
+        } else {
+            return Outcome(refundPercent: 0, refundMinorUnits: 0, paidMinorUnits: paidMinorUnits, isPastVisitTime: true)
+        }
+    }
+}
+
+struct Refund: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var visitId: UUID
+    var paymentId: UUID
+    var amountMinorUnits: Int
+    var reason: String
+    var status: Status
+    var createdAt: Date
+    var initiatedByOpsUserId: UUID? // nil = automatic per-policy refund; set = ops-initiated
+
+    enum Status: String, Codable {
+        case pending, processed, failed
+    }
+}
+
+struct Invoice: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var visitId: UUID
+    var invoiceNumber: String  // sequential, GST-compliant numbering (plan §G5)
+    var breakdown: PriceBreakdown
+    var gstMinorUnits: Int
+    var issuedAt: Date
+}
+
 // MARK: - Cart, pricing & checkout (plan §E) — a server-authoritative quote
 // is the only thing an order may ever reference; the client never computes
 // a rupee (Appendix C).

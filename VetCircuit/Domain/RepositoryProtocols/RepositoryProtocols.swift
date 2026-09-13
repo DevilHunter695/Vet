@@ -25,6 +25,24 @@ protocol VisitRepository: Sendable {
     func visit(id: UUID) async throws -> Visit
     func updateStatus(visitId: UUID, status: Visit.VisitStatus) async throws -> Visit
     func cancelVisit(visitId: UUID) async throws
+    /// F3: reschedule to a new slot — the visit keeps its identity (history,
+    /// chat thread) rather than being cancelled and rebooked.
+    func rescheduleVisit(visitId: UUID, newSlot: ScheduleSlot) async throws -> Visit
+    /// The amount actually paid for this visit, needed to compute a refund.
+    func paidAmountMinorUnits(visitId: UUID) async throws -> Int
+}
+
+protocol RefundRepository: Sendable {
+    /// G4: refunds tracked to the gateway. Ops-initiated refunds pass a
+    /// non-nil `initiatedByOpsUserId`; a policy-driven cancellation refund
+    /// passes nil (automatic).
+    func issueRefund(visitId: UUID, paymentId: UUID, amountMinorUnits: Int, reason: String, initiatedByOpsUserId: UUID?) async throws -> Refund
+    func refunds(visitId: UUID) async throws -> [Refund]
+}
+
+protocol InvoiceRepository: Sendable {
+    /// G5: GST-compliant invoice per order, generated once a visit completes.
+    func invoice(visitId: UUID) async throws -> Invoice?
 }
 
 protocol SubscriptionRepository: Sendable {

@@ -92,29 +92,116 @@ struct BookVisitUseCaseTests {
     }
 }
 
+@Suite("CancellationPolicy")
+struct CancellationPolicyTests {
+    @Test("free full refund more than 4 hours before the visit")
+    func freeBeforeWindow() {
+        let scheduledAt = Date().addingTimeInterval(5 * 3600)
+        let outcome = CancellationPolicy.evaluate(scheduledAt: scheduledAt, paidMinorUnits: 60_000)
+        #expect(outcome.refundPercent == 100)
+        #expect(outcome.refundMinorUnits == 60_000)
+        #expect(!outcome.isPastVisitTime)
+    }
+
+    @Test("50% refund inside the 4-hour window")
+    func halfRefundInsideWindow() {
+        let scheduledAt = Date().addingTimeInterval(2 * 3600)
+        let outcome = CancellationPolicy.evaluate(scheduledAt: scheduledAt, paidMinorUnits: 60_000)
+        #expect(outcome.refundPercent == 50)
+        #expect(outcome.refundMinorUnits == 30_000)
+    }
+
+    @Test("no refund once the visit's scheduled time has passed")
+    func noRefundAfterVisitTime() {
+        let scheduledAt = Date().addingTimeInterval(-3600)
+        let outcome = CancellationPolicy.evaluate(scheduledAt: scheduledAt, paidMinorUnits: 60_000)
+        #expect(outcome.refundPercent == 0)
+        #expect(outcome.isPastVisitTime)
+    }
+}
+
 @Suite("CancelVisitUseCase")
 struct CancelVisitUseCaseTests {
-    @Test("allows cancelling a requested visit")
-    func cancelsRequested() async throws {
-        let repo = MockVisitRepository()
-        let visit = try await repo.createVisit(
+    @Test("allows cancelling a requested visit and issues the policy-computed refund")
+    func cancelsRequestedAndRefunds() async throws {
+        let visitRepo = MockVisitRepository()
+        let refundRepo = MockRefundRepository()
+        let visit = try await visitRepo.createVisit(
             petId: UUID(), vetId: UUID(), circuitId: UUID(),
-            slot: ScheduleSlot(id: UUID(), dayOfWeek: 1, startTime: .now.addingTimeInterval(3600), endTime: .now.addingTimeInterval(7200), capacity: 3, bookedCount: 0),
+            slot: ScheduleSlot(id: UUID(), dayOfWeek: 1, startTime: .now.addingTimeInterval(3600 * 6), endTime: .now.addingTimeInterval(7200), capacity: 3, bookedCount: 0),
             idempotencyKey: UUID().uuidString
         )
-        let useCase = CancelVisitUseCase(visitRepository: repo)
-        try await useCase.execute(visitId: visit.id, currentStatus: .requested)
-        let updated = try await repo.visit(id: visit.id)
+        let useCase = CancelVisitUseCase(visitRepository: visitRepo, refundRepository: refundRepo)
+        let outcome = try await useCase.execute(visitId: visit.id, currentStatus: .requested, scheduledAt: visit.scheduledAt, paymentId: UUID())
+
+        let updated = try await visitRepo.visit(id: visit.id)
         #expect(updated.status == .cancelled)
+        #expect(outcome.refundPercent == 100)
+        let refunds = try await refundRepo.refunds(visitId: visit.id)
+        #expect(refunds.count == 1)
     }
 
     @Test("refuses to cancel a completed visit")
     func refusesCompletedCancel() async {
-        let repo = MockVisitRepository()
-        let useCase = CancelVisitUseCase(visitRepository: repo)
+        let useCase = CancelVisitUseCase(visitRepository: MockVisitRepository(), refundRepository: MockRefundRepository())
         await #expect(throws: DomainError.self) {
-            try await useCase.execute(visitId: UUID(), currentStatus: .completed)
+            _ = try await useCase.execute(visitId: UUID(), currentStatus: .completed, scheduledAt: .now, paymentId: nil)
         }
+    }
+
+    @Test("issues no refund when there's no associated payment, even with a full-refund outcome")
+    func noRefundWithoutPayment() async throws {
+        let visitRepo = MockVisitRepository()
+        let refundRepo = MockRefundRepository()
+        let visit = try await visitRepo.createVisit(
+            petId: UUID(), vetId: UUID(), circuitId: UUID(),
+            slot: ScheduleSlot(id: UUID(), dayOfWeek: 1, startTime: .now.addingTimeInterval(3600 * 6), endTime: .now.addingTimeInterval(7200), capacity: 3, bookedCount: 0),
+            idempotencyKey: UUID().uuidString
+        )
+        let useCase = CancelVisitUseCase(visitRepository: visitRepo, refundRepository: refundRepo)
+        _ = try await useCase.execute(visitId: visit.id, currentStatus: .requested, scheduledAt: visit.scheduledAt, paymentId: nil)
+        let refunds = try await refundRepo.refunds(visitId: visit.id)
+        #expect(refunds.isEmpty)
+    }
+}
+
+@Suite("RescheduleVisitUseCase")
+struct RescheduleVisitUseCaseTests {
+    @Test("rejects rescheduling inside the 4-hour policy window")
+    func rejectsInsideWindow() async {
+        let repo = MockVisitRepository()
+        let useCase = RescheduleVisitUseCase(visitRepository: repo)
+        let newSlot = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(86_400), endTime: .now.addingTimeInterval(90_000), capacity: 3, bookedCount: 0)
+
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(visitId: UUID(), currentScheduledAt: .now.addingTimeInterval(3600), newSlot: newSlot)
+        }
+    }
+
+    @Test("rejects rescheduling onto a full slot")
+    func rejectsFullNewSlot() async {
+        let repo = MockVisitRepository()
+        let useCase = RescheduleVisitUseCase(visitRepository: repo)
+        let fullSlot = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(86_400), endTime: .now.addingTimeInterval(90_000), capacity: 1, bookedCount: 1)
+
+        await #expect(throws: DomainError.slotUnavailable) {
+            _ = try await useCase.execute(visitId: UUID(), currentScheduledAt: .now.addingTimeInterval(3600 * 10), newSlot: fullSlot)
+        }
+    }
+
+    @Test("reschedules to a valid future slot outside the policy window")
+    func reschedulesValidSlot() async throws {
+        let repo = MockVisitRepository()
+        let visit = try await repo.createVisit(
+            petId: UUID(), vetId: UUID(), circuitId: UUID(),
+            slot: ScheduleSlot(id: UUID(), dayOfWeek: 1, startTime: .now.addingTimeInterval(86_400), endTime: .now.addingTimeInterval(90_000), capacity: 3, bookedCount: 0),
+            idempotencyKey: UUID().uuidString
+        )
+        let useCase = RescheduleVisitUseCase(visitRepository: repo)
+        let newSlot = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(172_800), endTime: .now.addingTimeInterval(176_400), capacity: 3, bookedCount: 0)
+
+        let rescheduled = try await useCase.execute(visitId: visit.id, currentScheduledAt: visit.scheduledAt, newSlot: newSlot)
+        #expect(rescheduled.scheduledAt == newSlot.startTime)
     }
 }
 

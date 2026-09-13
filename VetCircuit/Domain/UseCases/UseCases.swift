@@ -32,12 +32,51 @@ struct BookVisitUseCase {
 
 struct CancelVisitUseCase {
     let visitRepository: VisitRepository
+    let refundRepository: RefundRepository
 
-    func execute(visitId: UUID, currentStatus: Visit.VisitStatus) async throws {
+    /// F4 + G4: cancellation policy as code — free >4h, 50% <4h, 100% charged
+    /// on no-show — and the refund it implies is issued in the same call,
+    /// never left as a manual follow-up.
+    @discardableResult
+    func execute(visitId: UUID, currentStatus: Visit.VisitStatus, scheduledAt: Date, paymentId: UUID?) async throws -> CancellationPolicy.Outcome {
         guard currentStatus == .requested || currentStatus == .confirmed else {
             throw DomainError.validation("This visit can no longer be cancelled.")
         }
+        let paidMinorUnits = try await visitRepository.paidAmountMinorUnits(visitId: visitId)
+        let outcome = CancellationPolicy.evaluate(scheduledAt: scheduledAt, paidMinorUnits: paidMinorUnits)
         try await visitRepository.cancelVisit(visitId: visitId)
+        if outcome.refundMinorUnits > 0, let paymentId {
+            _ = try await refundRepository.issueRefund(
+                visitId: visitId, paymentId: paymentId, amountMinorUnits: outcome.refundMinorUnits,
+                reason: "Customer cancellation", initiatedByOpsUserId: nil
+            )
+        }
+        return outcome
+    }
+
+    /// Lets the UI show "Cancelling now refunds ₹X of ₹Y" (plan §9 rule 3)
+    /// *before* the customer commits, without duplicating the policy logic.
+    func preview(visitId: UUID, scheduledAt: Date) async throws -> CancellationPolicy.Outcome {
+        let paidMinorUnits = try await visitRepository.paidAmountMinorUnits(visitId: visitId)
+        return CancellationPolicy.evaluate(scheduledAt: scheduledAt, paidMinorUnits: paidMinorUnits)
+    }
+}
+
+struct RescheduleVisitUseCase {
+    let visitRepository: VisitRepository
+
+    /// F3: reschedule with the same policy window as cancellation — inside
+    /// 4 hours of the original slot, a reschedule isn't allowed (it would
+    /// otherwise be a way to dodge the cancellation fee).
+    func execute(visitId: UUID, currentScheduledAt: Date, newSlot: ScheduleSlot, now: Date = .now) async throws -> Visit {
+        let hoursUntilVisit = currentScheduledAt.timeIntervalSince(now) / 3600
+        guard hoursUntilVisit >= CancellationPolicy.freeWindowHours else {
+            throw DomainError.validation("This visit is too close to reschedule — cancelling now follows the cancellation policy instead.")
+        }
+        guard newSlot.isAvailable, newSlot.startTime > now else {
+            throw DomainError.slotUnavailable
+        }
+        return try await visitRepository.rescheduleVisit(visitId: visitId, newSlot: newSlot)
     }
 }
 

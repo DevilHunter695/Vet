@@ -289,6 +289,60 @@ final class SupabaseVisitRepository: VisitRepository {
         try await client.from("visits").update(["status": Visit.VisitStatus.cancelled.rawValue])
             .eq("id", value: visitId).execute()
     }
+
+    func rescheduleVisit(visitId: UUID, newSlot: ScheduleSlot) async throws -> Visit {
+        let rows: [SupabaseVisitRow] = try await client
+            .from("visits")
+            .update(["scheduled_at": ISO8601DateFormatter().string(from: newSlot.startTime)])
+            .eq("id", value: visitId).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Visit") }
+        return row.toDomain()
+    }
+
+    func paidAmountMinorUnits(visitId: UUID) async throws -> Int {
+        struct AmountRow: Decodable { let amountMinorUnits: Int
+            enum CodingKeys: String, CodingKey { case amountMinorUnits = "amount_minor_units" } }
+        let rows: [AmountRow] = try await client.from("payments").select("amount_minor_units").eq("visit_id", value: visitId).execute().value
+        return rows.first?.amountMinorUnits ?? 0
+    }
+}
+
+final class SupabaseRefundRepository: RefundRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func issueRefund(visitId: UUID, paymentId: UUID, amountMinorUnits: Int, reason: String, initiatedByOpsUserId: UUID?) async throws -> Refund {
+        // Real refund issuance calls the gateway (Razorpay refund API) from a
+        // trusted Edge Function, then writes this row — the client only ever
+        // triggers the request and reads the result, per plan §6.2.
+        struct Insert: Encodable {
+            let visitId: UUID, paymentId: UUID, amountMinorUnits: Int, reason: String, initiatedByOpsUserId: UUID?
+            enum CodingKeys: String, CodingKey {
+                case visitId = "visit_id", paymentId = "payment_id", amountMinorUnits = "amount_minor_units"
+                case reason, initiatedByOpsUserId = "initiated_by_ops_user_id"
+            }
+        }
+        let rows: [SupabaseRefundRow] = try await client.from("refunds")
+            .insert(Insert(visitId: visitId, paymentId: paymentId, amountMinorUnits: amountMinorUnits, reason: reason, initiatedByOpsUserId: initiatedByOpsUserId))
+            .select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func refunds(visitId: UUID) async throws -> [Refund] {
+        let rows: [SupabaseRefundRow] = try await client.from("refunds").select().eq("visit_id", value: visitId).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+final class SupabaseInvoiceRepository: InvoiceRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func invoice(visitId: UUID) async throws -> Invoice? {
+        let rows: [SupabaseInvoiceRow] = try await client.from("invoices").select().eq("visit_id", value: visitId).execute().value
+        return rows.first?.toDomain()
+    }
 }
 
 // Row DTOs matching the Postgres schema (backend/supabase/migrations).
@@ -335,6 +389,47 @@ private struct SupabaseCircuitRow: Decodable {
     func toDomain() -> Circuit {
         Circuit(id: id, vetId: vetId, vet: vet?.toDomain(), clusterArea: clusterArea,
                 schedule: (schedule ?? []).map { $0.toDomain() }, vertical: Vertical(rawValue: vertical) ?? .vet)
+    }
+}
+
+private struct SupabaseRefundRow: Decodable {
+    let id: UUID
+    let visitId: UUID
+    let paymentId: UUID
+    let amountMinorUnits: Int
+    let reason: String
+    let status: String
+    let createdAt: Date
+    let initiatedByOpsUserId: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case id, reason, status
+        case visitId = "visit_id", paymentId = "payment_id", amountMinorUnits = "amount_minor_units"
+        case createdAt = "created_at", initiatedByOpsUserId = "initiated_by_ops_user_id"
+    }
+
+    func toDomain() -> Refund {
+        Refund(id: id, visitId: visitId, paymentId: paymentId, amountMinorUnits: amountMinorUnits,
+               reason: reason, status: Refund.Status(rawValue: status) ?? .pending, createdAt: createdAt,
+               initiatedByOpsUserId: initiatedByOpsUserId)
+    }
+}
+
+private struct SupabaseInvoiceRow: Decodable {
+    let id: UUID
+    let visitId: UUID
+    let invoiceNumber: String
+    let breakdown: PriceBreakdown
+    let gstMinorUnits: Int
+    let issuedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, breakdown
+        case visitId = "visit_id", invoiceNumber = "invoice_number", gstMinorUnits = "gst_minor_units", issuedAt = "issued_at"
+    }
+
+    func toDomain() -> Invoice {
+        Invoice(id: id, visitId: visitId, invoiceNumber: invoiceNumber, breakdown: breakdown, gstMinorUnits: gstMinorUnits, issuedAt: issuedAt)
     }
 }
 

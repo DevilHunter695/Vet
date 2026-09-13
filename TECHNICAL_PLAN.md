@@ -206,8 +206,8 @@ Service (Home consultation)
 |---|---|---|---|
 | F1 | Slot picker from circuit schedule (7–14 day horizon) | P0 | ✅ |
 | F2 | Capacity per slot (N stops per block), not boolean availability | **P0** | ✅ |
-| F3 | **Reschedule** (with policy window) | **P0** | ⛔ |
-| F4 | **Cancel** with policy: free >4h, 50% <4h, 100% no-show | **P0** | 🔨 (cancel exists; no policy/refund) |
+| F3 | **Reschedule** (with policy window) | **P0** | ✅ |
+| F4 | **Cancel** with policy: free >4h, 50% <4h, 100% no-show | **P0** | 🔨 (policy + refund now wired; no-show detection still manual) |
 | F5 | Recurring bookings (monthly deworming, weekly physio) | P1 | ⛔ |
 | F6 | Vet-initiated reschedule + customer accept/decline + auto-compensation credit | P1 | ⛔ |
 | F7 | Customer no-show & vet no-show handling, both directions | P1 | ⛔ |
@@ -221,8 +221,8 @@ Service (Home consultation)
 | G1 | Hosted checkout (Razorpay), **never raw card data** | P0 | ✅ | PCI scope avoided by construction |
 | G2 | **Webhook-only confirmation**, signature-verified, idempotent | P0 | ✅ | Already in `payment-webhook` — keep this discipline everywhere |
 | G3 | Payment retry on failure + clear failure states | P0 | 🔨 | |
-| G4 | **Refunds** (full/partial), initiated by ops, tracked to gateway | **P0** | ⛔ | You cannot launch without a refund path |
-| G5 | GST-compliant invoice PDF per order | **P0** | ⛔ | Legal requirement once registered |
+| G4 | **Refunds** (full/partial), initiated by ops, tracked to gateway | **P0** | 🔨 | You cannot launch without a refund path |
+| G5 | GST-compliant invoice PDF per order | **P0** | 🔨 | Legal requirement once registered |
 | G6 | Wallet + double-entry ledger | P1 | ⛔ | Credits, compensation, refund-to-wallet |
 | G7 | **Vet payouts**: earnings view, weekly payout run, reconciliation | **P0 (partner)** | ⛔ | Vets quit over late/unclear pay faster than over anything else |
 | G8 | Daily reconciliation job: gateway settlements vs your ledger | P1 | ⛔ | |

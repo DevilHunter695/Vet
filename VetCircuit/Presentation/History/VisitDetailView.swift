@@ -3,6 +3,7 @@ import SwiftUI
 struct VisitDetailView: View {
     let visit: Visit
     @State private var showingReview = false
+    @State private var showingReschedule = false
     @State private var callURL: URL?
     @State private var callErrorMessage: String?
 
@@ -34,6 +35,17 @@ struct VisitDetailView: View {
                     }
                     .buttonStyle(PressableStyle())
                     .appearAnimation(delay: 0.05)
+                }
+
+                if visit.status == .requested || visit.status == .confirmed {
+                    Button {
+                        Haptics.tap()
+                        showingReschedule = true
+                    } label: {
+                        ActionRow(title: "Reschedule this visit", systemImage: "calendar.badge.clock", tint: Theme.primary)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .appearAnimation(delay: 0.03)
                 }
 
                 if let notes = visit.notes, !notes.isEmpty {
@@ -89,6 +101,9 @@ struct VisitDetailView: View {
         }
         .sheet(item: $callURL) { url in
             CheckoutWebView(url: url)
+        }
+        .sheet(isPresented: $showingReschedule) {
+            RescheduleVisitView(visit: visit)
         }
     }
 }

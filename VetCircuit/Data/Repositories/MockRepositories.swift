@@ -227,6 +227,37 @@ actor MockVisitRepository: VisitRepository {
         guard let index = visits.firstIndex(where: { $0.id == visitId }) else { throw DomainError.notFound("Visit") }
         visits[index].status = .cancelled
     }
+
+    func rescheduleVisit(visitId: UUID, newSlot: ScheduleSlot) async throws -> Visit {
+        guard let index = visits.firstIndex(where: { $0.id == visitId }) else { throw DomainError.notFound("Visit") }
+        visits[index].scheduledAt = newSlot.startTime
+        return visits[index]
+    }
+
+    func paidAmountMinorUnits(visitId: UUID) async throws -> Int {
+        // Mock visits don't carry a real payment row; stand in with a
+        // representative consult price so the policy math has something to work with.
+        59_900
+    }
+}
+
+actor MockRefundRepository: RefundRepository {
+    private var refunds: [Refund] = []
+
+    func issueRefund(visitId: UUID, paymentId: UUID, amountMinorUnits: Int, reason: String, initiatedByOpsUserId: UUID?) async throws -> Refund {
+        let refund = Refund(id: UUID(), visitId: visitId, paymentId: paymentId, amountMinorUnits: amountMinorUnits,
+                             reason: reason, status: .processed, createdAt: .now, initiatedByOpsUserId: initiatedByOpsUserId)
+        refunds.append(refund)
+        return refund
+    }
+
+    func refunds(visitId: UUID) async throws -> [Refund] {
+        refunds.filter { $0.visitId == visitId }
+    }
+}
+
+actor MockInvoiceRepository: InvoiceRepository {
+    func invoice(visitId: UUID) async throws -> Invoice? { nil }
 }
 
 actor MockSubscriptionRepository: SubscriptionRepository {
