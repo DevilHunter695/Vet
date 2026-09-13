@@ -1025,3 +1025,155 @@ struct DunningPolicyTests {
         #expect(!DunningPolicy.shouldAutoDowngrade(state: state, now: .now.addingTimeInterval(86400 * 30)))
     }
 }
+
+// MARK: - Pet health records (plan §3 B, §3 K)
+
+@Suite("VaccinationPolicy & Vaccination due status")
+struct VaccinationPolicyTests {
+    @Test("suggests a next due date 12 months out by default")
+    func annualBoosterDefault() {
+        let given = Date(timeIntervalSince1970: 0)
+        let nextDue = VaccinationPolicy.suggestedNextDueDate(givenAt: given)
+        let expected = Calendar.current.date(byAdding: .month, value: 12, to: given)!
+        #expect(nextDue == expected)
+    }
+
+    @Test("a vaccination well in the future is up to date")
+    func upToDate() {
+        let vaccination = Vaccination(id: UUID(), petId: UUID(), vaccineName: "Rabies",
+                                       givenAt: .now, nextDueAt: .now.addingTimeInterval(86400 * 200))
+        #expect(vaccination.dueStatus() == .upToDate)
+    }
+
+    @Test("a vaccination due within 30 days is flagged due-soon, not overdue")
+    func dueSoon() {
+        let vaccination = Vaccination(id: UUID(), petId: UUID(), vaccineName: "Rabies",
+                                       givenAt: .now, nextDueAt: .now.addingTimeInterval(86400 * 10))
+        #expect(vaccination.dueStatus() == .dueSoon)
+    }
+
+    @Test("a vaccination past its due date is overdue")
+    func overdue() {
+        let vaccination = Vaccination(id: UUID(), petId: UUID(), vaccineName: "Rabies",
+                                       givenAt: .now.addingTimeInterval(-86400 * 400), nextDueAt: .now.addingTimeInterval(-86400))
+        #expect(vaccination.dueStatus() == .overdue)
+    }
+}
+
+@Suite("ManageVaccinationsUseCase")
+struct ManageVaccinationsUseCaseTests {
+    @Test("recording a vaccination auto-populates a suggested next-due date (K4)")
+    func recordGivenAutoSchedulesNextDue() async throws {
+        let repo = MockVaccinationRepository()
+        let useCase = ManageVaccinationsUseCase(repository: repo)
+        let petId = UUID()
+        let givenAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let vaccination = try await useCase.recordGiven(petId: petId, vaccineName: "Rabies", givenAt: givenAt, batchNumber: "B-1", visitId: nil)
+
+        let expected = Calendar.current.date(byAdding: .month, value: 12, to: givenAt)!
+        #expect(vaccination.nextDueAt == expected)
+    }
+
+    @Test("nextActionable surfaces an overdue or due-soon vaccination, not an up-to-date one")
+    func nextActionableSkipsUpToDate() async throws {
+        let repo = MockVaccinationRepository()
+        let petId = UUID()
+        _ = try await repo.record(Vaccination(id: UUID(), petId: petId, vaccineName: "DHPPi",
+                                               givenAt: .now, nextDueAt: .now.addingTimeInterval(86400 * 300)))
+        let dueSoonVaccination = Vaccination(id: UUID(), petId: petId, vaccineName: "Rabies",
+                                              givenAt: .now, nextDueAt: .now.addingTimeInterval(86400 * 5))
+        _ = try await repo.record(dueSoonVaccination)
+
+        let useCase = ManageVaccinationsUseCase(repository: repo)
+        let actionable = try await useCase.nextActionable(petId: petId)
+        #expect(actionable?.vaccineName == "Rabies")
+    }
+}
+
+@Suite("ManagePetsUseCase archiving (B8)")
+struct ManagePetsArchiveTests {
+    @Test("archiving a pet excludes it from the default (booking-facing) list")
+    func archivedPetExcludedByDefault() async throws {
+        let repo = MockPetRepositoryForTests()
+        let ownerId = UUID()
+        let pet = Pet(id: UUID(), ownerId: ownerId, name: "Milo", species: .cat)
+        _ = try await repo.addPet(pet)
+        let useCase = ManagePetsUseCase(petRepository: repo)
+
+        _ = try await useCase.archive(pet, reason: .rehomed)
+
+        let activeList = try await useCase.list(ownerId: ownerId)
+        #expect(activeList.isEmpty)
+
+        let fullList = try await useCase.list(ownerId: ownerId, includeArchived: true)
+        #expect(fullList.count == 1)
+        #expect(fullList.first?.archiveReason == .rehomed)
+    }
+
+    @Test("unarchiving a pet returns it to the default list")
+    func unarchiveRestoresPet() async throws {
+        let repo = MockPetRepositoryForTests()
+        let ownerId = UUID()
+        let pet = Pet(id: UUID(), ownerId: ownerId, name: "Milo", species: .cat)
+        _ = try await repo.addPet(pet)
+        let useCase = ManagePetsUseCase(petRepository: repo)
+
+        let archived = try await useCase.archive(pet, reason: .deceased)
+        _ = try await useCase.unarchive(archived)
+
+        let activeList = try await useCase.list(ownerId: ownerId)
+        #expect(activeList.count == 1)
+        #expect(activeList.first?.isArchived == false)
+    }
+}
+
+/// A tiny in-memory `PetRepository` local to this test file — the app
+/// target's `MockPetRepository` seeds from `MockData.user.pets`, which isn't
+/// what these tests want to assert against.
+actor MockPetRepositoryForTests: PetRepository {
+    private var pets: [Pet] = []
+
+    func listPets(ownerId: UUID) async throws -> [Pet] { pets.filter { $0.ownerId == ownerId } }
+
+    func addPet(_ pet: Pet) async throws -> Pet {
+        pets.append(pet)
+        return pet
+    }
+
+    func updatePet(_ pet: Pet) async throws -> Pet {
+        guard let index = pets.firstIndex(where: { $0.id == pet.id }) else { throw DomainError.notFound("Pet") }
+        pets[index] = pet
+        return pet
+    }
+
+    func deletePet(id: UUID) async throws {
+        pets.removeAll { $0.id == id }
+    }
+}
+
+@Suite("FollowUpBookingPolicy (K5)")
+struct FollowUpBookingPolicyTests {
+    @Test("a visit completed within the window is eligible for a free follow-up")
+    func eligibleWithinWindow() {
+        let visit = Visit(id: UUID(), userId: UUID(), petId: UUID(), vetId: UUID(), circuitId: UUID(),
+                           status: .completed, scheduledAt: .now.addingTimeInterval(-86400 * 5),
+                           completedAt: .now.addingTimeInterval(-86400 * 5), notes: nil, paymentId: nil)
+        #expect(FollowUpBookingPolicy.isEligible(visit: visit))
+    }
+
+    @Test("a visit completed more than 14 days ago is not eligible")
+    func ineligibleOutsideWindow() {
+        let visit = Visit(id: UUID(), userId: UUID(), petId: UUID(), vetId: UUID(), circuitId: UUID(),
+                           status: .completed, scheduledAt: .now.addingTimeInterval(-86400 * 20),
+                           completedAt: .now.addingTimeInterval(-86400 * 20), notes: nil, paymentId: nil)
+        #expect(!FollowUpBookingPolicy.isEligible(visit: visit))
+    }
+
+    @Test("a visit that hasn't completed yet is never eligible")
+    func ineligibleWhenNotCompleted() {
+        let visit = Visit(id: UUID(), userId: UUID(), petId: UUID(), vetId: UUID(), circuitId: UUID(),
+                           status: .confirmed, scheduledAt: .now.addingTimeInterval(3600), completedAt: nil, notes: nil, paymentId: nil)
+        #expect(!FollowUpBookingPolicy.isEligible(visit: visit))
+    }
+}

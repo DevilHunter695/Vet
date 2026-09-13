@@ -217,6 +217,87 @@ final class SupabaseAddressRepository: AddressRepository {
     }
 }
 
+final class SupabasePetRepository: PetRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func listPets(ownerId: UUID) async throws -> [Pet] {
+        let rows: [SupabasePetRow] = try await client
+            .from("pets").select().eq("owner_id", value: ownerId).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func addPet(_ pet: Pet) async throws -> Pet {
+        let insert = SupabasePetInsert(pet: pet)
+        let rows: [SupabasePetRow] = try await client.from("pets").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func updatePet(_ pet: Pet) async throws -> Pet {
+        let insert = SupabasePetInsert(pet: pet)
+        let rows: [SupabasePetRow] = try await client
+            .from("pets").update(insert).eq("id", value: pet.id).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Pet") }
+        return row.toDomain()
+    }
+
+    func deletePet(id: UUID) async throws {
+        try await client.from("pets").delete().eq("id", value: id).execute()
+    }
+}
+
+/// B3: weight/vitals history.
+final class SupabasePetWeightRepository: PetWeightRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func history(petId: UUID) async throws -> [PetWeightEntry] {
+        let rows: [SupabasePetWeightRow] = try await client
+            .from("pet_weights").select().eq("pet_id", value: petId).order("recorded_at").execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func addEntry(_ entry: PetWeightEntry) async throws -> PetWeightEntry {
+        let insert = SupabasePetWeightInsert(entry: entry)
+        let rows: [SupabasePetWeightRow] = try await client.from("pet_weights").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+}
+
+/// B4 (P0): vaccination history + next-due reminders.
+final class SupabaseVaccinationRepository: VaccinationRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func history(petId: UUID) async throws -> [Vaccination] {
+        let rows: [SupabaseVaccinationRow] = try await client
+            .from("vaccinations").select().eq("pet_id", value: petId).order("next_due_at").execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func record(_ vaccination: Vaccination) async throws -> Vaccination {
+        let insert = SupabaseVaccinationInsert(vaccination: vaccination)
+        let rows: [SupabaseVaccinationRow] = try await client.from("vaccinations").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+}
+
+/// K2: prescription history — read-only from the client (see 0020's RLS: no
+/// insert/update policy, a vet/ops flow writes these).
+final class SupabasePrescriptionRepository: PrescriptionRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func history(petId: UUID) async throws -> [Prescription] {
+        let rows: [SupabasePrescriptionRow] = try await client
+            .from("prescriptions").select().eq("pet_id", value: petId).order("issued_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
 final class SupabaseCatalogRepository: CatalogRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
@@ -495,11 +576,158 @@ private struct SupabasePetRow: Decodable {
     let species: String
     let breed: String?
     let dob: Date?
+    let sex: String?
+    let isNeutered: Bool?
+    let weightKg: Double?
+    let microchipNumber: String?
+    let allergies: String?
+    let chronicConditions: String?
+    let archivedAt: Date?
+    let archiveReason: String?
 
-    enum CodingKeys: String, CodingKey { case id, ownerId = "owner_id", name, species, breed, dob }
+    enum CodingKeys: String, CodingKey {
+        case id, name, species, breed, dob, sex, allergies
+        case ownerId = "owner_id", isNeutered = "is_neutered", weightKg = "weight_kg"
+        case microchipNumber = "microchip_number", chronicConditions = "chronic_conditions"
+        case archivedAt = "archived_at", archiveReason = "archive_reason"
+    }
 
     func toDomain() -> Pet {
-        Pet(id: id, ownerId: ownerId, name: name, species: Pet.Species(rawValue: species) ?? .other, breed: breed, dateOfBirth: dob)
+        Pet(id: id, ownerId: ownerId, name: name, species: Pet.Species(rawValue: species) ?? .other, breed: breed, dateOfBirth: dob,
+            sex: sex.flatMap(Pet.Sex.init(rawValue:)), isNeutered: isNeutered, weightKg: weightKg,
+            microchipNumber: microchipNumber, allergies: allergies, chronicConditions: chronicConditions,
+            archivedAt: archivedAt, archiveReason: archiveReason.flatMap(Pet.ArchiveReason.init(rawValue:)))
+    }
+}
+
+private struct SupabasePetInsert: Encodable {
+    let ownerId: UUID
+    let name: String
+    let species: String
+    let breed: String?
+    let dob: Date?
+    let sex: String?
+    let isNeutered: Bool?
+    let weightKg: Double?
+    let microchipNumber: String?
+    let allergies: String?
+    let chronicConditions: String?
+    let archivedAt: Date?
+    let archiveReason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name, species, breed, dob, sex, allergies
+        case ownerId = "owner_id", isNeutered = "is_neutered", weightKg = "weight_kg"
+        case microchipNumber = "microchip_number", chronicConditions = "chronic_conditions"
+        case archivedAt = "archived_at", archiveReason = "archive_reason"
+    }
+
+    init(pet: Pet) {
+        ownerId = pet.ownerId
+        name = pet.name
+        species = pet.species.rawValue
+        breed = pet.breed
+        dob = pet.dateOfBirth
+        sex = pet.sex?.rawValue
+        isNeutered = pet.isNeutered
+        weightKg = pet.weightKg
+        microchipNumber = pet.microchipNumber
+        allergies = pet.allergies
+        chronicConditions = pet.chronicConditions
+        archivedAt = pet.archivedAt
+        archiveReason = pet.archiveReason?.rawValue
+    }
+}
+
+private struct SupabasePetWeightRow: Decodable {
+    let id: UUID
+    let petId: UUID
+    let weightKg: Double
+    let recordedAt: Date
+
+    enum CodingKeys: String, CodingKey { case id, petId = "pet_id", weightKg = "weight_kg", recordedAt = "recorded_at" }
+
+    func toDomain() -> PetWeightEntry { PetWeightEntry(id: id, petId: petId, weightKg: weightKg, recordedAt: recordedAt) }
+}
+
+private struct SupabasePetWeightInsert: Encodable {
+    let petId: UUID
+    let weightKg: Double
+    let recordedAt: Date
+
+    enum CodingKeys: String, CodingKey { case petId = "pet_id", weightKg = "weight_kg", recordedAt = "recorded_at" }
+
+    init(entry: PetWeightEntry) {
+        petId = entry.petId
+        weightKg = entry.weightKg
+        recordedAt = entry.recordedAt
+    }
+}
+
+private struct SupabaseVaccinationRow: Decodable {
+    let id: UUID
+    let petId: UUID
+    let vaccineName: String
+    let administeredAt: Date?
+    let nextDueAt: Date
+    let batchNumber: String?
+    let visitId: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case id, batchNumber = "batch_number"
+        case petId = "pet_id", vaccineName = "vaccine_name", administeredAt = "administered_at"
+        case nextDueAt = "next_due_at", visitId = "visit_id"
+    }
+
+    func toDomain() -> Vaccination {
+        Vaccination(id: id, petId: petId, vaccineName: vaccineName, givenAt: administeredAt,
+                    nextDueAt: nextDueAt, batchNumber: batchNumber, visitId: visitId)
+    }
+}
+
+private struct SupabaseVaccinationInsert: Encodable {
+    let petId: UUID
+    let vaccineName: String
+    let administeredAt: Date?
+    let nextDueAt: Date
+    let batchNumber: String?
+    let visitId: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case batchNumber = "batch_number"
+        case petId = "pet_id", vaccineName = "vaccine_name", administeredAt = "administered_at"
+        case nextDueAt = "next_due_at", visitId = "visit_id"
+    }
+
+    init(vaccination: Vaccination) {
+        petId = vaccination.petId
+        vaccineName = vaccination.vaccineName
+        administeredAt = vaccination.givenAt
+        nextDueAt = vaccination.nextDueAt
+        batchNumber = vaccination.batchNumber
+        visitId = vaccination.visitId
+    }
+}
+
+private struct SupabasePrescriptionRow: Decodable {
+    let id: UUID
+    let visitId: UUID
+    let petId: UUID
+    let prescribedByVetId: UUID
+    let medicationName: String
+    let dosage: String
+    let instructions: String?
+    let issuedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, dosage, instructions
+        case visitId = "visit_id", petId = "pet_id", prescribedByVetId = "prescribed_by_vet_id"
+        case medicationName = "medication_name", issuedAt = "issued_at"
+    }
+
+    func toDomain() -> Prescription {
+        Prescription(id: id, visitId: visitId, petId: petId, medicationName: medicationName, dosage: dosage,
+                     instructions: instructions, prescribedByVetId: prescribedByVetId, issuedAt: issuedAt)
     }
 }
 

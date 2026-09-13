@@ -18,10 +18,42 @@ struct Pet: Identifiable, Codable, Equatable, Hashable {
     var species: Species
     var breed: String?
     var dateOfBirth: Date?
+    // B2: the fields a real pet health record needs beyond "what is it" —
+    // sex/neuter status feed vaccination eligibility, weight/allergies matter
+    // to the vet before a visit even starts.
+    var sex: Sex? = nil
+    var isNeutered: Bool? = nil
+    var weightKg: Double? = nil
+    var microchipNumber: String? = nil
+    var allergies: String? = nil
+    var chronicConditions: String? = nil
+    // B8: soft-delete only — an archived pet's visit/vaccination/prescription
+    // history must stay intact, so this is a flag, never a row removal.
+    var archivedAt: Date? = nil
+    var archiveReason: ArchiveReason? = nil
 
     enum Species: String, Codable, CaseIterable {
         case dog, cat, bird, other
     }
+
+    enum Sex: String, Codable, CaseIterable {
+        case male, female, unknown
+    }
+
+    enum ArchiveReason: String, Codable, CaseIterable {
+        case deceased, rehomed, other
+
+        /// §B8: "handle with care in copy" — never the word "delete".
+        var displayName: String {
+            switch self {
+            case .deceased: return "Passed away"
+            case .rehomed: return "Rehomed"
+            case .other: return "No longer with you"
+            }
+        }
+    }
+
+    var isArchived: Bool { archivedAt != nil }
 }
 
 struct Vet: Identifiable, Codable, Equatable, Hashable {
@@ -805,6 +837,69 @@ struct AppNotification: Identifiable, Codable, Equatable, Hashable {
         case abandonedCart = "abandoned_cart"
         case promotion
     }
+}
+
+// MARK: - Pet health records (plan §3 B, §3 K)
+
+/// B3: one weight reading. A trend chart needs a series, not just the
+/// pet's latest weight — kept as its own table/model rather than overwriting
+/// `Pet.weightKg` on every entry.
+struct PetWeightEntry: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var petId: UUID
+    var weightKg: Double
+    var recordedAt: Date
+}
+
+/// B4 (P0) + K4: a vaccination given (or due). `nextDueAt` is what the N3
+/// lifecycle job reminds against — see `VaccinationPolicy` for how it gets
+/// computed rather than left for a human to guess.
+struct Vaccination: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var petId: UUID
+    var vaccineName: String
+    var givenAt: Date?
+    var nextDueAt: Date
+    var batchNumber: String?
+    var visitId: UUID? = nil
+
+    enum DueStatus { case upToDate, dueSoon, overdue }
+
+    /// Amber inside 30 days of due, red once past it — the thresholds the
+    /// history screen colors rows by.
+    static let dueSoonWindowDays = 30
+
+    func dueStatus(now: Date = .now) -> DueStatus {
+        if nextDueAt < now { return .overdue }
+        let daysUntilDue = Calendar.current.dateComponents([.day], from: now, to: nextDueAt).day ?? .max
+        return daysUntilDue <= Self.dueSoonWindowDays ? .dueSoon : .upToDate
+    }
+}
+
+/// K4's "auto-scheduling" is scoped to computing the next due date, not a
+/// calendar invite or a generated PDF certificate (known gap, see plan notes
+/// — same shape as A7's export-PDF gap).
+struct VaccinationPolicy {
+    /// Default annual-booster cadence; a real deployment would look this up
+    /// per vaccine (rabies vs. a puppy series differ) but every vaccine this
+    /// app catalogs today is an annual core/non-core shot.
+    static let defaultBoosterIntervalMonths = 12
+
+    static func suggestedNextDueDate(givenAt: Date, intervalMonths: Int = defaultBoosterIntervalMonths, calendar: Calendar = .current) -> Date {
+        calendar.date(byAdding: .month, value: intervalMonths, to: givenAt) ?? givenAt
+    }
+}
+
+/// K2: prescription issued at a completed visit.
+struct Prescription: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var visitId: UUID
+    var petId: UUID
+    var medicationName: String
+    var dosage: String
+    var instructions: String?
+    var prescribedByVetId: UUID
+    var issuedAt: Date
 }
 
 // MARK: - Domain errors

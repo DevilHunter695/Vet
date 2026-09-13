@@ -138,13 +138,13 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | # | Capability | Pri | Status | Notes |
 |---|---|---|---|---|
 | B1 | Multiple pets per household, add/**edit**/**delete**/archive | P0 | 🔨 | Delete = soft-delete; visit history must survive |
-| B2 | Pet detail screen: photo, species, breed, DOB, sex, neutered, weight, microchip, allergies, chronic conditions | P0 | 🔨 | Currently only name/species/breed/DOB |
-| B3 | Weight & vitals history (chart) | P1 | ⛔ | Strong retention hook |
-| B4 | Vaccination record + **next-due reminders** | **P0** | ⛔ | This is the single best repeat-purchase driver in pet care |
+| B2 | Pet detail screen: photo, species, breed, DOB, sex, neutered, weight, microchip, allergies, chronic conditions | P0 | 🔨 | `PetDetailView` built (no photo upload — known gap); fields live on `Pet` and edit in place |
+| B3 | Weight & vitals history (chart) | P1 | 🔨 | `pet_weights` table + `PetWeightRepository` + Swift Charts line chart in `PetDetailView`; vitals beyond weight (temp, HR) not modeled |
+| B4 | Vaccination record + **next-due reminders** | **P0** | 🔨 | Extends 0019's `vaccinations` table (batch number, visit link); `VaccinationPolicy` auto-computes next-due (+12mo) on record; history view color-codes overdue/due-soon with 1-tap "book vaccination visit" |
 | B5 | Prescription history | P1 | ⛔ | Must be vet-issued only (see §8.7) |
 | B6 | Document vault (upload prior reports, insurance) | P1 | ⛔ | Private bucket, signed URLs, virus scan |
 | B7 | Shareable pet health summary (PDF) | P2 | ⛔ | For boarding/travel/clinic referral |
-| B8 | Deceased/rehomed pet handling | P1 | ⛔ | Stops reminders; handle with care in copy |
+| B8 | Deceased/rehomed pet handling | P1 | 🔨 | Soft-delete via `Pet.archivedAt`/`archiveReason`; excluded from `ManagePetsUseCase.list` (booking picker, vaccination nagging) by default; confirmation dialog uses calm copy, never "delete" |
 
 ### C. Discovery, detail & "multiple options"
 
@@ -271,10 +271,10 @@ Service (Home consultation)
 | # | Capability | Pri | Status |
 |---|---|---|---|
 | K1 | Visit record: diagnosis notes, procedures done, meds given | P0 | 🔨 |
-| K2 | Prescription (structured, vet-signed, PDF) | P1 | ⛔ |
+| K2 | Prescription (structured, vet-signed, PDF) | P1 | 🔨 | `prescriptions` table + read-only `PrescriptionRepository`, shown in `PetDetailView`; structured data + vet-signed only via server-side RLS (no client insert policy) — PDF generation not built (known gap, same shape as A7's export-PDF gap) |
 | K3 | Medication reminders | P2 | ⛔ |
-| K4 | Vaccination certificate PDF + next-due auto-scheduling | P1 | ⛔ |
-| K5 | Follow-up booking in 1 tap (free follow-up window) | P1 | ⛔ |
+| K4 | Vaccination certificate PDF + next-due auto-scheduling | P1 | 🔨 | Next-due date auto-populates (+12mo) when a vaccination is recorded — the "auto-scheduling" plan means; certificate PDF is a known gap |
+| K5 | Follow-up booking in 1 tap (free follow-up window) | P1 | 🔨 | `FollowUpBookingPolicy` (14-day window) gates a "Book free follow-up" button on `VisitDetailView`, pre-filling the same pet + the existing free follow-up variant via `ServiceDetailView`; that screen adds to cart rather than booking a specific circuit slot directly, so "same vet/circuit" isn't yet enforced end-to-end — known gap |
 | K6 | Lab test ordering + report delivery | P2 | ⛔ |
 | K7 | Rate & review (stars + tags + optional photo) | P0 | ✅ |
 | K8 | Report a problem with this visit → dispute ticket | **P0** | ⛔ |
