@@ -91,4 +91,3 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.vetcircuit.app.widget
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: "YES"
-        GENERATE_INFOPLIST_FILE: "NO"
