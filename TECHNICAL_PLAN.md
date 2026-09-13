@@ -286,8 +286,8 @@ Service (Home consultation)
 | L1 | Manual VCI registration verification before a vet goes live | P0 | 🔨 | Do this by hand, every time, forever |
 | L2 | Document-backed onboarding: degree, VCI cert, ID, police verification, photo | P0 | ⛔ | |
 | L3 | "Verified" badge + credentials visible on vet profile | P0 | ✅ | `VerifiedBadge` on `VetDetailView`, the booking-flow vet card, and the circuit list row. Also closed a real gap: `CircuitRepository.listCircuits` previously surfaced unverified vets in the booking flow at all — it now filters to `verificationStatus == .verified` server-query-side (Supabase) / actor-side (mock), per L1's "verified before going live". |
-| L4 | **SOS button + share-my-visit link** during an in-home visit | P1 | ⛔ | A stranger is inside a home. Take this seriously. |
-| L5 | Incident reporting (both directions) + vet suspension flow | P1 | ⛔ | |
+| L4 | **SOS button + share-my-visit link** during an in-home visit | P1 | ✅ | `SOSUseCase`/`ShareVisitLinkUseCase`, prominent (but confirm-gated) button in `LiveTrackingView`; reuses N7's `DeepLinkParser`/`vetcircuit://visit/<id>` link, shares via system share sheet |
+| L5 | Incident reporting (both directions) + vet suspension flow | P1 | 🔨 | `IncidentReport`/`IncidentReportRepository` + `FileIncidentReportUseCase`, customer-side "Report an incident" in `VisitDetailView` (0027_incident_reports.sql: reporter reads/writes own only). Vet-side entry point and the ops-console vet suspension action itself are out of scope for this app — known gap |
 | L6 | Review moderation (profanity, PII, defamation) | P1 | ⛔ | |
 | L7 | Professional indemnity / liability insurance requirement for vets | P1 | ⛔ | Commercial, not code — but blocks launch legally |
 | L8 | Clear "not an emergency service" disclaimer + escalation routing | **P0** | ✅ | Full disclaimer on `EmergencyView`; a brief caption version under `CircuitsListView`'s "Not sure?"/emergency entry points too, so it's not only reachable via the emergency path. |

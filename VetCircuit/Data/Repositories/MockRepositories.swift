@@ -975,3 +975,16 @@ actor MockWaitlistRepository: WaitlistRepository {
         entries.contains { $0.userId == userId && $0.addressId == addressId }
     }
 }
+
+actor MockIncidentReportRepository: IncidentReportRepository {
+    private var reports: [IncidentReport] = []
+
+    func fileReport(_ report: IncidentReport) async throws -> IncidentReport {
+        reports.append(report)
+        return report
+    }
+
+    func myReports(reporterId: UUID) async throws -> [IncidentReport] {
+        reports.filter { $0.reporterId == reporterId }
+    }
+}

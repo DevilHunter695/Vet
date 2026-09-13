@@ -929,6 +929,40 @@ struct SupportTicket: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+// MARK: - Incident reports (plan §L4/L5) — deliberately NOT the same model as
+// `SupportTicket` above: that one is a billing/service dispute queue a
+// customer files after the fact, this one is safety-specific ("a stranger is
+// inside a home") and is filed by either party, in real time, and must carry
+// a distinguishable `reporterRole` for triage/vet-suspension decisions that a
+// generic ticket subject line can't guarantee. SOS (L4) is the same
+// underlying model with `type == .sos` and no free-text required.
+struct IncidentReport: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var visitId: UUID
+    var reporterId: UUID
+    var reporterRole: ReporterRole
+    var type: IncidentType
+    var description: String
+    var createdAt: Date
+
+    enum ReporterRole: String, Codable, CaseIterable {
+        case customer, vet
+    }
+
+    enum IncidentType: String, Codable, CaseIterable {
+        case sos, safetyConcern = "safety_concern", unprofessionalConduct = "unprofessional_conduct", other
+
+        var displayName: String {
+            switch self {
+            case .sos: return "SOS — immediate danger"
+            case .safetyConcern: return "Safety concern"
+            case .unprofessionalConduct: return "Unprofessional conduct"
+            case .other: return "Other"
+            }
+        }
+    }
+}
+
 // MARK: - Chat auto-close (plan §J5) — prevents unpaid consulting over chat
 // once a visit is long done; pure policy so it's testable without a clock
 // dependency injected anywhere but here.

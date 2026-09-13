@@ -311,3 +311,11 @@ protocol WaitlistRepository: Sendable {
     func countNear(latitude: Double, longitude: Double, radiusKm: Double) async throws -> Int
     func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool
 }
+
+/// L4/L5: a reporter can create and read only their own reports — ops-side
+/// listing (all reports, vet suspension) is an ops-console concern, out of
+/// scope here (see 0027_incident_reports.sql).
+protocol IncidentReportRepository: Sendable {
+    func fileReport(_ report: IncidentReport) async throws -> IncidentReport
+    func myReports(reporterId: UUID) async throws -> [IncidentReport]
+}

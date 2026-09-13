@@ -1697,4 +1697,54 @@ private struct SupabaseAppNotificationRow: Decodable {
     }
 }
 
+final class SupabaseIncidentReportRepository: IncidentReportRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func fileReport(_ report: IncidentReport) async throws -> IncidentReport {
+        struct Insert: Encodable {
+            let id: UUID, visitId: UUID, reporterId: UUID, reporterRole: String, type: String, description: String
+            enum CodingKeys: String, CodingKey {
+                case id, description, type
+                case visitId = "visit_id", reporterId = "reporter_id", reporterRole = "reporter_role"
+            }
+        }
+        let insert = Insert(id: report.id, visitId: report.visitId, reporterId: report.reporterId,
+                             reporterRole: report.reporterRole.rawValue, type: report.type.rawValue, description: report.description)
+        let rows: [SupabaseIncidentReportRow] = try await client.from("incident_reports")
+            .insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func myReports(reporterId: UUID) async throws -> [IncidentReport] {
+        let rows: [SupabaseIncidentReportRow] = try await client.from("incident_reports")
+            .select().eq("reporter_id", value: reporterId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+private struct SupabaseIncidentReportRow: Decodable {
+    let id: UUID
+    let visitId: UUID
+    let reporterId: UUID
+    let reporterRole: String
+    let type: String
+    let description: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, description
+        case visitId = "visit_id", reporterId = "reporter_id", reporterRole = "reporter_role"
+        case type, createdAt = "created_at"
+    }
+
+    func toDomain() -> IncidentReport {
+        IncidentReport(id: id, visitId: visitId, reporterId: reporterId,
+                        reporterRole: IncidentReport.ReporterRole(rawValue: reporterRole) ?? .customer,
+                        type: IncidentReport.IncidentType(rawValue: type) ?? .other,
+                        description: description, createdAt: createdAt)
+    }
+}
+
 #endif

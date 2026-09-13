@@ -43,6 +43,7 @@ final class DependencyContainer {
     let emergencyClinicRepository: EmergencyClinicRepository
     let householdRepository: HouseholdRepository
     let waitlistRepository: WaitlistRepository
+    let incidentReportRepository: IncidentReportRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -83,6 +84,7 @@ final class DependencyContainer {
         self.emergencyClinicRepository = MockEmergencyClinicRepository()
         self.householdRepository = MockHouseholdRepository()
         self.waitlistRepository = MockWaitlistRepository()
+        self.incidentReportRepository = MockIncidentReportRepository()
     }
 
     // MARK: Use case factories
@@ -138,4 +140,6 @@ final class DependencyContainer {
     func searchUseCase() -> SearchUseCase { SearchUseCase(circuitRepository: circuitRepository, catalogRepository: catalogRepository) }
     func rebookLastVisitUseCase() -> RebookLastVisitUseCase { RebookLastVisitUseCase(visitRepository: visitRepository, circuitRepository: circuitRepository) }
     func joinWaitlistUseCase() -> JoinWaitlistUseCase { JoinWaitlistUseCase(waitlistRepository: waitlistRepository) }
+    func fileIncidentReportUseCase() -> FileIncidentReportUseCase { FileIncidentReportUseCase(repository: incidentReportRepository) }
+    func sosUseCase() -> SOSUseCase { SOSUseCase(incidentReportRepository: incidentReportRepository) }
 }

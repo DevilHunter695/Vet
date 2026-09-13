@@ -818,3 +818,65 @@ struct JoinWaitlistUseCase {
     }
 }
 
+// MARK: - L4/L5: incident reporting + SOS
+//
+// SOS is not a separate model — pressing it files the same `IncidentReport`
+// with `type == .sos`, so it shows up in the exact same reporter-facing and
+// (eventually) ops-facing queue as a filed-after-the-fact safety concern,
+// rather than a disconnected alert nobody reviews after the moment passes.
+
+struct FileIncidentReportUseCase {
+    let repository: IncidentReportRepository
+
+    /// SOS carries no free-text requirement (someone in danger doesn't stop
+    /// to type first) — every other type does.
+    func execute(visitId: UUID, reporterId: UUID, reporterRole: IncidentReport.ReporterRole,
+                 type: IncidentReport.IncidentType, description: String) async throws -> IncidentReport {
+        let description = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        if type != .sos {
+            guard !description.isEmpty else { throw DomainError.validation("Please describe what happened.") }
+        }
+        let report = IncidentReport(id: UUID(), visitId: visitId, reporterId: reporterId, reporterRole: reporterRole,
+                                     type: type, description: description, createdAt: .now)
+        return try await repository.fileReport(report)
+    }
+
+    func myReports(reporterId: UUID) async throws -> [IncidentReport] {
+        try await repository.myReports(reporterId: reporterId)
+    }
+}
+
+/// L4: pressing SOS both logs the incident and hands back a link a trusted
+/// contact can open to see the visit's live status — two outcomes from one
+/// tap, since the plan is explicit that a stranger being in a home is not a
+/// moment to make someone fill out a form before help is on the way.
+struct SOSUseCase {
+    let incidentReportRepository: IncidentReportRepository
+
+    struct Result {
+        var report: IncidentReport
+        var shareLink: URL
+    }
+
+    func execute(visitId: UUID, reporterId: UUID, reporterRole: IncidentReport.ReporterRole) async throws -> Result {
+        let report = try await FileIncidentReportUseCase(repository: incidentReportRepository)
+            .execute(visitId: visitId, reporterId: reporterId, reporterRole: reporterRole, type: .sos, description: "")
+        let link = ShareVisitLinkUseCase.link(visitId: visitId)
+        return Result(report: report, shareLink: link)
+    }
+}
+
+/// L4: builds the `vetcircuit://visit/<id>` deep link `DeepLinkParser`
+/// already understands (N7) — reused here rather than inventing a second
+/// link format, so a trusted contact who opens it lands exactly where the
+/// existing deep-link routing sends anyone else.
+enum ShareVisitLinkUseCase {
+    static func link(visitId: UUID) -> URL {
+        URL(string: "vetcircuit://visit/\(visitId.uuidString)")!
+    }
+
+    static func shareMessage(visitId: UUID) -> String {
+        "I'm on a VetCircuit home visit right now — track it live: \(link(visitId: visitId).absoluteString)"
+    }
+}
+

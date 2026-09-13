@@ -1451,3 +1451,40 @@ struct ListEmergencyClinicsUseCaseTests {
         #expect(clinics.first?.id == near.id)
     }
 }
+
+@Suite("FileIncidentReportUseCase / SOSUseCase")
+struct IncidentReportUseCaseTests {
+    @Test("rejects an empty description for a non-SOS report")
+    func rejectsEmptyDescriptionForSafetyConcern() async {
+        let useCase = FileIncidentReportUseCase(repository: MockIncidentReportRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(visitId: UUID(), reporterId: UUID(), reporterRole: .customer,
+                                           type: .safetyConcern, description: "   ")
+        }
+    }
+
+    @Test("allows an empty description for an SOS report")
+    func allowsEmptyDescriptionForSOS() async throws {
+        let useCase = FileIncidentReportUseCase(repository: MockIncidentReportRepository())
+        let report = try await useCase.execute(visitId: UUID(), reporterId: UUID(), reporterRole: .customer,
+                                                type: .sos, description: "")
+        #expect(report.type == .sos)
+    }
+
+    @Test("SOS use case files a report and returns a matching share link")
+    func sosProducesReportAndShareLink() async throws {
+        let visitId = UUID()
+        let useCase = SOSUseCase(incidentReportRepository: MockIncidentReportRepository())
+        let result = try await useCase.execute(visitId: visitId, reporterId: UUID(), reporterRole: .customer)
+        #expect(result.report.type == .sos)
+        #expect(result.report.visitId == visitId)
+        #expect(result.shareLink.absoluteString == "vetcircuit://visit/\(visitId.uuidString)")
+    }
+
+    @Test("share link round-trips through the existing deep link parser")
+    func shareLinkParsesBackToTheSameVisit() {
+        let visitId = UUID()
+        let link = ShareVisitLinkUseCase.link(visitId: visitId)
+        #expect(DeepLinkParser.parse(link) == .visit(visitId))
+    }
+}
