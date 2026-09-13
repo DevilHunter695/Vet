@@ -225,7 +225,7 @@ Service (Home consultation)
 | G5 | GST-compliant invoice PDF per order | **P0** | 🔨 | Legal requirement once registered |
 | G6 | Wallet + double-entry ledger | P1 | 🔨 | `wallet_ledger` (append-only, mirrors `vet_ledger`) + balance view + CartView "use wallet balance" toggle; nothing yet writes the debit when a wallet-funded booking completes — checkout/payment-capture is still open |
 | G7 | **Vet payouts**: earnings view, weekly payout run, reconciliation | **P0 (partner)** | 🔨 | Vets quit over late/unclear pay faster than over anything else |
-| G8 | Daily reconciliation job: gateway settlements vs your ledger | P1 | ⛔ | |
+| G8 | Daily reconciliation job: gateway settlements vs your ledger | P1 | 🔨 | `daily-reconciliation` Edge Function (cron-invoked, service-role key) diffs the `payments` ledger against a POSTed gateway settlement report and writes `reconciliation_mismatches` rows (0041_reconciliation_mismatches.sql, admin-read-only RLS, no client write policy at all). Marked 🔨 not ✅: reconciliation is inherently an ops/back-office job — there is no gateway integration to poll live (checkout is still the mocked hosted-checkout URL flow) and no customer-facing use for this data, so no domain/UI layer was added on the app side; wiring a real cron schedule and an ops dashboard to review mismatches is admin-web/infra work outside this app's scope. |
 | G9 | Chargeback/dispute handling from gateway | P2 | ⛔ | |
 
 ### H. Subscriptions & plans
