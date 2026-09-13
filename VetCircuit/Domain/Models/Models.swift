@@ -9,6 +9,14 @@ struct User: Identifiable, Codable, Equatable, Hashable {
     var email: String?
     var createdAt: Date
     var pets: [Pet]
+    // A11: server/admin-set only — mirrors `Vet.verificationStatus`'s
+    // ownership split (see `vets` RLS: no client update policy on this
+    // column, only `is_admin()` or a trusted function can move it).
+    var accountStatus: AccountStatus = .active
+
+    enum AccountStatus: String, Codable, CaseIterable {
+        case active, blocked, deactivated
+    }
 }
 
 struct Pet: Identifiable, Codable, Equatable, Hashable {

@@ -564,11 +564,19 @@ private struct SupabaseUserRow: Decodable {
     let email: String?
     let createdAt: Date
     let pets: [SupabasePetRow]?
+    // A11: admin/trusted-function-set only (see 0026 migration) — decoded
+    // read-only, never sent back on any client update to this row.
+    let accountStatus: String?
 
-    enum CodingKeys: String, CodingKey { case id, phone, name, email, createdAt = "created_at", pets }
+    enum CodingKeys: String, CodingKey {
+        case id, phone, name, email, createdAt = "created_at", pets
+        case accountStatus = "account_status"
+    }
 
     func toDomain() -> User {
-        User(id: id, phone: phone, name: name, email: email, createdAt: createdAt, pets: (pets ?? []).map { $0.toDomain() })
+        User(id: id, phone: phone, name: name, email: email, createdAt: createdAt,
+             pets: (pets ?? []).map { $0.toDomain() },
+             accountStatus: User.AccountStatus(rawValue: accountStatus ?? "active") ?? .active)
     }
 }
 

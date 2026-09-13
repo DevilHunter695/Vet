@@ -130,8 +130,8 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | A7 | Export my data (JSON + PDF of records) | P1 | 🔨 | DPDP data-principal right — JSON export done, no PDF |
 | A8 | Multiple addresses (home/office/parents), default, geofence check | **P0** | ✅ | A circuit is *address-scoped* — this is core inventory logic, not a nicety |
 | A9 | Household: invite spouse/family to same pets & bookings | P1 | 🔨 | Roles: owner/member. `Household`/`HouseholdMember` + `HouseholdRepository`, `HouseholdView` linked from Profile. Pets keep `owner_id`; visibility only, via an additional RLS policy (see 0020_households.sql) — no pet-ownership model change |
-| A10 | Biometric lock on app (Face ID) | P1 | ⛔ | Medical records = sensitive |
-| A11 | Blocked/deactivated account handling | P1 | ⛔ | Graceful screen, support path |
+| A10 | Biometric lock on app (Face ID) | P1 | ✅ | `BiometricLockSetting`/`BiometricLockGateModel` (App/BiometricLock.swift), local UserDefaults toggle in Profile, gate above `MainTabView` in `RootView`. Falls back to unlocked (no lock) when biometrics aren't enrolled — never strands the user |
+| A11 | Blocked/deactivated account handling | P1 | ✅ | `User.accountStatus` (active/blocked/deactivated), admin-only column via trigger (0026_account_status.sql, mirrors `vets.verification_status`'s ownership split). `AccountBlockedView` shown from `RootView`, links to `ContactSupportView` |
 
 ### B. Pets, records & documents
 
