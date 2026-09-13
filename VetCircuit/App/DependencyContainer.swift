@@ -53,6 +53,8 @@ final class DependencyContainer {
     let recurringBookingRuleRepository: RecurringBookingRuleRepository
     /// F6: vet-initiated reschedule proposals.
     let rescheduleProposalRepository: RescheduleProposalRepository
+    /// B6: document vault.
+    let petDocumentRepository: PetDocumentRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -100,6 +102,7 @@ final class DependencyContainer {
         self.vetServiceOverrideRepository = MockVetServiceOverrideRepository()
         self.recurringBookingRuleRepository = MockRecurringBookingRuleRepository()
         self.rescheduleProposalRepository = MockRescheduleProposalRepository()
+        self.petDocumentRepository = MockPetDocumentRepository()
     }
 
     // MARK: Use case factories
@@ -174,4 +177,6 @@ final class DependencyContainer {
     func joinWaitlistUseCase() -> JoinWaitlistUseCase { JoinWaitlistUseCase(waitlistRepository: waitlistRepository) }
     func fileIncidentReportUseCase() -> FileIncidentReportUseCase { FileIncidentReportUseCase(repository: incidentReportRepository) }
     func sosUseCase() -> SOSUseCase { SOSUseCase(incidentReportRepository: incidentReportRepository) }
+    func managePetDocumentsUseCase() -> ManagePetDocumentsUseCase { ManagePetDocumentsUseCase(repository: petDocumentRepository) }
+    func generatePetHealthSummaryUseCase() -> GeneratePetHealthSummaryUseCase { GeneratePetHealthSummaryUseCase() }
 }

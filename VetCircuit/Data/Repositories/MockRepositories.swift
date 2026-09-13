@@ -627,6 +627,32 @@ actor MockVaccinationRepository: VaccinationRepository {
     }
 }
 
+/// B6: document vault — no real storage backend wired up yet, so "upload"
+/// just fabricates a placeholder `mock-storage://` URL from a UUID-based
+/// filename and keeps the row in memory.
+actor MockPetDocumentRepository: PetDocumentRepository {
+    private var documents: [PetDocument] = []
+
+    func list(petId: UUID) async throws -> [PetDocument] {
+        documents.filter { $0.petId == petId }
+    }
+
+    func upload(petId: UUID, uploaderId: UUID, title: String, data: Data) async throws -> PetDocument {
+        // Simulate an upload: a real backend would push `data` to a Storage
+        // bucket and store its path; here we just mint a UUID filename.
+        let filename = "\(UUID().uuidString).pdf"
+        let placeholderURL = URL(string: "mock-storage://documents/\(petId)/\(filename)")!
+        let document = PetDocument(id: UUID(), petId: petId, uploaderId: uploaderId, title: title,
+                                    fileURL: placeholderURL, uploadedAt: .now)
+        documents.append(document)
+        return document
+    }
+
+    func delete(id: UUID) async throws {
+        documents.removeAll { $0.id == id }
+    }
+}
+
 actor MockPrescriptionRepository: PrescriptionRepository {
     private var prescriptions: [Prescription] = []
 

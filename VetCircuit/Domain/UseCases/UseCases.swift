@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Use cases: pure business logic, unit-testable without UI or network
 
@@ -366,6 +369,129 @@ struct FollowUpBookingPolicy {
         let days = Calendar.current.dateComponents([.day], from: completedAt, to: now).day ?? .max
         return days <= windowDays
     }
+}
+
+// MARK: - B6: document vault use case
+
+struct ManagePetDocumentsUseCase {
+    let repository: PetDocumentRepository
+
+    func list(petId: UUID) async throws -> [PetDocument] {
+        try await repository.list(petId: petId).sorted { $0.uploadedAt > $1.uploadedAt }
+    }
+
+    func upload(petId: UUID, uploaderId: UUID, title: String, data: Data) async throws -> PetDocument {
+        let trimmed = title.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            throw DomainError.validation("Give this document a title.")
+        }
+        guard !data.isEmpty else {
+            throw DomainError.validation("That file looks empty.")
+        }
+        return try await repository.upload(petId: petId, uploaderId: uploaderId, title: trimmed, data: data)
+    }
+
+    func delete(id: UUID) async throws {
+        try await repository.delete(id: id)
+    }
+}
+
+// MARK: - B7: shareable pet health summary (PDF)
+
+/// Renders a one-page PDF summary of a pet's health record — name, species,
+/// breed, DOB, latest weight (plus trend context), vaccination status, and
+/// chronic conditions/allergies — for boarding/travel/clinic referral (plan
+/// §B7). Framework-native `UIGraphicsPDFRenderer`, no third-party dependency.
+/// Pure rendering: the caller supplies the pet's already-fetched weight and
+/// vaccination history rather than this use case reaching into repositories
+/// itself, which keeps the layout logic directly testable (byte count/PDF
+/// magic header) without spinning up mock repositories.
+struct GeneratePetHealthSummaryUseCase {
+    /// A4-sized page, matching the paper size boarding/travel/clinic staff
+    /// are most likely to print this on.
+    private let pageWidth: CGFloat = 595.2
+    private let pageHeight: CGFloat = 841.8
+
+    func execute(pet: Pet, weightHistory: [PetWeightEntry], vaccinations: [Vaccination], generatedAt: Date = .now) -> Data {
+        #if canImport(UIKit)
+        let pageRect = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+        return renderer.pdfData { context in
+            context.beginPage()
+            draw(pet: pet, weightHistory: weightHistory, vaccinations: vaccinations, generatedAt: generatedAt, in: pageRect)
+        }
+        #else
+        return Data()
+        #endif
+    }
+
+    #if canImport(UIKit)
+    private func draw(pet: Pet, weightHistory: [PetWeightEntry], vaccinations: [Vaccination], generatedAt: Date, in pageRect: CGRect) {
+        let margin: CGFloat = 40
+        var y: CGFloat = margin
+        let contentWidth = pageRect.width - margin * 2
+
+        let titleAttrs: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 22)]
+        let headingAttrs: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 14)]
+        let bodyAttrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 12)]
+        let captionAttrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 10), .foregroundColor: UIColor.darkGray]
+
+        func drawText(_ text: String, attrs: [NSAttributedString.Key: Any], spacingAfter: CGFloat = 6) {
+            let bounds = (text as NSString).boundingRect(
+                with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                options: .usesLineFragmentOrigin, attributes: attrs, context: nil)
+            (text as NSString).draw(in: CGRect(x: margin, y: y, width: contentWidth, height: bounds.height), withAttributes: attrs)
+            y += bounds.height + spacingAfter
+        }
+
+        drawText("\(pet.name) — Health Summary", attrs: titleAttrs, spacingAfter: 4)
+        drawText("Generated \(generatedAt.formatted(date: .abbreviated, time: .shortened)) · VetCircuit", attrs: captionAttrs, spacingAfter: 16)
+
+        drawText("Pet details", attrs: headingAttrs, spacingAfter: 4)
+        drawText("Species: \(pet.species.rawValue.capitalized)", attrs: bodyAttrs, spacingAfter: 2)
+        if let breed = pet.breed, !breed.isEmpty {
+            drawText("Breed: \(breed)", attrs: bodyAttrs, spacingAfter: 2)
+        }
+        if let dob = pet.dateOfBirth {
+            drawText("Date of birth: \(dob.formatted(date: .abbreviated, time: .omitted))", attrs: bodyAttrs, spacingAfter: 2)
+        }
+        if let sex = pet.sex {
+            drawText("Sex: \(sex.rawValue.capitalized)\(pet.isNeutered == true ? " (neutered/spayed)" : "")", attrs: bodyAttrs, spacingAfter: 2)
+        }
+        y += 8
+
+        drawText("Weight", attrs: headingAttrs, spacingAfter: 4)
+        if let latest = weightHistory.sorted(by: { $0.recordedAt < $1.recordedAt }).last {
+            drawText("Latest: \(String(format: "%.1f", latest.weightKg)) kg (\(latest.recordedAt.formatted(date: .abbreviated, time: .omitted)))",
+                      attrs: bodyAttrs, spacingAfter: 2)
+        } else {
+            drawText("No weight readings recorded.", attrs: bodyAttrs, spacingAfter: 2)
+        }
+        y += 8
+
+        drawText("Vaccination status", attrs: headingAttrs, spacingAfter: 4)
+        if vaccinations.isEmpty {
+            drawText("No vaccination records.", attrs: bodyAttrs, spacingAfter: 2)
+        } else {
+            for vaccination in vaccinations.sorted(by: { $0.nextDueAt < $1.nextDueAt }) {
+                let status: String
+                switch vaccination.dueStatus(now: generatedAt) {
+                case .upToDate: status = "up to date"
+                case .dueSoon: status = "due soon"
+                case .overdue: status = "overdue"
+                }
+                let given = vaccination.givenAt.map { "given \($0.formatted(date: .abbreviated, time: .omitted)), " } ?? ""
+                drawText("\(vaccination.vaccineName) — \(given)next due \(vaccination.nextDueAt.formatted(date: .abbreviated, time: .omitted)) (\(status))",
+                          attrs: bodyAttrs, spacingAfter: 2)
+            }
+        }
+        y += 8
+
+        drawText("Chronic conditions & allergies", attrs: headingAttrs, spacingAfter: 4)
+        drawText("Chronic conditions: \(pet.chronicConditions?.isEmpty == false ? pet.chronicConditions! : "None recorded")", attrs: bodyAttrs, spacingAfter: 2)
+        drawText("Allergies: \(pet.allergies?.isEmpty == false ? pet.allergies! : "None recorded")", attrs: bodyAttrs, spacingAfter: 2)
+    }
+    #endif
 }
 
 struct ManagePrescriptionsUseCase {

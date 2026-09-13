@@ -374,6 +374,19 @@ protocol WaitlistRepository: Sendable {
     func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool
 }
 
+// MARK: - B6 document vault — prior vet reports / insurance docs against a
+// pet. No Storage SDK wiring exists yet: the Supabase conformer inserts a
+// real `pet_documents` row referencing a `documents` bucket path, but the
+// actual file bytes upload is a TODO (see `SupabasePetDocumentRepository`).
+protocol PetDocumentRepository: Sendable {
+    func list(petId: UUID) async throws -> [PetDocument]
+    /// `data` is the raw file bytes to upload; the Supabase conformer will
+    /// eventually push these to Storage under a UUID-based filename — for
+    /// now the mock just fabricates a placeholder URL from that filename.
+    func upload(petId: UUID, uploaderId: UUID, title: String, data: Data) async throws -> PetDocument
+    func delete(id: UUID) async throws
+}
+
 /// L4/L5: a reporter can create and read only their own reports — ops-side
 /// listing (all reports, vet suspension) is an ops-console concern, out of
 /// scope here (see 0027_incident_reports.sql).

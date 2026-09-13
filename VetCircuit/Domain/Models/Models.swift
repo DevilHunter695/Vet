@@ -1388,6 +1388,19 @@ struct NoShowPolicy {
     static let vetGraceWindowMinutes: Double = 30
 }
 
+// MARK: - B6: document vault — prior vet reports / insurance docs against a
+// pet. No real storage backend is wired up yet (see `PetDocumentRepository`
+// doc comment) so `fileURL` is a placeholder scheme until Supabase Storage
+// SDK wiring lands.
+struct PetDocument: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var petId: UUID
+    var uploaderId: UUID
+    var title: String
+    var fileURL: URL
+    var uploadedAt: Date
+}
+
 // MARK: - Domain errors
 
 enum DomainError: Error, LocalizedError, Equatable {
