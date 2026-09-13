@@ -93,10 +93,11 @@ struct StatusBadge: View {
     private var color: Color {
         switch status {
         case .requested: return Theme.warning
-        case .confirmed: return Theme.primary
-        case .enRoute: return Theme.inProgress
-        case .completed: return Theme.success
-        case .cancelled: return Theme.neutral
+        case .confirmed, .assigned: return Theme.primary
+        case .enRoute, .arrived, .inProgress: return Theme.inProgress
+        case .completed, .resolved: return Theme.success
+        case .cancelledByUser, .cancelledByVet, .noShowUser, .noShowVet: return Theme.neutral
+        case .disputed: return Theme.danger
         }
     }
 
@@ -104,9 +105,15 @@ struct StatusBadge: View {
         switch status {
         case .requested: return "clock.fill"
         case .confirmed: return "checkmark.circle.fill"
+        case .assigned: return "person.fill.checkmark"
         case .enRoute: return "figure.walk.motion"
+        case .arrived: return "location.fill"
+        case .inProgress: return "stethoscope"
         case .completed: return "checkmark.seal.fill"
-        case .cancelled: return "xmark.circle.fill"
+        case .cancelledByUser, .cancelledByVet: return "xmark.circle.fill"
+        case .noShowUser, .noShowVet: return "questionmark.circle.fill"
+        case .disputed: return "exclamationmark.triangle.fill"
+        case .resolved: return "checkmark.circle"
         }
     }
 

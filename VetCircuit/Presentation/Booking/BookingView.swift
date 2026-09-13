@@ -105,9 +105,21 @@ final class BookingViewModel {
 struct BookingView: View {
     @Environment(SessionStore.self) private var session
     @State private var viewModel: BookingViewModel
+    @State private var showingWaiver = false
+    @State private var hasAcceptedWaiver = false
+    private let manageConsentUseCase = DependencyContainer.shared.manageConsentUseCase()
 
     init(circuit: Circuit) {
         _viewModel = State(initialValue: BookingViewModel(circuit: circuit))
+    }
+
+    private func confirmBookingTapped() {
+        guard hasAcceptedWaiver else {
+            Haptics.tap()
+            showingWaiver = true
+            return
+        }
+        Task { await viewModel.confirmBooking() }
     }
 
     var body: some View {
@@ -163,20 +175,33 @@ struct BookingView: View {
                 }
 
                 PrimaryButton(title: "Confirm booking", isLoading: viewModel.isLoading) {
-                    Task { await viewModel.confirmBooking() }
+                    confirmBookingTapped()
                 }
             }
             .padding()
         }
         .navigationTitle("Book visit")
         .navigationBarTitleDisplayMode(.inline)
-        .task { if let user = session.currentUser { await viewModel.loadPets(ownerId: user.id) } }
+        .task {
+            if let user = session.currentUser {
+                await viewModel.loadPets(ownerId: user.id)
+                hasAcceptedWaiver = (try? await manageConsentUseCase.hasAcceptedLiabilityWaiver(userId: user.id)) ?? false
+            }
+        }
         .navigationDestination(item: $viewModel.bookedVisit) { visit in
             BookingConfirmedView(visit: visit)
         }
         .animation(Theme.crossFade, value: viewModel.holdSecondsRemaining)
         .onDisappear {
             if viewModel.bookedVisit == nil { viewModel.releaseHold() }
+        }
+        .sheet(isPresented: $showingWaiver) {
+            if let user = session.currentUser {
+                LiabilityWaiverView(userId: user.id) {
+                    hasAcceptedWaiver = true
+                    Task { await viewModel.confirmBooking() }
+                }
+            }
         }
     }
 }

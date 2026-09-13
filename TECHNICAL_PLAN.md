@@ -245,11 +245,11 @@ Service (Home consultation)
 | # | Capability | Pri | Status | Notes |
 |---|---|---|---|---|
 | I1 | Persistent "what's happening now" card on Home | P0 | 🔨 | The highest-trust feature per unit of effort |
-| I2 | Status timeline w/ timestamps (requested → confirmed → assigned → en route → arrived → in progress → completed) | P0 | 🔨 | Expand the 5-state enum to 8 |
+| I2 | Status timeline w/ timestamps (requested → confirmed → assigned → en route → arrived → in progress → completed) | P0 | 🔨 | 8-state enum + legal-transition table done; timestamped timeline UI still uses badges, not a full timeline view |
 | I3 | **Live Activity + Dynamic Island** for "vet en route / ETA" | P1 | ⛔ | iOS-native differentiator; huge perceived-quality win |
 | I4 | Live map tracking with ETA | P1 | 🔨 | |
-| I5 | **Start-of-visit OTP** (customer reads 4-digit code to vet) | **P0** | ⛔ | Anti-fraud + proof-of-service. Cheap, high value. |
-| I6 | Digital consent/liability waiver accepted in-app before first visit | **P0** | ⛔ | Legal shield |
+| I5 | **Start-of-visit OTP** (customer reads 4-digit code to vet) | **P0** | 🔨 | Anti-fraud + proof-of-service. Cheap, high value. |
+| I6 | Digital consent/liability waiver accepted in-app before first visit | **P0** | ✅ | Legal shield |
 | I7 | Visit checklist completed by vet → becomes the customer's record | P0 | 🔨 | |
 | I8 | Post-visit summary push + in-app detail | P0 | 🔨 | |
 

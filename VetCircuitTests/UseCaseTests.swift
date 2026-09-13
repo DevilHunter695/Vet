@@ -92,6 +92,93 @@ struct BookVisitUseCaseTests {
     }
 }
 
+@Suite("Visit.legalTransitions")
+struct VisitTransitionTests {
+    @Test("the full happy path is legal, state by state")
+    func happyPathIsLegal() {
+        let path: [Visit.VisitStatus] = [.requested, .confirmed, .assigned, .enRoute, .arrived, .inProgress, .completed]
+        for (from, to) in zip(path, path.dropFirst()) {
+            #expect(Visit.canTransition(from: from, to: to), "\(from) -> \(to) should be legal")
+        }
+    }
+
+    @Test("skipping states is illegal")
+    func skippingStatesIsIllegal() {
+        #expect(!Visit.canTransition(from: .requested, to: .arrived))
+        #expect(!Visit.canTransition(from: .confirmed, to: .inProgress))
+        #expect(!Visit.canTransition(from: .completed, to: .requested))
+    }
+
+    @Test("a completed visit can only move to disputed, never backwards")
+    func completedOnlyMovesToDisputed() {
+        #expect(Visit.canTransition(from: .completed, to: .disputed))
+        #expect(!Visit.canTransition(from: .completed, to: .completed))
+        #expect(!Visit.canTransition(from: .completed, to: .confirmed))
+    }
+}
+
+@Suite("StartVisitUseCase")
+struct StartVisitUseCaseTests {
+    @Test("rejects a code that isn't 4 digits")
+    func rejectsMalformedCode() async {
+        let useCase = StartVisitUseCase(visitOTPRepository: MockVisitOTPRepository(), visitRepository: MockVisitRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.verify(visitId: UUID(), code: "12a4")
+        }
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.verify(visitId: UUID(), code: "123")
+        }
+    }
+
+    @Test("rejects a code that doesn't match")
+    func rejectsWrongCode() async throws {
+        let otpRepo = MockVisitOTPRepository()
+        let visitRepo = MockVisitRepository()
+        let useCase = StartVisitUseCase(visitOTPRepository: otpRepo, visitRepository: visitRepo)
+        let visitId = UUID()
+        _ = try await otpRepo.generateOTP(visitId: visitId)
+
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.verify(visitId: visitId, code: "0000")
+        }
+    }
+
+    @Test("verifying the correct code moves the visit to in_progress")
+    func correctCodeStartsVisit() async throws {
+        let otpRepo = MockVisitOTPRepository()
+        let visitRepo = MockVisitRepository()
+        let useCase = StartVisitUseCase(visitOTPRepository: otpRepo, visitRepository: visitRepo)
+        let visit = try await visitRepo.createVisit(
+            petId: UUID(), vetId: UUID(), circuitId: UUID(),
+            slot: ScheduleSlot(id: UUID(), dayOfWeek: 1, startTime: .now.addingTimeInterval(3600), endTime: .now.addingTimeInterval(7200), capacity: 3, bookedCount: 0),
+            idempotencyKey: UUID().uuidString
+        )
+        let otp = try await otpRepo.generateOTP(visitId: visit.id)
+
+        let updated = try await useCase.verify(visitId: visit.id, code: otp.code)
+        #expect(updated.status == .inProgress)
+    }
+}
+
+@Suite("ManageConsentUseCase")
+struct ManageConsentUseCaseTests {
+    @Test("has not accepted the waiver before granting it")
+    func notAcceptedInitially() async throws {
+        let useCase = ManageConsentUseCase(consentRepository: MockConsentRepository())
+        let hasAccepted = try await useCase.hasAcceptedLiabilityWaiver(userId: UUID())
+        #expect(!hasAccepted)
+    }
+
+    @Test("accepting the waiver is reflected immediately")
+    func acceptingIsReflected() async throws {
+        let useCase = ManageConsentUseCase(consentRepository: MockConsentRepository())
+        let userId = UUID()
+        _ = try await useCase.acceptLiabilityWaiver(userId: userId)
+        let hasAccepted = try await useCase.hasAcceptedLiabilityWaiver(userId: userId)
+        #expect(hasAccepted)
+    }
+}
+
 @Suite("CancellationPolicy")
 struct CancellationPolicyTests {
     @Test("free full refund more than 4 hours before the visit")
@@ -135,7 +222,7 @@ struct CancelVisitUseCaseTests {
         let outcome = try await useCase.execute(visitId: visit.id, currentStatus: .requested, scheduledAt: visit.scheduledAt, paymentId: UUID())
 
         let updated = try await visitRepo.visit(id: visit.id)
-        #expect(updated.status == .cancelled)
+        #expect(updated.status == .cancelledByUser)
         #expect(outcome.refundPercent == 100)
         let refunds = try await refundRepo.refunds(visitId: visit.id)
         #expect(refunds.count == 1)

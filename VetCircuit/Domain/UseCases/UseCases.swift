@@ -189,6 +189,40 @@ struct GetLoyaltyAccountUseCase {
     }
 }
 
+struct StartVisitUseCase {
+    let visitOTPRepository: VisitOTPRepository
+    let visitRepository: VisitRepository
+
+    /// I5: verifying the OTP is the only way a visit moves from `arrived`
+    /// to `in_progress` — proof the vet is actually on-site with the customer.
+    func verify(visitId: UUID, code: String) async throws -> Visit {
+        guard code.count == 4, code.allSatisfy(\.isNumber) else {
+            throw DomainError.validation("Enter the 4-digit code.")
+        }
+        let verified = try await visitOTPRepository.verifyOTP(visitId: visitId, code: code)
+        guard verified else {
+            throw DomainError.validation("That code doesn't match. Ask the vet to check with you.")
+        }
+        return try await visitRepository.updateStatus(visitId: visitId, status: .inProgress)
+    }
+}
+
+struct ManageConsentUseCase {
+    let consentRepository: ConsentRepository
+
+    static let liabilityWaiverPurpose = "liability_waiver"
+    static let currentWaiverVersion = "2026-09"
+
+    func hasAcceptedLiabilityWaiver(userId: UUID) async throws -> Bool {
+        let consents = try await consentRepository.activeConsents(userId: userId)
+        return consents.contains { $0.purpose == Self.liabilityWaiverPurpose && $0.version == Self.currentWaiverVersion }
+    }
+
+    func acceptLiabilityWaiver(userId: UUID) async throws -> ConsentRecord {
+        try await consentRepository.grant(userId: userId, purpose: Self.liabilityWaiverPurpose, version: Self.currentWaiverVersion)
+    }
+}
+
 struct ManageCartUseCase {
     let cartRepository: CartRepository
 

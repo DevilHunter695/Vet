@@ -286,7 +286,7 @@ final class SupabaseVisitRepository: VisitRepository {
     }
 
     func cancelVisit(visitId: UUID) async throws {
-        try await client.from("visits").update(["status": Visit.VisitStatus.cancelled.rawValue])
+        try await client.from("visits").update(["status": Visit.VisitStatus.cancelledByUser.rawValue])
             .eq("id", value: visitId).execute()
     }
 
@@ -304,6 +304,51 @@ final class SupabaseVisitRepository: VisitRepository {
             enum CodingKeys: String, CodingKey { case amountMinorUnits = "amount_minor_units" } }
         let rows: [AmountRow] = try await client.from("payments").select("amount_minor_units").eq("visit_id", value: visitId).execute().value
         return rows.first?.amountMinorUnits ?? 0
+    }
+}
+
+final class SupabaseVisitOTPRepository: VisitOTPRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func generateOTP(visitId: UUID) async throws -> VisitOTP {
+        // A real deployment generates this server-side (Edge Function) so the
+        // code is never round-tripped through client-writable request data;
+        // this reads back whatever the trusted function already wrote.
+        let rows: [SupabaseVisitOTPRow] = try await client.from("visit_otps").select().eq("visit_id", value: visitId).execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Visit OTP") }
+        return row.toDomain()
+    }
+
+    func verifyOTP(visitId: UUID, code: String) async throws -> Bool {
+        try await client.rpc("verify_visit_otp", params: ["p_visit_id": visitId.uuidString, "p_code": code]).execute().value
+    }
+}
+
+final class SupabaseConsentRepository: ConsentRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func activeConsents(userId: UUID) async throws -> [ConsentRecord] {
+        let rows: [SupabaseConsentRow] = try await client
+            .from("consents").select().eq("user_id", value: userId).is("withdrawn_at", value: nil).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func grant(userId: UUID, purpose: String, version: String) async throws -> ConsentRecord {
+        struct Insert: Encodable {
+            let userId: UUID, purpose: String, version: String
+            enum CodingKeys: String, CodingKey { case userId = "user_id", purpose, version }
+        }
+        let rows: [SupabaseConsentRow] = try await client.from("consents")
+            .insert(Insert(userId: userId, purpose: purpose, version: version)).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func withdraw(userId: UUID, purpose: String) async throws {
+        try await client.from("consents").update(["withdrawn_at": ISO8601DateFormatter().string(from: Date())])
+            .eq("user_id", value: userId).eq("purpose", value: purpose).execute()
     }
 }
 
@@ -389,6 +434,35 @@ private struct SupabaseCircuitRow: Decodable {
     func toDomain() -> Circuit {
         Circuit(id: id, vetId: vetId, vet: vet?.toDomain(), clusterArea: clusterArea,
                 schedule: (schedule ?? []).map { $0.toDomain() }, vertical: Vertical(rawValue: vertical) ?? .vet)
+    }
+}
+
+private struct SupabaseVisitOTPRow: Decodable {
+    let visitId: UUID
+    let code: String
+    let expiresAt: Date
+    let verifiedAt: Date?
+
+    enum CodingKeys: String, CodingKey { case code, visitId = "visit_id", expiresAt = "expires_at", verifiedAt = "verified_at" }
+
+    func toDomain() -> VisitOTP { VisitOTP(visitId: visitId, code: code, expiresAt: expiresAt, verifiedAt: verifiedAt) }
+}
+
+private struct SupabaseConsentRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let purpose: String
+    let version: String
+    let grantedAt: Date
+    let withdrawnAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, purpose, version
+        case userId = "user_id", grantedAt = "granted_at", withdrawnAt = "withdrawn_at"
+    }
+
+    func toDomain() -> ConsentRecord {
+        ConsentRecord(id: id, userId: userId, purpose: purpose, version: version, grantedAt: grantedAt, withdrawnAt: withdrawnAt)
     }
 }
 

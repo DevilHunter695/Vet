@@ -32,6 +32,21 @@ protocol VisitRepository: Sendable {
     func paidAmountMinorUnits(visitId: UUID) async throws -> Int
 }
 
+protocol VisitOTPRepository: Sendable {
+    /// Generates (or returns the existing, unexpired) start-of-visit OTP —
+    /// called once a visit reaches `arrived`.
+    func generateOTP(visitId: UUID) async throws -> VisitOTP
+    /// Verifies the code the customer read aloud; on success the visit
+    /// transitions to `in_progress` server-side.
+    func verifyOTP(visitId: UUID, code: String) async throws -> Bool
+}
+
+protocol ConsentRepository: Sendable {
+    func activeConsents(userId: UUID) async throws -> [ConsentRecord]
+    func grant(userId: UUID, purpose: String, version: String) async throws -> ConsentRecord
+    func withdraw(userId: UUID, purpose: String) async throws
+}
+
 protocol RefundRepository: Sendable {
     /// G4: refunds tracked to the gateway. Ops-initiated refunds pass a
     /// non-nil `initiatedByOpsUserId`; a policy-driven cancellation refund

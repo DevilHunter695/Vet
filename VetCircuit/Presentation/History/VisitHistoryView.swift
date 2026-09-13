@@ -45,7 +45,7 @@ final class VisitHistoryViewModel {
                 // Cancelling moves this visit out of "Happening now" and changes
                 // its badge — without an explicit animation it just snaps
                 // between sections instead of settling there.
-                withAnimation(Theme.springSoft) { visits[index].status = .cancelled }
+                withAnimation(Theme.springSoft) { visits[index].status = .cancelledByUser }
             }
         } catch {
             errorMessage = error.localizedDescription

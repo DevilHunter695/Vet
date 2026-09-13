@@ -6,8 +6,10 @@ struct VisitDetailView: View {
     @State private var showingReschedule = false
     @State private var callURL: URL?
     @State private var callErrorMessage: String?
+    @State private var visitOTP: VisitOTP?
 
     private let startCallUseCase = DependencyContainer.shared.startCallUseCase()
+    private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
 
     var body: some View {
         ScrollView {
@@ -35,6 +37,23 @@ struct VisitDetailView: View {
                     }
                     .buttonStyle(PressableStyle())
                     .appearAnimation(delay: 0.05)
+                }
+
+                if visit.status == .arrived, let visitOTP {
+                    Card {
+                        VStack(spacing: 8) {
+                            Label("Read this code to your vet", systemImage: "lock.shield")
+                                .font(.brandHeadline).foregroundStyle(Theme.primary)
+                            Text(visitOTP.code)
+                                .font(.system(size: 40, weight: .bold, design: .rounded))
+                                .kerning(8)
+                            Text("This confirms the visit actually started — a quick anti-fraud check.")
+                                .font(.brandCaption).foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .appearAnimation()
                 }
 
                 if visit.status == .requested || visit.status == .confirmed {
@@ -104,6 +123,10 @@ struct VisitDetailView: View {
         }
         .sheet(isPresented: $showingReschedule) {
             RescheduleVisitView(visit: visit)
+        }
+        .task {
+            guard visit.status == .arrived else { return }
+            visitOTP = try? await visitOTPRepository.generateOTP(visitId: visit.id)
         }
     }
 }

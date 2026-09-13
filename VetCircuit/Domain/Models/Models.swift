@@ -73,22 +73,71 @@ struct Visit: Identifiable, Codable, Equatable, Hashable {
     var notes: String?
     var paymentId: UUID?
 
+    /// Appendix B's 8-state machine (up from v1's 5) — the extra states are
+    /// what let the timeline (I2) show "assigned", "arrived", and
+    /// "in progress" instead of jumping straight from confirmed to en route
+    /// to completed with nothing in between.
     enum VisitStatus: String, Codable, CaseIterable {
         case requested
         case confirmed
+        case assigned
         case enRoute = "en_route"
+        case arrived
+        case inProgress = "in_progress"
         case completed
-        case cancelled
+        case cancelledByUser = "cancelled_by_user"
+        case cancelledByVet = "cancelled_by_vet"
+        case noShowUser = "no_show_user"
+        case noShowVet = "no_show_vet"
+        case disputed
+        case resolved
 
         var displayText: String {
             switch self {
             case .requested: return "Requested"
             case .confirmed: return "Confirmed"
+            case .assigned: return "Vet assigned"
             case .enRoute: return "Vet en route"
+            case .arrived: return "Vet has arrived"
+            case .inProgress: return "Visit in progress"
             case .completed: return "Completed"
-            case .cancelled: return "Cancelled"
+            case .cancelledByUser: return "Cancelled by you"
+            case .cancelledByVet: return "Cancelled by vet"
+            case .noShowUser: return "You weren't available"
+            case .noShowVet: return "Vet didn't arrive"
+            case .disputed: return "Under review"
+            case .resolved: return "Resolved"
             }
         }
+
+        var isTerminal: Bool {
+            switch self {
+            case .completed, .cancelledByUser, .cancelledByVet, .noShowUser, .noShowVet, .resolved: return true
+            default: return false
+            }
+        }
+
+        var isCancelled: Bool {
+            self == .cancelledByUser || self == .cancelledByVet || self == .noShowUser
+        }
+    }
+
+    /// Appendix B's legal-transition table, enforced here so the client and
+    /// (eventually) the DB trigger agree on the same rules — an illegal
+    /// transition is a bug to catch, not something the UI should paper over.
+    static let legalTransitions: [VisitStatus: Set<VisitStatus>] = [
+        .requested: [.confirmed, .cancelledByUser, .cancelledByVet],
+        .confirmed: [.assigned, .cancelledByUser, .cancelledByVet],
+        .assigned: [.enRoute, .cancelledByUser, .cancelledByVet],
+        .enRoute: [.arrived, .cancelledByVet],
+        .arrived: [.inProgress, .noShowUser],
+        .inProgress: [.completed],
+        .completed: [.disputed],
+        .disputed: [.resolved],
+    ]
+
+    static func canTransition(from: VisitStatus, to: VisitStatus) -> Bool {
+        legalTransitions[from]?.contains(to) ?? false
     }
 }
 
@@ -242,6 +291,34 @@ struct Address: Identifiable, Codable, Equatable, Hashable {
     /// Whether this address falls inside a served circuit cluster — an
     /// unmatched address should route to the waitlist (C10), not a dead end.
     var isServed: Bool { clusterArea != nil }
+}
+
+// MARK: - Visit start OTP & consent (plan §I5-I6)
+
+/// I5: the customer reads this 4-digit code to the vet at arrival — cheap
+/// anti-fraud and proof-of-service. Verifying it is what moves a visit from
+/// `arrived` to `in_progress`.
+struct VisitOTP: Codable, Equatable {
+    var visitId: UUID
+    var code: String        // 4 digits, never logged, shown once in-app
+    var expiresAt: Date
+    var verifiedAt: Date?
+
+    var isExpired: Bool { Date() >= expiresAt }
+    var isVerified: Bool { verifiedAt != nil }
+}
+
+/// I6: a digital consent/liability waiver accepted before a customer's
+/// first visit — a legal shield, and a DPDP-style itemized consent record.
+struct ConsentRecord: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var purpose: String     // e.g. "liability_waiver", "location_tracking"
+    var version: String
+    var grantedAt: Date
+    var withdrawnAt: Date?
+
+    var isActive: Bool { withdrawnAt == nil }
 }
 
 // MARK: - Cancellation policy, refunds & invoices (plan §F4, §G4-G5)

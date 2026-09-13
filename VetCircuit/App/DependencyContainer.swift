@@ -27,6 +27,8 @@ final class DependencyContainer {
     let quoteRepository: QuoteRepository
     let refundRepository: RefundRepository
     let invoiceRepository: InvoiceRepository
+    let visitOTPRepository: VisitOTPRepository
+    let consentRepository: ConsentRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -52,6 +54,8 @@ final class DependencyContainer {
         self.quoteRepository = MockQuoteRepository()
         self.refundRepository = MockRefundRepository()
         self.invoiceRepository = MockInvoiceRepository()
+        self.visitOTPRepository = MockVisitOTPRepository()
+        self.consentRepository = MockConsentRepository()
     }
 
     // MARK: Use case factories
@@ -60,6 +64,8 @@ final class DependencyContainer {
     func bookVisitUseCase() -> BookVisitUseCase { BookVisitUseCase(visitRepository: visitRepository) }
     func cancelVisitUseCase() -> CancelVisitUseCase { CancelVisitUseCase(visitRepository: visitRepository, refundRepository: refundRepository) }
     func rescheduleVisitUseCase() -> RescheduleVisitUseCase { RescheduleVisitUseCase(visitRepository: visitRepository) }
+    func startVisitUseCase() -> StartVisitUseCase { StartVisitUseCase(visitOTPRepository: visitOTPRepository, visitRepository: visitRepository) }
+    func manageConsentUseCase() -> ManageConsentUseCase { ManageConsentUseCase(consentRepository: consentRepository) }
     func getVisitHistoryUseCase() -> GetVisitHistoryUseCase { GetVisitHistoryUseCase(visitRepository: visitRepository) }
     func subscribeToPlanUseCase() -> SubscribeToPlanUseCase {
         SubscribeToPlanUseCase(subscriptionRepository: subscriptionRepository, paymentRepository: paymentRepository)

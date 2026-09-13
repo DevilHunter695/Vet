@@ -39,6 +39,45 @@ actor MockCircuitRepository: CircuitRepository {
     }
 }
 
+actor MockVisitOTPRepository: VisitOTPRepository {
+    private var otps: [UUID: VisitOTP] = [:]
+
+    func generateOTP(visitId: UUID) async throws -> VisitOTP {
+        if let existing = otps[visitId], !existing.isExpired { return existing }
+        let code = String(format: "%04d", Int.random(in: 0...9999))
+        let otp = VisitOTP(visitId: visitId, code: code, expiresAt: Date().addingTimeInterval(3600), verifiedAt: nil)
+        otps[visitId] = otp
+        return otp
+    }
+
+    func verifyOTP(visitId: UUID, code: String) async throws -> Bool {
+        guard var otp = otps[visitId], !otp.isExpired, otp.code == code else { return false }
+        otp.verifiedAt = .now
+        otps[visitId] = otp
+        return true
+    }
+}
+
+actor MockConsentRepository: ConsentRepository {
+    private var consents: [ConsentRecord] = []
+
+    func activeConsents(userId: UUID) async throws -> [ConsentRecord] {
+        consents.filter { $0.userId == userId && $0.isActive }
+    }
+
+    func grant(userId: UUID, purpose: String, version: String) async throws -> ConsentRecord {
+        let record = ConsentRecord(id: UUID(), userId: userId, purpose: purpose, version: version, grantedAt: .now, withdrawnAt: nil)
+        consents.append(record)
+        return record
+    }
+
+    func withdraw(userId: UUID, purpose: String) async throws {
+        for index in consents.indices where consents[index].userId == userId && consents[index].purpose == purpose {
+            consents[index].withdrawnAt = .now
+        }
+    }
+}
+
 actor MockCartRepository: CartRepository {
     private var carts: [UUID: Cart] = [:]
 
@@ -225,7 +264,7 @@ actor MockVisitRepository: VisitRepository {
 
     func cancelVisit(visitId: UUID) async throws {
         guard let index = visits.firstIndex(where: { $0.id == visitId }) else { throw DomainError.notFound("Visit") }
-        visits[index].status = .cancelled
+        visits[index].status = .cancelledByUser
     }
 
     func rescheduleVisit(visitId: UUID, newSlot: ScheduleSlot) async throws -> Visit {
