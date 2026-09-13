@@ -661,6 +661,41 @@ struct Invoice: Identifiable, Codable, Equatable, Hashable {
     var issuedAt: Date
 }
 
+// MARK: - Saved payment methods (plan E9) — never a PAN/CVV, only a
+// gateway-issued token reference plus a display label safe to show
+// ("Visa •••• 4242"). Mirrors the refund/wallet discipline: the client only
+// ever stores/reads a reference, real card data lives with the gateway.
+struct SavedPaymentMethod: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var gatewayTokenId: String
+    var displayLabel: String
+    var isDefault: Bool
+    var createdAt: Date
+}
+
+// MARK: - Support refund/credit audit trail (plan M4) — append-only record
+// of a support-agent-issued refund or wallet credit against a visit, tied to
+// the ticket that prompted it. Written only by the `issue-support-refund`
+// Edge Function (service-role key), never by the client — mirrors
+// `refunds`/`wallet_ledger`'s append-only, RLS-locked-down discipline.
+struct SupportRefundAudit: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var ticketId: UUID
+    var visitId: UUID
+    var issuedByUserId: UUID
+    var kind: Kind
+    var amountMinorUnits: Int
+    var reason: String
+    var refundId: UUID?
+    var walletLedgerEntryId: UUID?
+    var createdAt: Date
+
+    enum Kind: String, Codable {
+        case refund, walletCredit = "wallet_credit"
+    }
+}
+
 // MARK: - Wallet (plan §G6) — append-only double-entry ledger; balance is
 // always the sum of entries, never a stored/mutable column (mirrors
 // vet_ledger's discipline in 0014_payouts.sql).

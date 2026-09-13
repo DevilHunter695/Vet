@@ -53,6 +53,10 @@ final class DependencyContainer {
     let recurringBookingRuleRepository: RecurringBookingRuleRepository
     /// F6: vet-initiated reschedule proposals.
     let rescheduleProposalRepository: RescheduleProposalRepository
+    /// E9: saved payment methods (gateway token reference only).
+    let savedPaymentMethodRepository: SavedPaymentMethodRepository
+    /// M4: support-issued refunds/credits, with audit trail.
+    let supportRefundAuditRepository: SupportRefundAuditRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -100,6 +104,8 @@ final class DependencyContainer {
         self.vetServiceOverrideRepository = MockVetServiceOverrideRepository()
         self.recurringBookingRuleRepository = MockRecurringBookingRuleRepository()
         self.rescheduleProposalRepository = MockRescheduleProposalRepository()
+        self.savedPaymentMethodRepository = MockSavedPaymentMethodRepository()
+        self.supportRefundAuditRepository = MockSupportRefundAuditRepository(refundRepository: refundRepository)
     }
 
     // MARK: Use case factories
@@ -174,4 +180,14 @@ final class DependencyContainer {
     func joinWaitlistUseCase() -> JoinWaitlistUseCase { JoinWaitlistUseCase(waitlistRepository: waitlistRepository) }
     func fileIncidentReportUseCase() -> FileIncidentReportUseCase { FileIncidentReportUseCase(repository: incidentReportRepository) }
     func sosUseCase() -> SOSUseCase { SOSUseCase(incidentReportRepository: incidentReportRepository) }
+    func manageSavedPaymentMethodsUseCase() -> ManageSavedPaymentMethodsUseCase {
+        ManageSavedPaymentMethodsUseCase(repository: savedPaymentMethodRepository)
+    }
+    func issueSupportRefundUseCase() -> IssueSupportRefundUseCase {
+        IssueSupportRefundUseCase(repository: supportRefundAuditRepository)
+    }
+    /// M5: business-hours-gated support number, checked via `tel:`.
+    func contactSupportByCallUseCase() -> ContactSupportByCallUseCase {
+        ContactSupportByCallUseCase(supportPhoneNumber: "+911800123456")
+    }
 }

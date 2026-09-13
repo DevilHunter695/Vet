@@ -98,6 +98,18 @@ protocol PaymentRepository: Sendable {
     func createTipCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL
 }
 
+// MARK: - E9: saved payment methods — only a gateway token reference is
+// ever stored; a card/UPI's raw details never reach this app or its backend.
+protocol SavedPaymentMethodRepository: Sendable {
+    func list(userId: UUID) async throws -> [SavedPaymentMethod]
+    /// `gatewayTokenId` and `displayLabel` come back from the (not-yet-wired)
+    /// gateway SDK's tokenization step — this call only persists the
+    /// reference, it never sees a PAN/CVV.
+    func save(userId: UUID, gatewayTokenId: String, displayLabel: String, makeDefault: Bool) async throws -> SavedPaymentMethod
+    func remove(id: UUID) async throws
+    func setDefault(id: UUID, userId: UUID) async throws
+}
+
 protocol ChatRepository: Sendable {
     func history(visitId: UUID) async throws -> [ChatMessage]
     func send(visitId: UUID, body: String) async throws -> ChatMessage
@@ -309,6 +321,19 @@ protocol SupportRepository: Sendable {
     /// client reads state, never writes it after creation).
     func createTicket(userId: UUID, visitId: UUID?, subject: String, body: String) async throws -> SupportTicket
     func myTickets(userId: UUID) async throws -> [SupportTicket]
+}
+
+// MARK: - M4: support-issued refunds/credits, with an append-only audit
+// trail. The actual money movement (refund row / wallet ledger entry)
+// happens inside the `issue-support-refund` Edge Function, service-role
+// only — this repository never inserts into `refunds` or `wallet_ledger`
+// directly, mirroring `RefundRepository.issueRefund`'s trusted-boundary.
+protocol SupportRefundAuditRepository: Sendable {
+    func issueSupportRefund(
+        ticketId: UUID, visitId: UUID, issuedByUserId: UUID,
+        kind: SupportRefundAudit.Kind, amountMinorUnits: Int, reason: String
+    ) async throws -> SupportRefundAudit
+    func auditTrail(ticketId: UUID) async throws -> [SupportRefundAudit]
 }
 
 protocol AppNotificationRepository: Sendable {
