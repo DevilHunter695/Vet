@@ -211,8 +211,8 @@ Service (Home consultation)
 | F5 | Recurring bookings (monthly deworming, weekly physio) | P1 | 🔨 (rule model/repo/UI + `RecurrenceScheduler` ship; a scheduled job to actually spawn each cycle's visit is out of scope for the client app — known gap) |
 | F6 | Vet-initiated reschedule + customer accept/decline + auto-compensation credit | P1 | 🔨 (proposal model/repo + accept/decline banner in `VisitDetailView` ship; the vet-side "propose a new slot" screen is a separate (vet-app) workstream) |
 | F7 | Customer no-show & vet no-show handling, both directions | P1 | 🔨 (`NoShowPolicy` + `assigned`/`en_route` → `no_show_vet` transition + customer-facing "Vet didn't show up" report ship; customer no-show is reported vet-side, out of scope here) |
-| F8 | Buffer/travel-time aware slot generation | P1 | ⛔ |
-| F9 | Blackouts/leave/holiday handling for vets | P1 | ⛔ |
+| F8 | Buffer/travel-time aware slot generation | P1 | ✅ `SlotBufferPolicy` (pure, unit-tested) filters a circuit's schedule in `GetCircuitsUseCase` so an empty slot within travel-buffer distance of an already-booked one on the same day isn't offered |
+| F9 | Blackouts/leave/holiday handling for vets | P1 | ✅ `VetBlackout` model + `VetBlackoutRepository` (Mock/Supabase, `vet_blackouts` table) + `ManageVetBlackoutsUseCase`; `GetCircuitsUseCase` excludes a circuit whose vet is currently blacked out. No vet-facing management UI exists anywhere in this app yet (there's no "vet mode" surface at all), so a vet-side screen to create blackouts is a known gap — the domain/data layer and the customer-facing filtering effect are complete |
 
 ### G. Payments, billing & refunds
 
@@ -272,7 +272,7 @@ Service (Home consultation)
 |---|---|---|---|
 | K1 | Visit record: diagnosis notes, procedures done, meds given | P0 | 🔨 |
 | K2 | Prescription (structured, vet-signed, PDF) | P1 | 🔨 | `prescriptions` table + read-only `PrescriptionRepository`, shown in `PetDetailView`; structured data + vet-signed only via server-side RLS (no client insert policy) — PDF generation not built (known gap, same shape as A7's export-PDF gap) |
-| K3 | Medication reminders | P2 | ⛔ |
+| K3 | Medication reminders | P2 | ✅ `MedicationReminder` model + `MedicationReminderRepository` (Mock/Supabase, `medication_reminders` table, household-manageable per `pet_id`) + `ManageMedicationRemindersUseCase`; `MedicationRemindersView` (list + add form) reachable from `PetDetailView` next to Prescriptions; `PushNotificationManager` schedules a repeating local `UNCalendarNotificationTrigger` per time-of-day |
 | K4 | Vaccination certificate PDF + next-due auto-scheduling | P1 | 🔨 | Next-due date auto-populates (+12mo) when a vaccination is recorded — the "auto-scheduling" plan means; certificate PDF is a known gap |
 | K5 | Follow-up booking in 1 tap (free follow-up window) | P1 | 🔨 | `FollowUpBookingPolicy` (14-day window) gates a "Book free follow-up" button on `VisitDetailView`, pre-filling the same pet + the existing free follow-up variant via `ServiceDetailView`; that screen adds to cart rather than booking a specific circuit slot directly, so "same vet/circuit" isn't yet enforced end-to-end — known gap |
 | K6 | Lab test ordering + report delivery | P2 | ⛔ |

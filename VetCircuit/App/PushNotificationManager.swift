@@ -49,6 +49,46 @@ final class PushNotificationManager: NSObject {
         let request = UNNotificationRequest(identifier: "renewal-\(subscription.id)", content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request)
     }
+
+    /// K3: one repeating `UNCalendarNotificationTrigger` per time-of-day the
+    /// reminder specifies — each fires daily at that wall-clock time for as
+    /// long as the request stays scheduled (removed via `cancelMedicationReminders`
+    /// when the reminder is deactivated/deleted, or when its date range ends).
+    /// iOS caps pending local notifications at 64 system-wide, so this is a
+    /// known scaling limit for a household with many concurrent reminders —
+    /// acceptable for this app's scope (a handful of pets/medications).
+    func scheduleMedicationReminders(_ reminder: MedicationReminder, petName: String) {
+        cancelMedicationReminders(reminderId: reminder.id)
+        guard reminder.isActive else { return }
+
+        for (index, time) in reminder.times.enumerated() {
+            let content = UNMutableNotificationContent()
+            content.title = "Time for \(petName)'s medication"
+            content.body = reminder.dosage.isEmpty
+                ? "Give \(petName) \(reminder.medicationName)."
+                : "Give \(petName) \(reminder.medicationName) — \(reminder.dosage)."
+            content.sound = .default
+
+            var components = DateComponents()
+            components.hour = time.hour
+            components.minute = time.minute
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+            let request = UNNotificationRequest(identifier: Self.medicationNotificationId(reminderId: reminder.id, index: index),
+                                                 content: content, trigger: trigger)
+            UNUserNotificationCenter.current().add(request)
+        }
+    }
+
+    func cancelMedicationReminders(reminderId: UUID) {
+        UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
+            let ids = requests.map(\.identifier).filter { $0.hasPrefix("medication-\(reminderId.uuidString)-") }
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+        }
+    }
+
+    private static func medicationNotificationId(reminderId: UUID, index: Int) -> String {
+        "medication-\(reminderId.uuidString)-\(index)"
+    }
 }
 
 extension PushNotificationManager: UNUserNotificationCenterDelegate {

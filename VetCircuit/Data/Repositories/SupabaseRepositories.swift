@@ -393,12 +393,6 @@ final class SupabasePrescriptionRepository: PrescriptionRepository {
     }
 }
 
-/// B6: document vault. The actual file bytes upload to the `documents`
-/// Storage bucket is not wired up yet — TODO: use the Supabase Storage SDK
-/// (`client.storage.from("documents").upload(...)`) once it's added as a
-/// dependency, then insert the resulting object path here. For now, `upload`
-/// mints a UUID-based mock path so the DB schema/RLS can be exercised end to
-/// end ahead of that wiring.
 final class SupabasePetDocumentRepository: PetDocumentRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
@@ -422,6 +416,66 @@ final class SupabasePetDocumentRepository: PetDocumentRepository {
 
     func delete(id: UUID) async throws {
         try await client.from("pet_documents").delete().eq("id", value: id).execute()
+    }
+}
+
+final class SupabaseVetBlackoutRepository: VetBlackoutRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func blackouts(vetId: UUID) async throws -> [VetBlackout] {
+        let rows: [SupabaseVetBlackoutRow] = try await client
+            .from("vet_blackouts").select().eq("vet_id", value: vetId).order("start_date").execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func blackouts(vetIds: [UUID]) async throws -> [VetBlackout] {
+        guard !vetIds.isEmpty else { return [] }
+        let rows: [SupabaseVetBlackoutRow] = try await client
+            .from("vet_blackouts").select().in("vet_id", values: vetIds).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func create(_ blackout: VetBlackout) async throws -> VetBlackout {
+        let insert = SupabaseVetBlackoutInsert(blackout: blackout)
+        let rows: [SupabaseVetBlackoutRow] = try await client.from("vet_blackouts").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func delete(id: UUID) async throws {
+        try await client.from("vet_blackouts").delete().eq("id", value: id).execute()
+    }
+}
+
+/// K3: medication reminders.
+final class SupabaseMedicationReminderRepository: MedicationReminderRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func reminders(petId: UUID) async throws -> [MedicationReminder] {
+        let rows: [SupabaseMedicationReminderRow] = try await client
+            .from("medication_reminders").select().eq("pet_id", value: petId).order("medication_name").execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func create(_ reminder: MedicationReminder) async throws -> MedicationReminder {
+        let insert = SupabaseMedicationReminderInsert(reminder: reminder)
+        let rows: [SupabaseMedicationReminderRow] = try await client.from("medication_reminders").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func update(_ reminder: MedicationReminder) async throws -> MedicationReminder {
+        let insert = SupabaseMedicationReminderInsert(reminder: reminder)
+        let rows: [SupabaseMedicationReminderRow] = try await client
+            .from("medication_reminders").update(insert).eq("id", value: reminder.id).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Medication reminder") }
+        return row.toDomain()
+    }
+
+    func delete(id: UUID) async throws {
+        try await client.from("medication_reminders").delete().eq("id", value: id).execute()
     }
 }
 
@@ -984,6 +1038,98 @@ private struct SupabasePetDocumentInsert: Encodable {
     enum CodingKeys: String, CodingKey {
         case title
         case petId = "pet_id", uploaderId = "uploader_id", filePath = "file_path"
+    }
+}
+
+private struct SupabaseVetBlackoutRow: Decodable {
+    let id: UUID
+    let vetId: UUID
+    let startDate: Date
+    let endDate: Date
+    let reason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, reason
+        case vetId = "vet_id", startDate = "start_date", endDate = "end_date"
+    }
+
+    func toDomain() -> VetBlackout {
+        VetBlackout(id: id, vetId: vetId, startDate: startDate, endDate: endDate, reason: reason)
+    }
+}
+
+private struct SupabaseVetBlackoutInsert: Encodable {
+    let vetId: UUID
+    let startDate: Date
+    let endDate: Date
+    let reason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case reason
+        case vetId = "vet_id", startDate = "start_date", endDate = "end_date"
+    }
+
+    init(blackout: VetBlackout) {
+        vetId = blackout.vetId
+        startDate = blackout.startDate
+        endDate = blackout.endDate
+        reason = blackout.reason
+    }
+}
+
+private struct SupabaseTimeOfDayDTO: Codable {
+    let hour: Int
+    let minute: Int
+
+    func toDomain() -> TimeOfDay { TimeOfDay(hour: hour, minute: minute) }
+    init(_ timeOfDay: TimeOfDay) { hour = timeOfDay.hour; minute = timeOfDay.minute }
+}
+
+private struct SupabaseMedicationReminderRow: Decodable {
+    let id: UUID
+    let petId: UUID
+    let medicationName: String
+    let dosage: String
+    let times: [SupabaseTimeOfDayDTO]
+    let startDate: Date
+    let endDate: Date?
+    let isActive: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, times, dosage
+        case petId = "pet_id", medicationName = "medication_name"
+        case startDate = "start_date", endDate = "end_date", isActive = "is_active"
+    }
+
+    func toDomain() -> MedicationReminder {
+        MedicationReminder(id: id, petId: petId, medicationName: medicationName, dosage: dosage,
+                            times: times.map { $0.toDomain() }, startDate: startDate, endDate: endDate, isActive: isActive)
+    }
+}
+
+private struct SupabaseMedicationReminderInsert: Encodable {
+    let petId: UUID
+    let medicationName: String
+    let dosage: String
+    let times: [SupabaseTimeOfDayDTO]
+    let startDate: Date
+    let endDate: Date?
+    let isActive: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case times, dosage
+        case petId = "pet_id", medicationName = "medication_name"
+        case startDate = "start_date", endDate = "end_date", isActive = "is_active"
+    }
+
+    init(reminder: MedicationReminder) {
+        petId = reminder.petId
+        medicationName = reminder.medicationName
+        dosage = reminder.dosage
+        times = reminder.times.map { SupabaseTimeOfDayDTO($0) }
+        startDate = reminder.startDate
+        endDate = reminder.endDate
+        isActive = reminder.isActive
     }
 }
 
