@@ -56,7 +56,7 @@ struct CircuitsListView: View {
                         NavigationLink(value: circuit) {
                             CircuitRow(circuit: circuit)
                         }
-                        .appearAnimation(delay: Double(index) * 0.05)
+                        .appearAnimation(delay: Theme.staggerDelay(index))
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)

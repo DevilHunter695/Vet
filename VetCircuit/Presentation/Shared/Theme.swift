@@ -24,10 +24,23 @@ enum Theme {
 
     static let cardShadow = Color.black.opacity(0.08)
 
-    // Motion language: springy but not bouncy, consistent everywhere.
-    static let springQuick = Animation.spring(response: 0.32, dampingFraction: 0.75)
-    static let springSoft = Animation.spring(response: 0.55, dampingFraction: 0.82)
-    static let easeIn = Animation.easeOut(duration: 0.35)
+    // Motion language, tuned against Apple's fluid-interfaces defaults and
+    // Emil Kowalski's animation standards:
+    //  - critically damped (no bounce) for anything fired many times/day
+    //    (button presses, toggles) — bounce is earned, not default
+    //  - a little bounce only for rare/occasional delight moments
+    //    (entrances, celebrations), kept under ~400ms response
+    //  - never `ease-in` on UI — it delays the moment users are watching most
+    static let springQuick = Animation.spring(response: 0.28, dampingFraction: 1.0)
+    static let springSoft = Animation.spring(response: 0.4, dampingFraction: 0.86)
+    static let springMomentum = Animation.spring(response: 0.4, dampingFraction: 0.8)
+    static let crossFade = Animation.easeOut(duration: 0.25)
+
+    /// Stagger delay for the nth item in a list entrance, capped so a long
+    /// list doesn't push its later rows into a slow, sluggish-feeling reveal.
+    static func staggerDelay(_ index: Int) -> Double {
+        Double(min(index, 6)) * 0.05
+    }
 }
 
 // MARK: - Typography

@@ -75,7 +75,7 @@ struct VisitHistoryView: View {
                                 VisitRow(visit: visit, isPrimary: false) {
                                     Task { await viewModel.cancel(visit) }
                                 }
-                                .appearAnimation(delay: Double(index) * 0.04)
+                                .appearAnimation(delay: Theme.staggerDelay(index))
                             }
                         }
                     }

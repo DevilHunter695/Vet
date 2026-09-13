@@ -67,7 +67,7 @@ struct RootView: View {
             }
         }
         .animation(Theme.springSoft, value: session.currentUser != nil)
-        .animation(Theme.easeIn, value: session.isBootstrapping)
+        .animation(Theme.crossFade, value: session.isBootstrapping)
     }
 }
 
