@@ -120,6 +120,7 @@ struct PetDetailView: View {
                 if !viewModel.prescriptions.isEmpty {
                     prescriptionCard.appearAnimation(delay: 0.2)
                 }
+                medicationRemindersLink.appearAnimation(delay: 0.22)
 
                 if let errorMessage = viewModel.errorMessage {
                     ErrorBanner(message: errorMessage)
@@ -337,6 +338,21 @@ struct PetDetailView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    // MARK: - Medication reminders (K3)
+
+    private var medicationRemindersLink: some View {
+        NavigationLink {
+            MedicationRemindersView(pet: viewModel.pet)
+        } label: {
+            Card {
+                Label("Medication reminders", systemImage: "bell.badge.fill")
+                    .font(.brandHeadline).foregroundStyle(Theme.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 
