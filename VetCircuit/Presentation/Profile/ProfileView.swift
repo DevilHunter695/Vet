@@ -175,6 +175,9 @@ struct ProfileView: View {
                     NavigationLink("Addresses") {
                         AddressListView()
                     }
+                    NavigationLink("Payment methods") {
+                        PaymentMethodsView()
+                    }
                     NavigationLink("Household") {
                         HouseholdView()
                     }

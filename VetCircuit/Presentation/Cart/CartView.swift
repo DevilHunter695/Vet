@@ -20,6 +20,11 @@ final class CartViewModel {
     // comes back from the quote, never trusted from this fetch.
     var walletBalanceMinorUnits = 0
     var useWalletBalance = false
+    /// E9: reuse a saved gateway-tokenized card/UPI method instead of
+    /// re-entering one each time. Purely a UI selection today — the actual
+    /// hosted checkout URL flow (StartCheckoutUseCase) doesn't yet take a
+    /// payment-method parameter, same gap noted on PaymentRepository.
+    var selectedPaymentMethodId: UUID?
 
     private let manageCartUseCase = DependencyContainer.shared.manageCartUseCase()
     private let getQuoteUseCase = DependencyContainer.shared.getQuoteUseCase()
@@ -114,6 +119,8 @@ struct CartView: View {
                         CouponEntryRow(code: $viewModel.couponCodeInput, message: viewModel.couponMessage) {
                             viewModel.applyCoupon()
                         }
+
+                        SavedPaymentMethodPickerRow(selectedMethodId: $viewModel.selectedPaymentMethodId)
 
                         if viewModel.walletBalanceMinorUnits > 0 {
                             Toggle(isOn: Binding(
