@@ -116,6 +116,20 @@ struct SendChatMessageUseCase {
         }
         return try await chatRepository.send(visitId: visitId, body: trimmed)
     }
+
+    /// J2: a max size guard is the only client-side validation — the real
+    /// content check (virus scan, format) happens in the storage bucket's
+    /// trusted upload path, not here.
+    func sendPhoto(visitId: UUID, imageData: Data) async throws -> ChatMessage {
+        let maxBytes = 10 * 1024 * 1024
+        guard !imageData.isEmpty else {
+            throw DomainError.validation("Couldn't read that photo.")
+        }
+        guard imageData.count <= maxBytes else {
+            throw DomainError.validation("Photo is too large — please choose one under 10MB.")
+        }
+        return try await chatRepository.sendPhoto(visitId: visitId, imageData: imageData)
+    }
 }
 
 struct SubmitReviewUseCase {

@@ -364,7 +364,17 @@ actor MockChatRepository: ChatRepository {
     func history(visitId: UUID) async throws -> [ChatMessage] { messages[visitId] ?? [] }
 
     func send(visitId: UUID, body: String) async throws -> ChatMessage {
-        let message = ChatMessage(id: UUID(), visitId: visitId, senderId: MockData.user.id, body: body, sentAt: .now, readAt: nil)
+        let message = ChatMessage(id: UUID(), visitId: visitId, senderId: MockData.user.id, body: body, sentAt: .now, readAt: nil, attachmentURL: nil)
+        messages[visitId, default: []].append(message)
+        return message
+    }
+
+    func sendPhoto(visitId: UUID, imageData: Data) async throws -> ChatMessage {
+        // No real storage bucket in mock mode — write to a local temp file so
+        // the UI still has a real, loadable URL to render.
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
+        try imageData.write(to: url)
+        let message = ChatMessage(id: UUID(), visitId: visitId, senderId: MockData.user.id, body: "📷 Photo", sentAt: .now, readAt: nil, attachmentURL: url)
         messages[visitId, default: []].append(message)
         return message
     }

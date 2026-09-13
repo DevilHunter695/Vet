@@ -135,12 +135,31 @@ struct ChatBubble: View {
     var body: some View {
         HStack {
             if isMine { Spacer(minLength: 40) }
-            Text(message.body)
-                .font(.brandBody)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(isMine ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color(.secondarySystemBackground)))
-                .foregroundStyle(isMine ? .white : .primary)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            Group {
+                if let attachmentURL = message.attachmentURL {
+                    // J2: "Pet owners send photos. Always." — rendered inline,
+                    // not as a bare filename link.
+                    AsyncImage(url: attachmentURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFill()
+                        case .failure:
+                            Image(systemName: "photo.badge.exclamationmark").font(.title).foregroundStyle(.secondary)
+                        default:
+                            ProgressView()
+                        }
+                    }
+                    .frame(width: 180, height: 180)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                } else {
+                    Text(message.body)
+                        .font(.brandBody)
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(isMine ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color(.secondarySystemBackground)))
+                        .foregroundStyle(isMine ? .white : .primary)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+            }
             if !isMine { Spacer(minLength: 40) }
         }
         .transition(.asymmetric(insertion: .move(edge: isMine ? .trailing : .leading).combined(with: .opacity), removal: .opacity))

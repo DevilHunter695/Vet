@@ -190,6 +190,9 @@ struct ChatMessage: Identifiable, Codable, Equatable, Hashable {
     var body: String
     var sentAt: Date
     var readAt: Date?
+    /// J2: "Pet owners send photos. Always." — a signed URL to an uploaded
+    /// image, stored alongside the message rather than as a separate thread.
+    var attachmentURL: URL? = nil
 }
 
 struct Review: Identifiable, Codable, Equatable, Hashable {

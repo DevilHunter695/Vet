@@ -85,6 +85,9 @@ protocol PaymentRepository: Sendable {
 protocol ChatRepository: Sendable {
     func history(visitId: UUID) async throws -> [ChatMessage]
     func send(visitId: UUID, body: String) async throws -> ChatMessage
+    /// J2: uploads image data to a private, visit-scoped bucket and returns
+    /// the resulting attachment message — never a client-guessable public URL.
+    func sendPhoto(visitId: UUID, imageData: Data) async throws -> ChatMessage
     func subscribe(visitId: UUID, onMessage: @escaping @Sendable (ChatMessage) -> Void) -> AnyObject
 }
 

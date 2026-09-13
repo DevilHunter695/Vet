@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 @Observable
 @MainActor
@@ -39,11 +40,23 @@ final class ChatViewModel {
             draft = body
         }
     }
+
+    func sendPhoto(_ imageData: Data) async {
+        do {
+            let message = try await sendChatMessageUseCase.sendPhoto(visitId: visitId, imageData: imageData)
+            Haptics.confirm()
+            messages.append(message)
+        } catch {
+            Haptics.error()
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
 struct ChatView: View {
     @Environment(SessionStore.self) private var session
     @State private var viewModel: ChatViewModel
+    @State private var photoPickerItem: PhotosPickerItem?
 
     init(visitId: UUID) { _viewModel = State(initialValue: ChatViewModel(visitId: visitId)) }
 
@@ -73,6 +86,15 @@ struct ChatView: View {
             }
 
             HStack(spacing: 10) {
+                PhotosPicker(selection: $photoPickerItem, matching: .images) {
+                    Image(systemName: "camera.fill")
+                        .font(.headline)
+                        .foregroundStyle(Theme.primary)
+                        .frame(width: 36, height: 36)
+                        .background(Theme.primary.opacity(0.1), in: Circle())
+                }
+                .accessibilityLabel("Attach a photo")
+
                 TextField("Message", text: $viewModel.draft, axis: .vertical)
                     .font(.brandBody)
                     .padding(.horizontal, 14).padding(.vertical, 10)
@@ -102,6 +124,13 @@ struct ChatView: View {
         .navigationTitle("Chat")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load() }
+        .onChange(of: photoPickerItem) { _, newItem in
+            Task {
+                guard let newItem, let data = try? await newItem.loadTransferable(type: Data.self) else { return }
+                await viewModel.sendPhoto(data)
+                photoPickerItem = nil
+            }
+        }
     }
 }
 

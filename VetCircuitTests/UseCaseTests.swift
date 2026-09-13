@@ -353,6 +353,33 @@ struct SendChatMessageUseCaseTests {
     }
 }
 
+@Suite("SendChatMessageUseCase photo attachments")
+struct SendChatPhotoTests {
+    @Test("rejects an empty photo payload")
+    func rejectsEmptyData() async {
+        let useCase = SendChatMessageUseCase(chatRepository: MockChatRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.sendPhoto(visitId: UUID(), imageData: Data())
+        }
+    }
+
+    @Test("rejects a photo over the 10MB limit")
+    func rejectsOversizedPhoto() async {
+        let useCase = SendChatMessageUseCase(chatRepository: MockChatRepository())
+        let oversized = Data(repeating: 0, count: 11 * 1024 * 1024)
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.sendPhoto(visitId: UUID(), imageData: oversized)
+        }
+    }
+
+    @Test("sends a valid photo and gets back a message with an attachment URL")
+    func sendsValidPhoto() async throws {
+        let useCase = SendChatMessageUseCase(chatRepository: MockChatRepository())
+        let message = try await useCase.sendPhoto(visitId: UUID(), imageData: Data([0xFF, 0xD8, 0xFF]))
+        #expect(message.attachmentURL != nil)
+    }
+}
+
 @Suite("SubmitReviewUseCase")
 struct SubmitReviewUseCaseTests {
     @Test("rejects out-of-range ratings")
