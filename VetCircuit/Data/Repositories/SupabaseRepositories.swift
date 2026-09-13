@@ -732,6 +732,21 @@ final class SupabaseRefundRepository: RefundRepository {
     }
 }
 
+final class SupabasePaymentDisputeRepository: PaymentDisputeRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func disputes(visitId: UUID) async throws -> [PaymentDispute] {
+        // Plain RLS-direct select — payment_disputes' "select own visit"
+        // policy already scopes this to the signed-in customer's own visits
+        // (or an admin), so there is no trusted-endpoint indirection needed
+        // here the way a write would require.
+        let rows: [SupabasePaymentDisputeRow] = try await client.from("payment_disputes")
+            .select().eq("visit_id", value: visitId).order("opened_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
 final class SupabaseSavedPaymentMethodRepository: SavedPaymentMethodRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
@@ -1233,6 +1248,33 @@ private struct SupabaseRefundRow: Decodable {
         Refund(id: id, visitId: visitId, paymentId: paymentId, amountMinorUnits: amountMinorUnits,
                reason: reason, status: Refund.Status(rawValue: status) ?? .pending, createdAt: createdAt,
                initiatedByOpsUserId: initiatedByOpsUserId)
+    }
+}
+
+private struct SupabasePaymentDisputeRow: Decodable {
+    let id: UUID
+    let paymentId: UUID
+    let visitId: UUID
+    let gatewayDisputeId: String
+    let reason: String
+    let amountMinorUnits: Int
+    let status: String
+    let openedAt: Date
+    let resolvedAt: Date?
+    let evidenceSubmittedAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, reason, status
+        case paymentId = "payment_id", visitId = "visit_id", gatewayDisputeId = "gateway_dispute_id"
+        case amountMinorUnits = "amount_minor_units", openedAt = "opened_at"
+        case resolvedAt = "resolved_at", evidenceSubmittedAt = "evidence_submitted_at"
+    }
+
+    func toDomain() -> PaymentDispute {
+        PaymentDispute(id: id, paymentId: paymentId, visitId: visitId, gatewayDisputeId: gatewayDisputeId,
+                        reason: reason, amountMinorUnits: amountMinorUnits,
+                        status: PaymentDispute.Status(rawValue: status) ?? .open,
+                        openedAt: openedAt, resolvedAt: resolvedAt, evidenceSubmittedAt: evidenceSubmittedAt)
     }
 }
 

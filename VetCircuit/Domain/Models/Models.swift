@@ -1551,6 +1551,33 @@ struct PetDocument: Identifiable, Codable, Equatable, Hashable {
     var uploadedAt: Date
 }
 
+// MARK: - Payment disputes (plan G9) — a chargeback the gateway opened
+// against one of our payments. The dispute-webhook Edge Function is the
+// only writer (server-only financial write, same discipline as refunds);
+// the customer app only ever reads one, tied to their own visit, so they
+// understand why a hold might exist rather than being left confused.
+struct PaymentDispute: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var paymentId: UUID
+    var visitId: UUID
+    var gatewayDisputeId: String
+    var reason: String
+    var amountMinorUnits: Int
+    var status: Status
+    var openedAt: Date
+    var resolvedAt: Date?
+    var evidenceSubmittedAt: Date?
+
+    enum Status: String, Codable {
+        case open, needsResponse = "needs_response", won, lost
+    }
+
+    /// Whether this dispute still affects the customer's money — a
+    /// won/lost dispute is resolved and no longer needs surfacing as an
+    /// active hold.
+    var isActive: Bool { status == .open || status == .needsResponse }
+}
+
 // MARK: - Domain errors
 
 enum DomainError: Error, LocalizedError, Equatable {

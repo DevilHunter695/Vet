@@ -458,6 +458,17 @@ actor MockRefundRepository: RefundRepository {
     }
 }
 
+actor MockPaymentDisputeRepository: PaymentDisputeRepository {
+    // No mock visit has a real gateway dispute against it — mirrors
+    // MockInvoiceRepository's "nothing yet" stance. A future test can seed
+    // this array directly if a screen needs to preview the banner.
+    var seededDisputes: [PaymentDispute] = []
+
+    func disputes(visitId: UUID) async throws -> [PaymentDispute] {
+        seededDisputes.filter { $0.visitId == visitId }
+    }
+}
+
 actor MockInvoiceRepository: InvoiceRepository {
     func invoice(visitId: UUID) async throws -> Invoice? { nil }
 }

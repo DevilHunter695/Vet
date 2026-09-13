@@ -63,6 +63,8 @@ final class DependencyContainer {
     let vetBlackoutRepository: VetBlackoutRepository
     /// K3: medication reminders.
     let medicationReminderRepository: MedicationReminderRepository
+    /// G9: gateway chargebacks/disputes, read-only on the customer side.
+    let paymentDisputeRepository: PaymentDisputeRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -115,6 +117,7 @@ final class DependencyContainer {
         self.supportRefundAuditRepository = MockSupportRefundAuditRepository(refundRepository: refundRepository)
         self.vetBlackoutRepository = MockVetBlackoutRepository()
         self.medicationReminderRepository = MockMedicationReminderRepository()
+        self.paymentDisputeRepository = MockPaymentDisputeRepository()
     }
 
     // MARK: Use case factories

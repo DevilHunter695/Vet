@@ -65,6 +65,13 @@ protocol RefundRepository: Sendable {
     func refunds(visitId: UUID) async throws -> [Refund]
 }
 
+protocol PaymentDisputeRepository: Sendable {
+    /// G9: disputes tied to a single visit, newest first — a visit almost
+    /// never has more than one, but this stays a list for the same reason
+    /// `RefundRepository.refunds` does.
+    func disputes(visitId: UUID) async throws -> [PaymentDispute]
+}
+
 protocol InvoiceRepository: Sendable {
     /// G5: GST-compliant invoice per order, generated once a visit completes.
     func invoice(visitId: UUID) async throws -> Invoice?
