@@ -29,7 +29,9 @@ final class ReferralViewModel {
             let referral = try await sendReferralUseCase.execute(userId: userId, phone: invitePhone)
             referrals.insert(referral, at: 0)
             invitePhone = ""
+            Haptics.success()
         } catch {
+            Haptics.error()
             errorMessage = error.localizedDescription
         }
     }

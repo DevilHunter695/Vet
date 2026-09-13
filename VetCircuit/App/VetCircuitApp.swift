@@ -1,10 +1,44 @@
 import SwiftUI
 import SwiftData
 
+/// User-facing override of the system appearance. Kept as a plain string in
+/// `AppStorage` (not an enum) so it round-trips through `UserDefaults`
+/// directly; `colorScheme` is what actually feeds `.preferredColorScheme`.
+enum AppearanceOption: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .system: return "circle.lefthalf.filled"
+        case .light: return "sun.max.fill"
+        case .dark: return "moon.fill"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
 @main
 struct VetCircuitApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var session = SessionStore()
+    @AppStorage("vc.appearance") private var appearanceRaw: String = AppearanceOption.system.rawValue
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema(LocalStoreSchema.models)
@@ -21,6 +55,7 @@ struct VetCircuitApp: App {
             RootView()
                 .environment(session)
                 .tint(Theme.primary)
+                .preferredColorScheme((AppearanceOption(rawValue: appearanceRaw) ?? .system).colorScheme)
                 .task { await session.bootstrap() }
                 .task { await PushNotificationManager.shared.requestAuthorizationAndRegister() }
         }
@@ -88,5 +123,6 @@ struct MainTabView: View {
                 .tabItem { Label("Profile", systemImage: selectedTab == 2 ? "person.crop.circle.fill" : "person.circle") }
                 .tag(2)
         }
+        .onChange(of: selectedTab) { _, _ in Haptics.selection() }
     }
 }

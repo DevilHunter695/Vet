@@ -19,7 +19,13 @@ final class TriageViewModel {
             withAnimation(Theme.springQuick) { result = nil }
             let outcome = try await runTriageUseCase.execute(species: species, symptoms: symptoms)
             withAnimation(Theme.springSoft) { result = outcome }
+            switch outcome.recommendation {
+            case .bookVisitUrgently: Haptics.warning()
+            case .bookVisit: Haptics.tap()
+            case .selfCare: Haptics.success()
+            }
         } catch {
+            Haptics.error()
             errorMessage = error.localizedDescription
         }
     }
@@ -48,6 +54,7 @@ struct TriageView: View {
                     ForEach(Pet.Species.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: viewModel.species) { _, _ in Haptics.selection() }
 
                 TextField("e.g. Not eating since yesterday, seems tired", text: $viewModel.symptoms, axis: .vertical)
                     .font(.brandBody)

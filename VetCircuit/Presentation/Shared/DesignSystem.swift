@@ -36,6 +36,43 @@ struct PrimaryButton: View {
     }
 }
 
+/// A translucent "glass" surface tuned separately for light/dark. Naively
+/// pairing `.ultraThinMaterial` with a fixed `.white.opacity(_)` stroke reads
+/// fine in light mode but turns into a harsh bright ring floating in a dark
+/// room once the system material darkens — real glass catches light on one
+/// edge and fades into shadow on the other, and that highlight has to dim
+/// with the surrounding material, not stay flat white.
+extension View {
+    func glassCard(cornerRadius: CGFloat = 20) -> some View {
+        modifier(GlassCardModifier(cornerRadius: cornerRadius))
+    }
+}
+
+private struct GlassCardModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var borderGradient: LinearGradient {
+        let top = colorScheme == .dark ? Color.white.opacity(0.22) : Color.white.opacity(0.75)
+        let bottom = colorScheme == .dark ? Color.white.opacity(0.05) : Color.white.opacity(0.18)
+        return LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(borderGradient, lineWidth: 1)
+            )
+            .shadow(
+                color: colorScheme == .dark ? .black.opacity(0.45) : Theme.cardShadow,
+                radius: colorScheme == .dark ? 18 : 14,
+                y: colorScheme == .dark ? 8 : 6
+            )
+    }
+}
+
 struct Card<Content: View>: View {
     @ViewBuilder let content: Content
 

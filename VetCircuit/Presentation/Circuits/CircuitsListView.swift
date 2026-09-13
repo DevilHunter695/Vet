@@ -95,7 +95,10 @@ struct CircuitsListView: View {
                 BookingView(circuit: circuit)
             }
             .task { await viewModel.load(vertical: selectedVertical) }
-            .refreshable { await viewModel.load(vertical: selectedVertical) }
+            .refreshable {
+                Haptics.tap()
+                await viewModel.load(vertical: selectedVertical)
+            }
             .onChange(of: selectedVerticalRaw) {
                 Task { await viewModel.load(vertical: selectedVertical) }
             }
@@ -146,19 +149,7 @@ struct CircuitRow: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(.systemBackground).opacity(0.4))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(.white.opacity(0.5), lineWidth: 1)
-        )
-        .shadow(color: Theme.cardShadow, radius: 14, y: 6)
+        .glassCard()
         .accessibilityElement(children: .combine)
     }
 }

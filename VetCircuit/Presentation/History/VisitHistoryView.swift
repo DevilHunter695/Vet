@@ -86,7 +86,10 @@ struct VisitHistoryView: View {
             }
             .navigationTitle("Your visits")
             .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
-            .refreshable { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
+            .refreshable {
+                Haptics.tap()
+                if let user = session.currentUser { await viewModel.load(userId: user.id) }
+            }
         }
     }
 }
@@ -120,7 +123,10 @@ private struct VisitRow: View {
         }
         .swipeActions {
             if visit.status == .requested || visit.status == .confirmed {
-                Button("Cancel", role: .destructive, action: onCancel)
+                Button("Cancel", role: .destructive) {
+                    Haptics.warning()
+                    onCancel()
+                }
             }
         }
     }

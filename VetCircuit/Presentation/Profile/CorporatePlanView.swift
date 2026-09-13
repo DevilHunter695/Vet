@@ -29,6 +29,7 @@ struct CorporatePlanView: View {
                     Stepper(value: $seatCount, in: 5...500, step: 5) {
                         Text("\(seatCount) seats").font(.brandBody)
                     }
+                    .onChange(of: seatCount) { _, _ in Haptics.rigid() }
                     Text("Minimum 5 seats.")
                         .font(.brandCaption)
                         .foregroundStyle(.secondary)

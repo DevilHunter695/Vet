@@ -31,6 +31,19 @@ enum Haptics {
     static func error() {
         UINotificationFeedbackGenerator().notificationOccurred(.error)
     }
+
+    /// A sharp, mechanical click — snapping to a discrete step (a stepper
+    /// increment, a slider hitting a notch), distinct from a soft tap.
+    static func rigid() {
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+    }
+
+    /// A muted, gentle thud — background/ambient events (a message arriving
+    /// while the screen is already open) that shouldn't compete with the
+    /// weight of a deliberate tap.
+    static func soft() {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+    }
 }
 
 // MARK: - Brand design system

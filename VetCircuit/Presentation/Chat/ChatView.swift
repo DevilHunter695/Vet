@@ -21,7 +21,10 @@ final class ChatViewModel {
             errorMessage = error.localizedDescription
         }
         subscriptionToken = chatRepository.subscribe(visitId: visitId) { [weak self] message in
-            Task { @MainActor in self?.messages.append(message) }
+            Task { @MainActor in
+                self?.messages.append(message)
+                Haptics.soft()
+            }
         }
     }
 

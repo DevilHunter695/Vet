@@ -59,6 +59,14 @@ struct ProfileView: View {
     @State private var viewModel = ProfileViewModel()
     @State private var checkoutURL: URL?
     @AppStorage("vc.selected_vertical") private var selectedVerticalRaw: String = Vertical.vet.rawValue
+    @AppStorage("vc.appearance") private var appearanceRaw: String = AppearanceOption.system.rawValue
+
+    private var appearance: Binding<AppearanceOption> {
+        Binding(
+            get: { AppearanceOption(rawValue: appearanceRaw) ?? .system },
+            set: { appearanceRaw = $0.rawValue }
+        )
+    }
 
     private var selectedVertical: Binding<Vertical> {
         Binding(
@@ -96,6 +104,17 @@ struct ProfileView: View {
                     }
                     .pickerStyle(.inline)
                     .labelsHidden()
+                    .onChange(of: selectedVerticalRaw) { _, _ in Haptics.selection() }
+                }
+
+                Section("Appearance") {
+                    Picker("Appearance", selection: appearance) {
+                        ForEach(AppearanceOption.allCases) { option in
+                            Label(option.displayName, systemImage: option.systemImage).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: appearanceRaw) { _, _ in Haptics.selection() }
                 }
 
                 if let loyalty = viewModel.loyaltyAccount {
@@ -115,6 +134,7 @@ struct ProfileView: View {
                     } else {
                         ForEach([Subscription.PlanType.monthly, .quarterly, .annual], id: \.self) { plan in
                             Button("Subscribe — \(plan.displayName)") {
+                                Haptics.confirm()
                                 Task {
                                     if let user = session.currentUser {
                                         checkoutURL = await viewModel.subscribe(userId: user.id, plan: plan)
@@ -142,6 +162,7 @@ struct ProfileView: View {
                         Text("\(pet.name) · \(pet.species.rawValue.capitalized)")
                     }
                     .onDelete { indexSet in
+                        Haptics.warning()
                         Task {
                             for index in indexSet { await viewModel.removePet(viewModel.pets[index]) }
                         }
@@ -153,7 +174,9 @@ struct ProfileView: View {
                             ForEach(Pet.Species.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
                         }
                         .labelsHidden()
+                        .onChange(of: viewModel.newPetSpecies) { _, _ in Haptics.selection() }
                         Button("Add") {
+                            Haptics.confirm()
                             Task { if let user = session.currentUser { await viewModel.addPet(ownerId: user.id) } }
                         }
                         .disabled(viewModel.newPetName.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -168,6 +191,7 @@ struct ProfileView: View {
 
                 Section {
                     Button("Sign out", role: .destructive) {
+                        Haptics.warning()
                         Task { await session.signOut() }
                     }
                 }
