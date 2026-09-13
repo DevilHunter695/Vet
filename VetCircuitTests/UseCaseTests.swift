@@ -410,6 +410,196 @@ struct GetCircuitsUseCaseTests {
     }
 }
 
+@Suite("SlotBufferPolicy")
+struct SlotBufferPolicyTests {
+    @Test("rejects a candidate with zero gap after a booked slot")
+    func rejectsZeroGap() {
+        let booked = Date(timeIntervalSince1970: 0)
+        // Candidate starts exactly when the booked 30-min visit ends — no travel time at all.
+        let candidate = booked.addingTimeInterval(30 * 60)
+        let offerable = SlotBufferPolicy.isOfferable(
+            candidateStart: candidate, visitDurationMinutes: 30, bookedStarts: [booked], bufferMinutes: 15
+        )
+        #expect(!offerable)
+    }
+
+    @Test("accepts a candidate that leaves the full buffer")
+    func acceptsFullBuffer() {
+        let booked = Date(timeIntervalSince1970: 0)
+        let candidate = booked.addingTimeInterval((30 + 15) * 60)
+        let offerable = SlotBufferPolicy.isOfferable(
+            candidateStart: candidate, visitDurationMinutes: 30, bookedStarts: [booked], bufferMinutes: 15
+        )
+        #expect(offerable)
+    }
+
+    @Test("accepts when there are no booked slots at all")
+    func acceptsWithNoBookings() {
+        let offerable = SlotBufferPolicy.isOfferable(
+            candidateStart: .now, visitDurationMinutes: 30, bookedStarts: [], bufferMinutes: 15
+        )
+        #expect(offerable)
+    }
+
+    @Test("filterOfferableSlots keeps booked slots and drops too-close empty ones")
+    func filterOfferableSlotsDropsTooClose() {
+        let base = Date(timeIntervalSince1970: 0)
+        let booked = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: base, endTime: base.addingTimeInterval(1800), capacity: 1, bookedCount: 1)
+        let tooClose = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: base.addingTimeInterval(1800), endTime: base.addingTimeInterval(3600), capacity: 1, bookedCount: 0)
+        let farEnough = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: base.addingTimeInterval(2700), endTime: base.addingTimeInterval(4500), capacity: 1, bookedCount: 0)
+        let filtered = SlotBufferPolicy.filterOfferableSlots([booked, tooClose, farEnough], visitDurationMinutes: 30, bufferMinutes: 15)
+        #expect(filtered.contains { $0.id == booked.id })
+        #expect(!filtered.contains { $0.id == tooClose.id })
+        #expect(filtered.contains { $0.id == farEnough.id })
+    }
+}
+
+@Suite("VetBlackout")
+struct VetBlackoutTests {
+    @Test("isActive is true within the date range, inclusive")
+    func activeWithinRange() {
+        let now = Date.now
+        let blackout = VetBlackout(id: UUID(), vetId: UUID(), startDate: now.addingTimeInterval(-86400), endDate: now.addingTimeInterval(86400), reason: "Leave")
+        #expect(blackout.isActive(on: now))
+    }
+
+    @Test("isActive is false outside the date range")
+    func inactiveOutsideRange() {
+        let now = Date.now
+        let blackout = VetBlackout(id: UUID(), vetId: UUID(), startDate: now.addingTimeInterval(86400), endDate: now.addingTimeInterval(2 * 86400), reason: nil)
+        #expect(!blackout.isActive(on: now))
+    }
+
+    @Test("isVetBlackedOut only matches the given vet")
+    func matchesOnlyGivenVet() {
+        let now = Date.now
+        let vetA = UUID(); let vetB = UUID()
+        let blackout = VetBlackout(id: UUID(), vetId: vetA, startDate: now.addingTimeInterval(-3600), endDate: now.addingTimeInterval(3600), reason: nil)
+        #expect(VetBlackout.isVetBlackedOut(vetId: vetA, blackouts: [blackout], on: now))
+        #expect(!VetBlackout.isVetBlackedOut(vetId: vetB, blackouts: [blackout], on: now))
+    }
+}
+
+@Suite("ManageVetBlackoutsUseCase")
+struct ManageVetBlackoutsUseCaseTests {
+    @Test("rejects an end date before the start date")
+    func rejectsInvertedRange() async {
+        let useCase = ManageVetBlackoutsUseCase(repository: MockVetBlackoutRepository())
+        let vetId = UUID()
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.add(vetId: vetId, startDate: .now, endDate: .now.addingTimeInterval(-3600), reason: nil)
+        }
+    }
+
+    @Test("add then list returns the created blackout")
+    func addThenList() async throws {
+        let useCase = ManageVetBlackoutsUseCase(repository: MockVetBlackoutRepository())
+        let vetId = UUID()
+        _ = try await useCase.add(vetId: vetId, startDate: .now, endDate: .now.addingTimeInterval(86400), reason: "Diwali")
+        let list = try await useCase.list(vetId: vetId)
+        #expect(list.count == 1)
+        #expect(list.first?.reason == "Diwali")
+    }
+}
+
+@Suite("GetCircuitsUseCase blackout filtering")
+struct GetCircuitsUseCaseBlackoutTests {
+    @Test("excludes a circuit whose vet is currently blacked out")
+    func excludesBlackedOutVet() async throws {
+        let circuitRepository = MockCircuitRepository()
+        let allCircuits = try await circuitRepository.listCircuits(area: nil)
+        guard let targetCircuit = allCircuits.first(where: { $0.vertical == .vet }) else {
+            Issue.record("Fixture has no vet-vertical circuit to test against")
+            return
+        }
+        let blackoutRepository = MockVetBlackoutRepository()
+        _ = try await blackoutRepository.create(
+            VetBlackout(id: UUID(), vetId: targetCircuit.vetId, startDate: .now.addingTimeInterval(-3600), endDate: .now.addingTimeInterval(3600), reason: "Leave")
+        )
+
+        let useCase = GetCircuitsUseCase(repository: circuitRepository, vetBlackoutRepository: blackoutRepository)
+        let result = try await useCase.execute(area: nil, vertical: .vet)
+        #expect(!result.contains { $0.id == targetCircuit.id })
+    }
+
+    @Test("without a blackout repository, nothing is filtered")
+    func noFilteringWithoutRepository() async throws {
+        let useCase = GetCircuitsUseCase(repository: MockCircuitRepository())
+        let result = try await useCase.execute(area: nil, vertical: .vet)
+        #expect(!result.isEmpty)
+    }
+}
+
+@Suite("MedicationReminder")
+struct MedicationReminderTests {
+    @Test("isInRange is false before the start date")
+    func falseBeforeStart() {
+        let reminder = MedicationReminder(id: UUID(), petId: UUID(), medicationName: "Amoxicillin", dosage: "1 tablet",
+                                           times: [TimeOfDay(hour: 8, minute: 0)], startDate: .now.addingTimeInterval(86400), endDate: nil)
+        #expect(!reminder.isInRange(on: .now))
+    }
+
+    @Test("isInRange is true with no end date, once started")
+    func trueOngoing() {
+        let reminder = MedicationReminder(id: UUID(), petId: UUID(), medicationName: "Fish oil", dosage: "1 capsule",
+                                           times: [TimeOfDay(hour: 8, minute: 0)], startDate: .now.addingTimeInterval(-86400), endDate: nil)
+        #expect(reminder.isInRange(on: .now))
+    }
+
+    @Test("isInRange is false after the end date")
+    func falseAfterEnd() {
+        let reminder = MedicationReminder(id: UUID(), petId: UUID(), medicationName: "Antibiotic", dosage: "1 tablet",
+                                           times: [TimeOfDay(hour: 8, minute: 0)],
+                                           startDate: .now.addingTimeInterval(-10 * 86400), endDate: .now.addingTimeInterval(-2 * 86400))
+        #expect(!reminder.isInRange(on: .now))
+    }
+}
+
+@Suite("ManageMedicationRemindersUseCase")
+struct ManageMedicationRemindersUseCaseTests {
+    @Test("rejects an empty medication name")
+    func rejectsEmptyName() async {
+        let useCase = ManageMedicationRemindersUseCase(repository: MockMedicationReminderRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.add(petId: UUID(), medicationName: "  ", dosage: "1 tablet", times: [TimeOfDay(hour: 8, minute: 0)], startDate: .now, endDate: nil)
+        }
+    }
+
+    @Test("rejects no times of day")
+    func rejectsNoTimes() async {
+        let useCase = ManageMedicationRemindersUseCase(repository: MockMedicationReminderRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.add(petId: UUID(), medicationName: "Fish oil", dosage: "1 capsule", times: [], startDate: .now, endDate: nil)
+        }
+    }
+
+    @Test("add then list, then setActive toggles the flag")
+    func addListSetActive() async throws {
+        let useCase = ManageMedicationRemindersUseCase(repository: MockMedicationReminderRepository())
+        let petId = UUID()
+        let created = try await useCase.add(petId: petId, medicationName: "Fish oil", dosage: "1 capsule",
+                                             times: [TimeOfDay(hour: 8, minute: 0)], startDate: .now, endDate: nil)
+        var list = try await useCase.list(petId: petId)
+        #expect(list.count == 1)
+
+        let deactivated = try await useCase.setActive(created, isActive: false)
+        #expect(!deactivated.isActive)
+        list = try await useCase.list(petId: petId)
+        #expect(list.first?.isActive == false)
+    }
+
+    @Test("remove deletes the reminder")
+    func removeDeletes() async throws {
+        let useCase = ManageMedicationRemindersUseCase(repository: MockMedicationReminderRepository())
+        let petId = UUID()
+        let created = try await useCase.add(petId: petId, medicationName: "Fish oil", dosage: "1 capsule",
+                                             times: [TimeOfDay(hour: 8, minute: 0)], startDate: .now, endDate: nil)
+        try await useCase.remove(id: created.id)
+        let list = try await useCase.list(petId: petId)
+        #expect(list.isEmpty)
+    }
+}
+
 @Suite("GetLoyaltyAccountUseCase")
 struct GetLoyaltyAccountUseCaseTests {
     @Test("starts at zero points and bronze tier")
