@@ -78,6 +78,7 @@ struct ChatView: View {
 
                 let canSend = !viewModel.draft.trimmingCharacters(in: .whitespaces).isEmpty
                 Button {
+                    Haptics.tap()
                     Task { await viewModel.send() }
                 } label: {
                     Image(systemName: "arrow.up")

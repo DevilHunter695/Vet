@@ -25,7 +25,9 @@ final class ReviewViewModel {
             // Reward loyalty points for completing the feedback loop.
             _ = try? await loyaltyRepository.awardPoints(userId: userId, points: 20)
             didSubmit = true
+            if rating >= 4 { Haptics.success() } else { Haptics.tap() }
         } catch {
+            Haptics.error()
             errorMessage = error.localizedDescription
         }
     }
@@ -110,7 +112,7 @@ private struct StarRatingButton: View {
             .scaleEffect(isFilled ? 1.08 : 1)
             .animation(Theme.springQuick, value: rating)
             .onTapGesture {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                Haptics.tap()
                 onTap()
             }
     }

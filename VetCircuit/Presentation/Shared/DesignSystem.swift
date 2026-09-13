@@ -12,8 +12,7 @@ struct PrimaryButton: View {
 
     var body: some View {
         Button {
-            let generator = UIImpactFeedbackGenerator(style: .light)
-            generator.impactOccurred()
+            Haptics.confirm()
             action()
         } label: {
             ZStack {

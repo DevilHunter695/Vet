@@ -114,7 +114,7 @@ private struct SelectableRow: View {
 
     var body: some View {
         Button {
-            UISelectionFeedbackGenerator().selectionChanged()
+            Haptics.selection()
             withAnimation(Theme.springQuick) { action() }
         } label: {
             HStack {

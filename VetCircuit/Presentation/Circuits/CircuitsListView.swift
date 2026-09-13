@@ -52,14 +52,25 @@ struct CircuitsListView: View {
                         actionTitle: "Join waitlist"
                     ) { }
                 } else {
-                    List(Array(viewModel.circuits.enumerated()), id: \.element.id) { index, circuit in
-                        NavigationLink(value: circuit) {
-                            CircuitRow(circuit: circuit)
+                    ScrollView {
+                        LazyVStack(spacing: 14) {
+                            ForEach(Array(viewModel.circuits.enumerated()), id: \.element.id) { index, circuit in
+                                NavigationLink(value: circuit) {
+                                    CircuitRow(circuit: circuit)
+                                }
+                                .buttonStyle(PressableStyle())
+                                .appearAnimation(delay: Theme.staggerDelay(index))
+                                .scrollTransition { content, phase in
+                                    content
+                                        .opacity(phase.isIdentity ? 1 : 0.6)
+                                        .scaleEffect(phase.isIdentity ? 1 : 0.94)
+                                        .blur(radius: phase.isIdentity ? 0 : 2)
+                                }
+                            }
                         }
-                        .appearAnimation(delay: Theme.staggerDelay(index))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
                     .background(Color(.systemGroupedBackground))
                 }
             }
@@ -92,44 +103,62 @@ struct CircuitsListView: View {
     }
 }
 
+/// An independent, self-contained "glass" card — not a list row. Each vet
+/// gets its own floating, translucent surface rather than sharing one
+/// continuous list background, with a single chevron (no duplicate
+/// disclosure indicator from an enclosing List).
 struct CircuitRow: View {
     let circuit: Circuit
 
     var body: some View {
-        Card {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle().fill(Theme.gradient)
-                    Image(systemName: "stethoscope")
-                        .font(.title3)
-                        .foregroundStyle(.white)
-                }
-                .frame(width: 48, height: 48)
+        HStack(spacing: 14) {
+            ZStack {
+                Circle().fill(Theme.gradient)
+                Image(systemName: "stethoscope")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 48, height: 48)
+            .shadow(color: Theme.primary.opacity(0.25), radius: 6, y: 3)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(circuit.vet?.name ?? "Veterinarian")
-                        .font(.brandHeadline)
-                    Text(circuit.clusterArea)
-                        .font(.brandCaption)
-                        .foregroundStyle(.secondary)
-                    if let vet = circuit.vet {
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
-                            Text(String(format: "%.1f", vet.rating) + " (\(vet.reviewCount))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if vet.verificationStatus == .verified {
-                                Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(.blue)
-                            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(circuit.vet?.name ?? "Veterinarian")
+                    .font(.brandHeadline)
+                    .foregroundStyle(.primary)
+                Text(circuit.clusterArea)
+                    .font(.brandCaption)
+                    .foregroundStyle(.secondary)
+                if let vet = circuit.vet {
+                    HStack(spacing: 4) {
+                        Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                        Text(String(format: "%.1f", vet.rating) + " (\(vet.reviewCount))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if vet.verificationStatus == .verified {
+                            Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(.blue)
                         }
                     }
                 }
-                Spacer()
-                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
             }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color(.systemBackground).opacity(0.4))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(.white.opacity(0.5), lineWidth: 1)
+        )
+        .shadow(color: Theme.cardShadow, radius: 14, y: 6)
         .accessibilityElement(children: .combine)
     }
 }

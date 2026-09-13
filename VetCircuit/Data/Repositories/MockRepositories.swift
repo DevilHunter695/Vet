@@ -218,25 +218,46 @@ enum MockData {
                    name: "Bruno", species: .dog, breed: "Labrador", dateOfBirth: nil)]
     )
 
-    static let vet = Vet(
-        id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
-        name: "Dr. Rohan Mehta", licenseNumber: "VCI-2024-11234",
-        verificationStatus: .verified, rating: 4.8, reviewCount: 132, photoURL: nil
-    )
+    static let vet = vets[0]
 
-    static let circuits: [Circuit] = [
+    /// A varied roster of vets so the list, ratings, and verification badge
+    /// all have something realistic to show while testing.
+    static let vets: [Vet] = [
+        Vet(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+            name: "Dr. Rohan Mehta", licenseNumber: "VCI-2024-11234",
+            verificationStatus: .verified, rating: 4.8, reviewCount: 132, photoURL: nil),
+        Vet(id: UUID(), name: "Dr. Priya Nair", licenseNumber: "VCI-2023-88213",
+            verificationStatus: .verified, rating: 4.9, reviewCount: 211, photoURL: nil),
+        Vet(id: UUID(), name: "Dr. Arjun Kapoor", licenseNumber: "VCI-2022-55021",
+            verificationStatus: .verified, rating: 4.6, reviewCount: 87, photoURL: nil),
+        Vet(id: UUID(), name: "Dr. Sneha Reddy", licenseNumber: "VCI-2024-90344",
+            verificationStatus: .verified, rating: 4.7, reviewCount: 156, photoURL: nil),
+        Vet(id: UUID(), name: "Dr. Vikram Singh", licenseNumber: "VCI-2021-67789",
+            verificationStatus: .pending, rating: 4.3, reviewCount: 29, photoURL: nil),
+        Vet(id: UUID(), name: "Dr. Meera Iyer", licenseNumber: "VCI-2023-40012",
+            verificationStatus: .verified, rating: 5.0, reviewCount: 64, photoURL: nil),
+        Vet(id: UUID(), name: "Dr. Karthik Rao", licenseNumber: "VCI-2020-33456",
+            verificationStatus: .verified, rating: 4.5, reviewCount: 198, photoURL: nil),
+    ]
+
+    private static let areas = [
+        "Koramangala 5th Block", "Indiranagar 100 Feet Road", "HSR Layout Sector 2",
+        "Whitefield", "JP Nagar Phase 6", "Jayanagar 4th Block", "Bellandur",
+    ]
+
+    static let circuits: [Circuit] = vets.enumerated().map { index, vet in
         Circuit(
-            id: UUID(), vetId: vet.id, vet: vet, clusterArea: "Koramangala 5th Block",
+            id: UUID(), vetId: vet.id, vet: vet, clusterArea: areas[index % areas.count],
             schedule: (0..<3).map { offset in
                 ScheduleSlot(
                     id: UUID(), dayOfWeek: (offset % 7) + 1,
-                    startTime: Calendar.current.date(byAdding: .day, value: offset, to: .now) ?? .now,
+                    startTime: Calendar.current.date(byAdding: .day, value: offset + index, to: .now) ?? .now,
                     endTime: Calendar.current.date(byAdding: .hour, value: offset + 1, to: .now) ?? .now,
                     isAvailable: true
                 )
             }
         )
-    ]
+    }
 
     static let visits: [Visit] = []
 }

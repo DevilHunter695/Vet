@@ -69,6 +69,7 @@ struct ReferralView: View {
                     TextField("Friend's phone number", text: $viewModel.invitePhone)
                         .keyboardType(.phonePad)
                     Button("Invite") {
+                        Haptics.tap()
                         Task { if let user = session.currentUser { await viewModel.sendInvite(userId: user.id) } }
                     }
                     .disabled(viewModel.invitePhone.isEmpty || viewModel.isSending)

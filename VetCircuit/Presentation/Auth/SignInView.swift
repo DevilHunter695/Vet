@@ -102,7 +102,7 @@ struct SignInView: View {
                         } onCompletion: { result in
                             Task {
                                 if let user = await viewModel.handleAppleSignIn(result: result) {
-                                    withAnimation(Theme.springSoft) { session.currentUser = user }
+                                    Haptics.success(); withAnimation(Theme.springSoft) { session.currentUser = user }
                                 }
                             }
                         }
@@ -139,7 +139,7 @@ struct SignInView: View {
                                 PrimaryButton(title: "Verify & Continue", isLoading: viewModel.isLoading) {
                                     Task {
                                         if let user = await viewModel.verifyOTP() {
-                                            withAnimation(Theme.springSoft) { session.currentUser = user }
+                                            Haptics.success(); withAnimation(Theme.springSoft) { session.currentUser = user }
                                         }
                                     }
                                 }

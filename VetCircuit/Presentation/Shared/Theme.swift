@@ -1,4 +1,37 @@
 import SwiftUI
+import UIKit
+
+// MARK: - Haptics
+// Distinct feedback per meaning, not one impact style everywhere — per the
+// "multimodal feedback" principle: causality (fire on the actual event),
+// harmony (same frame as the visual change), utility (earn its place).
+enum Haptics {
+    static func tap() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    static func selection() {
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    /// A deliberate, weightier action — confirming a booking, sending a payment.
+    static func confirm() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    /// A genuinely rare, celebratory moment — booking confirmed, great review submitted.
+    static func success() {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    static func warning() {
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+    }
+
+    static func error() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+}
 
 // MARK: - Brand design system
 // A small, deliberate palette + motion language, applied consistently
