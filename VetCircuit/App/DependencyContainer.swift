@@ -55,6 +55,10 @@ final class DependencyContainer {
     let rescheduleProposalRepository: RescheduleProposalRepository
     /// B6: document vault.
     let petDocumentRepository: PetDocumentRepository
+    /// E9: saved payment methods (gateway token reference only).
+    let savedPaymentMethodRepository: SavedPaymentMethodRepository
+    /// M4: support-issued refunds/credits, with audit trail.
+    let supportRefundAuditRepository: SupportRefundAuditRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -103,6 +107,8 @@ final class DependencyContainer {
         self.recurringBookingRuleRepository = MockRecurringBookingRuleRepository()
         self.rescheduleProposalRepository = MockRescheduleProposalRepository()
         self.petDocumentRepository = MockPetDocumentRepository()
+        self.savedPaymentMethodRepository = MockSavedPaymentMethodRepository()
+        self.supportRefundAuditRepository = MockSupportRefundAuditRepository(refundRepository: refundRepository)
     }
 
     // MARK: Use case factories
@@ -179,4 +185,14 @@ final class DependencyContainer {
     func sosUseCase() -> SOSUseCase { SOSUseCase(incidentReportRepository: incidentReportRepository) }
     func managePetDocumentsUseCase() -> ManagePetDocumentsUseCase { ManagePetDocumentsUseCase(repository: petDocumentRepository) }
     func generatePetHealthSummaryUseCase() -> GeneratePetHealthSummaryUseCase { GeneratePetHealthSummaryUseCase() }
+    func manageSavedPaymentMethodsUseCase() -> ManageSavedPaymentMethodsUseCase {
+        ManageSavedPaymentMethodsUseCase(repository: savedPaymentMethodRepository)
+    }
+    func issueSupportRefundUseCase() -> IssueSupportRefundUseCase {
+        IssueSupportRefundUseCase(repository: supportRefundAuditRepository)
+    }
+    /// M5: business-hours-gated support number, checked via `tel:`.
+    func contactSupportByCallUseCase() -> ContactSupportByCallUseCase {
+        ContactSupportByCallUseCase(supportPhoneNumber: "+911800123456")
+    }
 }

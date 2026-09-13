@@ -1184,3 +1184,99 @@ enum ShareVisitLinkUseCase {
     }
 }
 
+// MARK: - E9: saved payment methods
+
+struct ManageSavedPaymentMethodsUseCase {
+    let repository: SavedPaymentMethodRepository
+
+    func list(userId: UUID) async throws -> [SavedPaymentMethod] {
+        try await repository.list(userId: userId)
+    }
+
+    /// `gatewayTokenId`/`displayLabel` are handed back by the gateway SDK's
+    /// tokenization step (not yet wired into this codebase) — this use case
+    /// never sees, and never accepts, raw card/UPI details.
+    @discardableResult
+    func save(userId: UUID, gatewayTokenId: String, displayLabel: String, makeDefault: Bool = false) async throws -> SavedPaymentMethod {
+        guard !gatewayTokenId.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw DomainError.validation("Missing payment token from gateway.")
+        }
+        return try await repository.save(userId: userId, gatewayTokenId: gatewayTokenId, displayLabel: displayLabel, makeDefault: makeDefault)
+    }
+
+    func remove(id: UUID) async throws {
+        try await repository.remove(id: id)
+    }
+
+    func setDefault(id: UUID, userId: UUID) async throws {
+        try await repository.setDefault(id: id, userId: userId)
+    }
+}
+
+// MARK: - M4: support-issued refund/credit, with audit trail
+
+struct IssueSupportRefundUseCase {
+    let repository: SupportRefundAuditRepository
+
+    @discardableResult
+    func execute(
+        ticketId: UUID, visitId: UUID, issuedByUserId: UUID,
+        kind: SupportRefundAudit.Kind, amountMinorUnits: Int, reason: String
+    ) async throws -> SupportRefundAudit {
+        guard amountMinorUnits > 0 else {
+            throw DomainError.validation("Enter an amount greater than zero.")
+        }
+        guard !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw DomainError.validation("A reason is required for the audit trail.")
+        }
+        return try await repository.issueSupportRefund(
+            ticketId: ticketId, visitId: visitId, issuedByUserId: issuedByUserId,
+            kind: kind, amountMinorUnits: amountMinorUnits, reason: reason
+        )
+    }
+
+    func auditTrail(ticketId: UUID) async throws -> [SupportRefundAudit] {
+        try await repository.auditTrail(ticketId: ticketId)
+    }
+}
+
+// MARK: - M5: call support, gated by business hours
+
+/// Pure domain policy — no dependency on `Date()` at the call site, so it's
+/// trivially unit-testable against fixed dates/time zones.
+enum BusinessHoursPolicy {
+    /// 9am–9pm IST (plan M5), inclusive of 9:00, exclusive of 21:00.
+    static let openHour = 9
+    static let closeHour = 21
+    static let timeZone = TimeZone(identifier: "Asia/Kolkata")!
+
+    static func isReachableByPhone(at date: Date = .now, calendar: Calendar = .current) -> Bool {
+        var cal = calendar
+        cal.timeZone = timeZone
+        let hour = cal.component(.hour, from: date)
+        return hour >= openHour && hour < closeHour
+    }
+}
+
+struct ContactSupportByCallUseCase {
+    let supportPhoneNumber: String
+
+    enum Outcome: Equatable {
+        case callURL(URL)
+        /// Outside business hours — no `tel:` URL is produced; the UI should
+        /// fall back to chat/email instead of dialing.
+        case outsideBusinessHours
+    }
+
+    func execute(at date: Date = .now) -> Outcome {
+        guard BusinessHoursPolicy.isReachableByPhone(at: date) else {
+            return .outsideBusinessHours
+        }
+        let digits = supportPhoneNumber.filter { $0.isNumber || $0 == "+" }
+        guard let url = URL(string: "tel:\(digits)") else {
+            return .outsideBusinessHours
+        }
+        return .callURL(url)
+    }
+}
+

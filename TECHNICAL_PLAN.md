@@ -196,7 +196,7 @@ Service (Home consultation)
 | E6 | **Server-authoritative quote**: `POST /quotes` returns a signed, TTL'd quote; order must reference a valid quote | **P0** | 🔨 | Prevents client price tampering entirely |
 | E7 | Slot **hold** (10 min) during checkout, auto-release | **P0** | 🔨 | Prevents the "slot taken while I was paying" disaster |
 | E8 | Payment method choice: UPI intent, cards, netbanking, wallets, **pay-after-visit (cash/UPI to vet)** | P0 | 🔨 | Cash-on-visit is table stakes in India |
-| E9 | Saved payment methods (gateway-tokenized, never stored by you) | P1 | ⛔ | |
+| E9 | Saved payment methods (gateway-tokenized, never stored by you) | P1 | ✅ | |
 | E10 | Order confirmation screen + receipt email/SMS | P0 | 🔨 | |
 | E11 | Tip the vet after visit | P2 | 🔨 | Preset/custom tip UI + `TipUseCase`; credited 100% to the vet via a new trigger on `payments.kind = 'tip'` (0028_tips.sql) |
 
@@ -299,8 +299,8 @@ Service (Home consultation)
 | M1 | Help centre / FAQ (remote content, not app-updated) | P0 | ✅ | `HelpCenterView` (grouped by category, searchable) + `HelpRepository`, backed by public-read `help_articles` (migration 0020); Mock repo ships ~10 FAQ entries |
 | M2 | In-app "Contact support" → ticket with visit context attached | P0 | ✅ | `ContactSupportView`/`MyTicketsView` + `SupportRepository` against `support_tickets` (0020) — owner read/insert, no client update, mirroring `refunds` |
 | M3 | Ops ticket queue + SLA + canned responses | P0 | 🔨 |
-| M4 | Refund/credit issuance from a ticket, with audit trail | P0 | ⛔ |
-| M5 | Call support (business hours) | P1 | ⛔ |
+| M4 | Refund/credit issuance from a ticket, with audit trail | P0 | ✅ |
+| M5 | Call support (business hours) | P1 | ✅ |
 
 ### N. Growth & retention
 

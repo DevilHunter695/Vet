@@ -525,6 +525,79 @@ actor MockPaymentRepository: PaymentRepository {
     }
 }
 
+actor MockSavedPaymentMethodRepository: SavedPaymentMethodRepository {
+    private var methods: [SavedPaymentMethod] = [
+        SavedPaymentMethod(id: UUID(), userId: MockData.user.id, gatewayTokenId: "tok_mock_visa4242",
+                            displayLabel: "Visa •••• 4242", isDefault: true, createdAt: .now.addingTimeInterval(-86400 * 30)),
+    ]
+
+    func list(userId: UUID) async throws -> [SavedPaymentMethod] {
+        methods.filter { $0.userId == userId }.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func save(userId: UUID, gatewayTokenId: String, displayLabel: String, makeDefault: Bool) async throws -> SavedPaymentMethod {
+        if makeDefault {
+            for i in methods.indices where methods[i].userId == userId { methods[i].isDefault = false }
+        }
+        let isFirst = !methods.contains { $0.userId == userId }
+        let method = SavedPaymentMethod(id: UUID(), userId: userId, gatewayTokenId: gatewayTokenId,
+                                         displayLabel: displayLabel, isDefault: makeDefault || isFirst, createdAt: .now)
+        methods.append(method)
+        return method
+    }
+
+    func remove(id: UUID) async throws {
+        methods.removeAll { $0.id == id }
+    }
+
+    func setDefault(id: UUID, userId: UUID) async throws {
+        for i in methods.indices where methods[i].userId == userId {
+            methods[i].isDefault = (methods[i].id == id)
+        }
+    }
+}
+
+actor MockSupportRefundAuditRepository: SupportRefundAuditRepository {
+    private var audits: [SupportRefundAudit] = []
+    private let refundRepository: RefundRepository
+
+    init(refundRepository: RefundRepository) {
+        self.refundRepository = refundRepository
+    }
+
+    func issueSupportRefund(
+        ticketId: UUID, visitId: UUID, issuedByUserId: UUID,
+        kind: SupportRefundAudit.Kind, amountMinorUnits: Int, reason: String
+    ) async throws -> SupportRefundAudit {
+        var refundId: UUID?
+        var walletLedgerEntryId: UUID?
+        switch kind {
+        case .refund:
+            // Mirrors the real flow: even in the mock world this goes
+            // through the same refund-issuing path a cancellation refund
+            // would use, never a bespoke direct write.
+            let refund = try await refundRepository.issueRefund(
+                visitId: visitId, paymentId: UUID(), amountMinorUnits: amountMinorUnits,
+                reason: reason, initiatedByOpsUserId: issuedByUserId
+            )
+            refundId = refund.id
+        case .walletCredit:
+            walletLedgerEntryId = UUID()
+        }
+        let audit = SupportRefundAudit(
+            id: UUID(), ticketId: ticketId, visitId: visitId, issuedByUserId: issuedByUserId,
+            kind: kind, amountMinorUnits: amountMinorUnits, reason: reason,
+            refundId: refundId, walletLedgerEntryId: walletLedgerEntryId, createdAt: .now
+        )
+        audits.append(audit)
+        return audit
+    }
+
+    func auditTrail(ticketId: UUID) async throws -> [SupportRefundAudit] {
+        audits.filter { $0.ticketId == ticketId }.sorted { $0.createdAt > $1.createdAt }
+    }
+}
+
 actor MockChatRepository: ChatRepository {
     private var messages: [UUID: [ChatMessage]] = [:]
 
