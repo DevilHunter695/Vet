@@ -27,6 +27,21 @@ and throughout)**
   symptom-triage result (warning/tap/success by urgency), and referral send
   success/failure.
 
+**Fluid motion — remaining teleporting state (found via
+`find-animation-opportunities`)**
+- `BookingView`'s pet and time-slot rows appeared with no entrance at all,
+  unlike every other list in the app (`CircuitsListView`, `VisitHistoryView`)
+  which already stagger in. Added the same `appearAnimation` + stagger.
+- Adding/removing a pet in Profile, cancelling a visit (which moves it out
+  of "Happening now" and swaps its badge), and a new referral landing in
+  the invites list all mutated their arrays with no `withAnimation` —
+  rows snapped in/out/around instead of settling. Wrapped each mutation.
+- Left `VisitHistoryView`'s row scroll effect alone on purpose: unlike the
+  browsing-style vet cards in `CircuitsListView`, this list is dense
+  information (dates, statuses) the user is reading, not browsing — a
+  blur/scale scroll transition there would hinder legibility for the sake
+  of motion, so it's a rejected candidate, not a missed one.
+
 **New: Appearance setting (`App/VetCircuitApp.swift`,
 `Presentation/Profile/ProfileView.swift`)**
 - A System/Light/Dark picker in Profile, backed by `.preferredColorScheme`.

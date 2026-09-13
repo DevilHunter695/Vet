@@ -33,7 +33,7 @@ final class ProfileViewModel {
         do {
             let pet = Pet(id: UUID(), ownerId: ownerId, name: newPetName, species: newPetSpecies, breed: nil, dateOfBirth: nil)
             let added = try await managePetsUseCase.add(pet)
-            pets.append(added)
+            withAnimation(Theme.springSoft) { pets.append(added) }
             newPetName = ""
         } catch {
             errorMessage = error.localizedDescription
@@ -43,7 +43,7 @@ final class ProfileViewModel {
     func removePet(_ pet: Pet) async {
         do {
             try await managePetsUseCase.remove(id: pet.id)
-            pets.removeAll { $0.id == pet.id }
+            withAnimation(Theme.springQuick) { pets.removeAll { $0.id == pet.id } }
         } catch {
             errorMessage = error.localizedDescription
         }

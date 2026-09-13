@@ -25,7 +25,10 @@ final class VisitHistoryViewModel {
         do {
             try await cancelVisitUseCase.execute(visitId: visit.id, currentStatus: visit.status)
             if let index = visits.firstIndex(where: { $0.id == visit.id }) {
-                visits[index].status = .cancelled
+                // Cancelling moves this visit out of "Happening now" and changes
+                // its badge — without an explicit animation it just snaps
+                // between sections instead of settling there.
+                withAnimation(Theme.springSoft) { visits[index].status = .cancelled }
             }
         } catch {
             errorMessage = error.localizedDescription

@@ -69,22 +69,24 @@ struct BookingView: View {
                     if viewModel.pets.isEmpty {
                         Text("Add a pet in your profile first.").foregroundStyle(.secondary)
                     } else {
-                        ForEach(viewModel.pets) { pet in
+                        ForEach(Array(viewModel.pets.enumerated()), id: \.element.id) { index, pet in
                             SelectableRow(title: "\(pet.name) · \(pet.species.rawValue.capitalized)",
                                           isSelected: viewModel.selectedPet?.id == pet.id) {
                                 viewModel.selectedPet = pet
                             }
+                            .appearAnimation(delay: Theme.staggerDelay(index))
                         }
                     }
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Pick a time slot").font(.headline)
-                    ForEach(viewModel.circuit.schedule.filter(\.isAvailable)) { slot in
+                    ForEach(Array(viewModel.circuit.schedule.filter(\.isAvailable).enumerated()), id: \.element.id) { index, slot in
                         SelectableRow(title: slot.startTime.formatted(date: .abbreviated, time: .shortened),
                                       isSelected: viewModel.selectedSlot?.id == slot.id) {
                             viewModel.selectedSlot = slot
                         }
+                        .appearAnimation(delay: Theme.staggerDelay(index))
                     }
                 }
 

@@ -27,7 +27,7 @@ final class ReferralViewModel {
         defer { isSending = false }
         do {
             let referral = try await sendReferralUseCase.execute(userId: userId, phone: invitePhone)
-            referrals.insert(referral, at: 0)
+            withAnimation(Theme.springSoft) { referrals.insert(referral, at: 0) }
             invitePhone = ""
             Haptics.success()
         } catch {
