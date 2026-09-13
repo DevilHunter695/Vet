@@ -126,8 +126,8 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | A3 | Session persistence + silent refresh | P0 | 🔨 | Access 15 min, refresh 60 days w/ **rotation + reuse detection** |
 | A4 | Sign out (single device + all devices) | P0 | 🔨 | "Sign out everywhere" revokes refresh family |
 | A5 | Edit profile (name, email, photo, language) | P0 | 🔨 | |
-| A6 | **Delete account + data** | **P0** | ⛔ | **App Store guideline 5.1.1(v) — a hard rejection if missing.** 30-day soft window, financial records retained per statute with justification shown to user |
-| A7 | Export my data (JSON + PDF of records) | P1 | ⛔ | DPDP data-principal right |
+| A6 | **Delete account + data** | **P0** | ✅ | **App Store guideline 5.1.1(v) — a hard rejection if missing.** 30-day soft window, financial records retained per statute with justification shown to user |
+| A7 | Export my data (JSON + PDF of records) | P1 | 🔨 | DPDP data-principal right — JSON export done, no PDF |
 | A8 | Multiple addresses (home/office/parents), default, geofence check | **P0** | ✅ | A circuit is *address-scoped* — this is core inventory logic, not a nicety |
 | A9 | Household: invite spouse/family to same pets & bookings | P1 | ⛔ | Very common real-world need; roles: owner/member |
 | A10 | Biometric lock on app (Face ID) | P1 | ⛔ | Medical records = sensitive |
@@ -322,7 +322,7 @@ Service (Home consultation)
 | O2 | Language: English + Hindi (+1 regional at launch cluster) | P1 | ⛔ |
 | O3 | Appearance light/dark/system | P0 | ✅ |
 | O4 | Accessibility: Dynamic Type to AX5, VoiceOver, Reduce Motion | P0 | 🔨 |
-| O5 | **Consent dashboard**: what you collect, why, withdraw consent | P0 (DPDP) | ⛔ |
+| O5 | **Consent dashboard**: what you collect, why, withdraw consent | P0 (DPDP) | ✅ |
 | O6 | Privacy policy + T&C in-app and on web | P0 | ⛔ |
 | O7 | **Force-upgrade gate** (server-driven minimum version) | **P0** | ⛔ | Your only true rollback lever for a shipped binary |
 | O8 | Maintenance mode screen (server flag) | P0 | ⛔ |

@@ -189,6 +189,33 @@ struct GetLoyaltyAccountUseCase {
     }
 }
 
+struct ManageAccountDeletionUseCase {
+    let accountRepository: AccountRepository
+    let authRepository: AuthRepository
+
+    /// A6: App Store guideline 5.1.1(v) — in-app account deletion, with a
+    /// 30-day soft window during which the customer can cancel the request.
+    func requestDeletion(userId: UUID) async throws -> DeletionRequest {
+        try await accountRepository.requestDeletion(userId: userId)
+    }
+
+    func cancelPendingDeletion(userId: UUID) async throws {
+        try await accountRepository.cancelDeletionRequest(userId: userId)
+    }
+
+    func pendingDeletion(userId: UUID) async throws -> DeletionRequest? {
+        try await accountRepository.pendingDeletionRequest(userId: userId)
+    }
+}
+
+struct ExportDataUseCase {
+    let accountRepository: AccountRepository
+
+    func execute(userId: UUID) async throws -> DataExport {
+        try await accountRepository.exportData(userId: userId)
+    }
+}
+
 struct StartVisitUseCase {
     let visitOTPRepository: VisitOTPRepository
     let visitRepository: VisitRepository

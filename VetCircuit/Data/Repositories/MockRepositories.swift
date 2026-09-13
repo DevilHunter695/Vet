@@ -39,6 +39,36 @@ actor MockCircuitRepository: CircuitRepository {
     }
 }
 
+actor MockAccountRepository: AccountRepository {
+    private var deletionRequests: [UUID: DeletionRequest] = [:]
+
+    func requestDeletion(userId: UUID) async throws -> DeletionRequest {
+        let request = DeletionRequest(
+            id: UUID(), userId: userId, requestedAt: .now,
+            scheduledPurgeAt: Calendar.current.date(byAdding: .day, value: DeletionRequest.softWindowDays, to: .now) ?? .now,
+            status: .pending
+        )
+        deletionRequests[userId] = request
+        return request
+    }
+
+    func cancelDeletionRequest(userId: UUID) async throws {
+        deletionRequests[userId]?.status = .cancelled
+    }
+
+    func pendingDeletionRequest(userId: UUID) async throws -> DeletionRequest? {
+        let request = deletionRequests[userId]
+        return request?.status == .pending ? request : nil
+    }
+
+    func exportData(userId: UUID) async throws -> DataExport {
+        DataExport(
+            user: MockData.user, addresses: [MockData.address], visits: MockData.visits,
+            consents: [], generatedAt: .now
+        )
+    }
+}
+
 actor MockVisitOTPRepository: VisitOTPRepository {
     private var otps: [UUID: VisitOTP] = [:]
 

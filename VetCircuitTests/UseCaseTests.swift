@@ -92,6 +92,49 @@ struct BookVisitUseCaseTests {
     }
 }
 
+@Suite("ManageAccountDeletionUseCase")
+struct ManageAccountDeletionUseCaseTests {
+    @Test("no pending deletion before one is requested")
+    func noPendingInitially() async throws {
+        let useCase = ManageAccountDeletionUseCase(accountRepository: MockAccountRepository(), authRepository: MockAuthRepository())
+        let pending = try await useCase.pendingDeletion(userId: UUID())
+        #expect(pending == nil)
+    }
+
+    @Test("requesting deletion schedules a purge 30 days out")
+    func requestSchedulesPurge() async throws {
+        let useCase = ManageAccountDeletionUseCase(accountRepository: MockAccountRepository(), authRepository: MockAuthRepository())
+        let userId = UUID()
+        let request = try await useCase.requestDeletion(userId: userId)
+        #expect(request.status == .pending)
+        let daysUntilPurge = Calendar.current.dateComponents([.day], from: .now, to: request.scheduledPurgeAt).day ?? 0
+        #expect(daysUntilPurge >= DeletionRequest.softWindowDays - 1)
+
+        let pending = try await useCase.pendingDeletion(userId: userId)
+        #expect(pending?.id == request.id)
+    }
+
+    @Test("cancelling a pending deletion clears it")
+    func cancellingClearsPending() async throws {
+        let useCase = ManageAccountDeletionUseCase(accountRepository: MockAccountRepository(), authRepository: MockAuthRepository())
+        let userId = UUID()
+        _ = try await useCase.requestDeletion(userId: userId)
+        try await useCase.cancelPendingDeletion(userId: userId)
+        let pending = try await useCase.pendingDeletion(userId: userId)
+        #expect(pending == nil)
+    }
+}
+
+@Suite("ExportDataUseCase")
+struct ExportDataUseCaseTests {
+    @Test("produces an export with the requesting user's data")
+    func producesExport() async throws {
+        let useCase = ExportDataUseCase(accountRepository: MockAccountRepository())
+        let export = try await useCase.execute(userId: MockData.user.id)
+        #expect(export.user.id == MockData.user.id)
+    }
+}
+
 @Suite("Visit.legalTransitions")
 struct VisitTransitionTests {
     @Test("the full happy path is legal, state by state")

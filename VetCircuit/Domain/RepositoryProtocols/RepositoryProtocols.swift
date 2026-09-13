@@ -32,6 +32,16 @@ protocol VisitRepository: Sendable {
     func paidAmountMinorUnits(visitId: UUID) async throws -> Int
 }
 
+protocol AccountRepository: Sendable {
+    /// A6: soft-delete with a 30-day window — financial records are
+    /// retained per statute (see plan §A6) rather than hard-deleted.
+    func requestDeletion(userId: UUID) async throws -> DeletionRequest
+    func cancelDeletionRequest(userId: UUID) async throws
+    func pendingDeletionRequest(userId: UUID) async throws -> DeletionRequest?
+    /// A7: assembles the customer's full data export.
+    func exportData(userId: UUID) async throws -> DataExport
+}
+
 protocol VisitOTPRepository: Sendable {
     /// Generates (or returns the existing, unexpired) start-of-visit OTP —
     /// called once a visit reaches `arrived`.

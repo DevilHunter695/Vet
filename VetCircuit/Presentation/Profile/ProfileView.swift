@@ -161,6 +161,9 @@ struct ProfileView: View {
                     NavigationLink("Addresses") {
                         AddressListView()
                     }
+                    NavigationLink("Privacy & consent") {
+                        PrivacyConsentView()
+                    }
                 }
 
                 Section("Pets") {

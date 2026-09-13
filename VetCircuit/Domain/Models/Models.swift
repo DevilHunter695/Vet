@@ -293,6 +293,32 @@ struct Address: Identifiable, Codable, Equatable, Hashable {
     var isServed: Bool { clusterArea != nil }
 }
 
+// MARK: - Account deletion & data export (plan §A6-A7)
+
+struct DeletionRequest: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var requestedAt: Date
+    var scheduledPurgeAt: Date   // requestedAt + 30-day soft window
+    var status: Status
+
+    enum Status: String, Codable {
+        case pending, cancelled, purged
+    }
+
+    static let softWindowDays = 30
+}
+
+/// A7: DPDP data-principal right to export. Assembled as one JSON document
+/// (plan says "JSON + PDF"; PDF rendering isn't wired yet — see below).
+struct DataExport: Codable, Equatable {
+    var user: User
+    var addresses: [Address]
+    var visits: [Visit]
+    var consents: [ConsentRecord]
+    var generatedAt: Date
+}
+
 // MARK: - Visit start OTP & consent (plan §I5-I6)
 
 /// I5: the customer reads this 4-digit code to the vet at arrival — cheap

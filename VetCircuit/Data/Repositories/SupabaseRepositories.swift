@@ -307,6 +307,49 @@ final class SupabaseVisitRepository: VisitRepository {
     }
 }
 
+final class SupabaseAccountRepository: AccountRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func requestDeletion(userId: UUID) async throws -> DeletionRequest {
+        struct Response: Decodable { let id: UUID }
+        // Calls a trusted Edge Function rather than inserting directly — it
+        // schedules the purge job and can immediately pause the account
+        // (e.g. block new bookings) in the same transaction.
+        let response: Response = try await client.functions.invoke("request-account-deletion", options: .init(body: [:])).value
+        let scheduledPurgeAt = Calendar.current.date(byAdding: .day, value: DeletionRequest.softWindowDays, to: .now) ?? .now
+        return DeletionRequest(id: response.id, userId: userId, requestedAt: .now, scheduledPurgeAt: scheduledPurgeAt, status: .pending)
+    }
+
+    func cancelDeletionRequest(userId: UUID) async throws {
+        try await client.from("deletion_requests").update(["status": "cancelled"])
+            .eq("user_id", value: userId).eq("status", value: "pending").execute()
+    }
+
+    func pendingDeletionRequest(userId: UUID) async throws -> DeletionRequest? {
+        struct Row: Decodable {
+            let id: UUID, userId: UUID, requestedAt: Date, scheduledPurgeAt: Date, status: String
+            enum CodingKeys: String, CodingKey {
+                case id, status
+                case userId = "user_id", requestedAt = "requested_at", scheduledPurgeAt = "scheduled_purge_at"
+            }
+        }
+        let rows: [Row] = try await client.from("deletion_requests").select()
+            .eq("user_id", value: userId).eq("status", value: "pending").execute().value
+        guard let row = rows.first else { return nil }
+        return DeletionRequest(id: row.id, userId: row.userId, requestedAt: row.requestedAt,
+                                scheduledPurgeAt: row.scheduledPurgeAt, status: .pending)
+    }
+
+    func exportData(userId: UUID) async throws -> DataExport {
+        // A real deployment does this as an async job (plan Appendix A:
+        // GET /v1/account/export returns a signed download once ready);
+        // this synchronous version is the client-visible contract for now.
+        let response: DataExport = try await client.functions.invoke("export-account-data", options: .init(body: [:])).value
+        return response
+    }
+}
+
 final class SupabaseVisitOTPRepository: VisitOTPRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
