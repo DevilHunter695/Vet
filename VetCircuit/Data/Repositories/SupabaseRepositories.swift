@@ -77,6 +77,49 @@ final class SupabaseCircuitRepository: CircuitRepository {
     }
 }
 
+final class SupabaseAddressRepository: AddressRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func listAddresses(ownerId: UUID) async throws -> [Address] {
+        let rows: [SupabaseAddressRow] = try await client
+            .from("addresses").select().eq("owner_id", value: ownerId)
+            .order("is_default", ascending: false)
+            .execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func addAddress(_ address: Address) async throws -> Address {
+        let insert = SupabaseAddressInsert(address: address)
+        let rows: [SupabaseAddressRow] = try await client.from("addresses").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func updateAddress(_ address: Address) async throws -> Address {
+        let insert = SupabaseAddressInsert(address: address)
+        let rows: [SupabaseAddressRow] = try await client
+            .from("addresses").update(insert).eq("id", value: address.id).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Address") }
+        return row.toDomain()
+    }
+
+    func deleteAddress(id: UUID) async throws {
+        try await client.from("addresses").delete().eq("id", value: id).execute()
+    }
+
+    func setDefault(id: UUID, ownerId: UUID) async throws {
+        try await client.from("addresses").update(["is_default": false]).eq("owner_id", value: ownerId).execute()
+        try await client.from("addresses").update(["is_default": true]).eq("id", value: id).execute()
+    }
+
+    func matchCluster(latitude: Double, longitude: Double) async throws -> String? {
+        struct MatchResult: Decodable { let match_cluster: String? }
+        let result: String? = try await client.rpc("match_cluster", params: ["p_lat": latitude, "p_lng": longitude]).execute().value
+        return result
+    }
+}
+
 final class SupabaseCatalogRepository: CatalogRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
@@ -192,6 +235,62 @@ private struct SupabaseCircuitRow: Decodable {
     func toDomain() -> Circuit {
         Circuit(id: id, vetId: vetId, vet: vet?.toDomain(), clusterArea: clusterArea,
                 schedule: (schedule ?? []).map { $0.toDomain() }, vertical: Vertical(rawValue: vertical) ?? .vet)
+    }
+}
+
+private struct SupabaseAddressRow: Decodable {
+    let id: UUID
+    let ownerId: UUID
+    let label: String
+    let line1: String
+    let line2: String?
+    let landmark: String?
+    let accessNotes: String?
+    let latitude: Double
+    let longitude: Double
+    let clusterArea: String?
+    let isDefault: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, label, line1, line2, landmark, latitude, longitude
+        case ownerId = "owner_id", accessNotes = "access_notes", clusterArea = "cluster_area", isDefault = "is_default"
+    }
+
+    func toDomain() -> Address {
+        Address(id: id, ownerId: ownerId, label: label, line1: line1, line2: line2, landmark: landmark,
+                accessNotes: accessNotes, latitude: latitude, longitude: longitude,
+                clusterArea: clusterArea, isDefault: isDefault)
+    }
+}
+
+private struct SupabaseAddressInsert: Encodable {
+    let ownerId: UUID
+    let label: String
+    let line1: String
+    let line2: String?
+    let landmark: String?
+    let accessNotes: String?
+    let latitude: Double
+    let longitude: Double
+    let clusterArea: String?
+    let isDefault: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case label, line1, line2, landmark, latitude, longitude
+        case ownerId = "owner_id", accessNotes = "access_notes", clusterArea = "cluster_area", isDefault = "is_default"
+    }
+
+    init(address: Address) {
+        ownerId = address.ownerId
+        label = address.label
+        line1 = address.line1
+        line2 = address.line2
+        landmark = address.landmark
+        accessNotes = address.accessNotes
+        latitude = address.latitude
+        longitude = address.longitude
+        clusterArea = address.clusterArea
+        isDefault = address.isDefault
     }
 }
 

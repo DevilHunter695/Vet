@@ -128,7 +128,7 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | A5 | Edit profile (name, email, photo, language) | P0 | 🔨 | |
 | A6 | **Delete account + data** | **P0** | ⛔ | **App Store guideline 5.1.1(v) — a hard rejection if missing.** 30-day soft window, financial records retained per statute with justification shown to user |
 | A7 | Export my data (JSON + PDF of records) | P1 | ⛔ | DPDP data-principal right |
-| A8 | Multiple addresses (home/office/parents), default, geofence check | **P0** | ⛔ | A circuit is *address-scoped* — this is core inventory logic, not a nicety |
+| A8 | Multiple addresses (home/office/parents), default, geofence check | **P0** | ✅ | A circuit is *address-scoped* — this is core inventory logic, not a nicety |
 | A9 | Household: invite spouse/family to same pets & bookings | P1 | ⛔ | Very common real-world need; roles: owner/member |
 | A10 | Biometric lock on app (Face ID) | P1 | ⛔ | Medical records = sensitive |
 | A11 | Blocked/deactivated account handling | P1 | ⛔ | Graceful screen, support path |

@@ -216,6 +216,28 @@ struct Referral: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+// MARK: - Addresses (plan §A8) — a circuit is address-scoped, so this is core
+// inventory logic, not a nicety: discovery starts from "which address" before
+// "which service".
+
+struct Address: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var ownerId: UUID
+    var label: String          // "Home", "Office", "Mom's place"
+    var line1: String
+    var line2: String?
+    var landmark: String?
+    var accessNotes: String?   // gate code, floor, "ring the bell twice"
+    var latitude: Double
+    var longitude: Double
+    var clusterArea: String?   // set once matched to a served cluster; nil = not yet covered
+    var isDefault: Bool = false
+
+    /// Whether this address falls inside a served circuit cluster — an
+    /// unmatched address should route to the waitlist (C10), not a dead end.
+    var isServed: Bool { clusterArea != nil }
+}
+
 // MARK: - Service catalog (V2 plan §D) — what is actually being bought.
 // A v1 `Visit` had no concept of *what* was booked; this is the structural
 // gap everything else (cart, pricing, checkout) depends on.

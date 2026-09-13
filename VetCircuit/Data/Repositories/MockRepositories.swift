@@ -39,6 +39,60 @@ actor MockCircuitRepository: CircuitRepository {
     }
 }
 
+actor MockAddressRepository: AddressRepository {
+    private var addresses: [Address] = [MockData.address]
+
+    /// Mirrors the served clusters in `MockData.circuits` — a coarse
+    /// "within ~2km" check stands in for the real PostGIS polygon lookup.
+    private let servedClusters: [(area: String, lat: Double, lng: Double)] = [
+        ("Koramangala 5th Block", 12.9352, 77.6146),
+        ("Indiranagar 100 Feet Road", 12.9719, 77.6412),
+        ("HSR Layout Sector 2", 12.9121, 77.6446),
+        ("Whitefield", 12.9698, 77.7500),
+        ("JP Nagar Phase 6", 12.9010, 77.5850),
+        ("Jayanagar 4th Block", 12.9250, 77.5938),
+        ("Bellandur", 12.9260, 77.6762),
+    ]
+
+    func listAddresses(ownerId: UUID) async throws -> [Address] {
+        addresses.filter { $0.ownerId == ownerId }
+    }
+
+    func addAddress(_ address: Address) async throws -> Address {
+        var address = address
+        if addresses.isEmpty || addresses.allSatisfy({ $0.ownerId != address.ownerId }) {
+            address.isDefault = true
+        }
+        addresses.append(address)
+        return address
+    }
+
+    func updateAddress(_ address: Address) async throws -> Address {
+        guard let index = addresses.firstIndex(where: { $0.id == address.id }) else {
+            throw DomainError.notFound("Address")
+        }
+        addresses[index] = address
+        return address
+    }
+
+    func deleteAddress(id: UUID) async throws {
+        addresses.removeAll { $0.id == id }
+    }
+
+    func setDefault(id: UUID, ownerId: UUID) async throws {
+        for index in addresses.indices where addresses[index].ownerId == ownerId {
+            addresses[index].isDefault = addresses[index].id == id
+        }
+    }
+
+    func matchCluster(latitude: Double, longitude: Double) async throws -> String? {
+        let thresholdDegrees = 0.03 // ~3km, generous for a mock geofence
+        return servedClusters.first {
+            abs($0.lat - latitude) < thresholdDegrees && abs($0.lng - longitude) < thresholdDegrees
+        }?.area
+    }
+}
+
 actor MockCatalogRepository: CatalogRepository {
     private var extraServices: [Service] = []
 
@@ -239,6 +293,13 @@ enum MockData {
     )
 
     static let vet = vets[0]
+
+    static let address = Address(
+        id: UUID(), ownerId: user.id, label: "Home",
+        line1: "14, 5th Cross, Koramangala 5th Block", line2: nil,
+        landmark: "Near Forum Mall", accessNotes: "Ring the bell, dog-friendly building",
+        latitude: 12.9352, longitude: 77.6146, clusterArea: "Koramangala 5th Block", isDefault: true
+    )
 
     /// A varied roster of vets so the list, ratings, and verification badge
     /// all have something realistic to show while testing.

@@ -145,6 +145,38 @@ struct GetLoyaltyAccountUseCase {
     }
 }
 
+struct ManageAddressesUseCase {
+    let addressRepository: AddressRepository
+
+    func list(ownerId: UUID) async throws -> [Address] {
+        try await addressRepository.listAddresses(ownerId: ownerId)
+    }
+
+    /// Adding an address always runs the geofence check first, so the address
+    /// is stored already knowing whether it's inside a served cluster — the
+    /// UI never has to guess or re-derive that.
+    func add(_ address: Address) async throws -> Address {
+        guard !address.line1.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw DomainError.validation("Address line 1 is required.")
+        }
+        var address = address
+        address.clusterArea = try await addressRepository.matchCluster(latitude: address.latitude, longitude: address.longitude)
+        return try await addressRepository.addAddress(address)
+    }
+
+    func update(_ address: Address) async throws -> Address {
+        try await addressRepository.updateAddress(address)
+    }
+
+    func remove(id: UUID) async throws {
+        try await addressRepository.deleteAddress(id: id)
+    }
+
+    func setDefault(id: UUID, ownerId: UUID) async throws {
+        try await addressRepository.setDefault(id: id, ownerId: ownerId)
+    }
+}
+
 struct GetCatalogUseCase {
     let catalogRepository: CatalogRepository
 

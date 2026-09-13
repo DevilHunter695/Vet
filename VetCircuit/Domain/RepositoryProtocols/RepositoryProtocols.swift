@@ -76,6 +76,17 @@ protocol ReferralRepository: Sendable {
     func listReferrals(userId: UUID) async throws -> [Referral]
 }
 
+protocol AddressRepository: Sendable {
+    func listAddresses(ownerId: UUID) async throws -> [Address]
+    func addAddress(_ address: Address) async throws -> Address
+    func updateAddress(_ address: Address) async throws -> Address
+    func deleteAddress(id: UUID) async throws
+    func setDefault(id: UUID, ownerId: UUID) async throws
+    /// Server-side geofence check: does a lat/lng fall inside a served cluster?
+    /// Returns the matched cluster area name, or nil if uncovered.
+    func matchCluster(latitude: Double, longitude: Double) async throws -> String?
+}
+
 protocol CatalogRepository: Sendable {
     /// All services offered, optionally scoped to a vertical (vet/elder-care/physio).
     func listServices(vertical: Vertical?) async throws -> [Service]

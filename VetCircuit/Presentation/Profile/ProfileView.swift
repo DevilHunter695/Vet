@@ -157,6 +157,12 @@ struct ProfileView: View {
                 .transition(.opacity)
                 .animation(Theme.crossFade, value: viewModel.subscription?.id)
 
+                Section {
+                    NavigationLink("Addresses") {
+                        AddressListView()
+                    }
+                }
+
                 Section("Pets") {
                     ForEach(viewModel.pets) { pet in
                         Text("\(pet.name) · \(pet.species.rawValue.capitalized)")

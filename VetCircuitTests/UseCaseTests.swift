@@ -198,6 +198,49 @@ struct ManagePetsUseCaseTests {
     }
 }
 
+@Suite("ManageAddressesUseCase")
+struct ManageAddressesUseCaseTests {
+    @Test("rejects an address with an empty line1")
+    func rejectsEmptyLine1() async {
+        let repo = MockAddressRepository()
+        let useCase = ManageAddressesUseCase(addressRepository: repo)
+        let address = Address(id: UUID(), ownerId: UUID(), label: "Home", line1: "  ",
+                               line2: nil, landmark: nil, accessNotes: nil, latitude: 0, longitude: 0, clusterArea: nil)
+
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.add(address)
+        }
+    }
+
+    @Test("matches a served cluster on add, and reports uncovered outside one")
+    func matchesClusterOnAdd() async throws {
+        let repo = MockAddressRepository()
+        let useCase = ManageAddressesUseCase(addressRepository: repo)
+
+        let served = Address(id: UUID(), ownerId: UUID(), label: "Home", line1: "14, 5th Cross",
+                              line2: nil, landmark: nil, accessNotes: nil, latitude: 12.9352, longitude: 77.6146, clusterArea: nil)
+        let saved = try await useCase.add(served)
+        #expect(saved.isServed)
+        #expect(saved.clusterArea == "Koramangala 5th Block")
+
+        let uncovered = Address(id: UUID(), ownerId: UUID(), label: "Farmhouse", line1: "Middle of nowhere",
+                                 line2: nil, landmark: nil, accessNotes: nil, latitude: 30.0, longitude: 70.0, clusterArea: nil)
+        let savedUncovered = try await useCase.add(uncovered)
+        #expect(!savedUncovered.isServed)
+    }
+
+    @Test("the first address added for an owner becomes their default")
+    func firstAddressBecomesDefault() async throws {
+        let repo = MockAddressRepository()
+        let useCase = ManageAddressesUseCase(addressRepository: repo)
+        let ownerId = UUID()
+        let address = Address(id: UUID(), ownerId: ownerId, label: "Home", line1: "Line 1",
+                               line2: nil, landmark: nil, accessNotes: nil, latitude: 12.9352, longitude: 77.6146, clusterArea: nil)
+        let saved = try await useCase.add(address)
+        #expect(saved.isDefault)
+    }
+}
+
 @Suite("GetCatalogUseCase")
 struct GetCatalogUseCaseTests {
     @Test("filters services to the requested vertical")
