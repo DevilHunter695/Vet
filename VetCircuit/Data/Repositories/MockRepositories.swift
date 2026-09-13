@@ -248,6 +248,20 @@ actor MockCatalogRepository: CatalogRepository {
     }
 }
 
+actor MockPackageRepository: PackageRepository {
+    func listPackages(vertical: Vertical?) async throws -> [Package] {
+        guard let vertical else { return MockData.packages }
+        return MockData.packages.filter { $0.vertical == vertical }
+    }
+
+    func package(id: UUID) async throws -> Package {
+        guard let package = MockData.packages.first(where: { $0.id == id }) else {
+            throw DomainError.notFound("Package")
+        }
+        return package
+    }
+}
+
 actor MockVisitRepository: VisitRepository {
     private var visits: [Visit] = MockData.visits
     /// Simulates the DB's `idempotency_keys` table (Appendix D): the same
@@ -618,6 +632,39 @@ enum MockData {
             variants: [
                 ServiceVariant(id: UUID(), serviceId: UUID(), name: "Single session", durationMinutes: 45, priceMinorUnits: 89_900),
             ]
+        ),
+    ]
+
+    /// D4: example packages/bundles, priced below buying the included
+    /// services separately — `discountMinorUnits(catalog:)` computes and
+    /// shows that saving rather than just asserting it.
+    static let packages: [Package] = [
+        Package(
+            id: UUID(), name: "Puppy first-year",
+            packageDescription: "4 home consultations + 3 core vaccines through your puppy's first year.",
+            items: [
+                PackageItem(id: UUID(), serviceId: services[0].id, quantity: 4), // Home consultation
+                PackageItem(id: UUID(), serviceId: services[1].id, quantity: 3), // Vaccination
+            ],
+            priceMinorUnits: 349_900
+        ),
+        Package(
+            id: UUID(), name: "Senior wellness quarterly",
+            packageDescription: "Quarterly consultation + diagnostics panel for pets 7 years and older.",
+            items: [
+                PackageItem(id: UUID(), serviceId: services[0].id, quantity: 1),
+                PackageItem(id: UUID(), serviceId: services[3].id, quantity: 1), // Sample pickup & diagnostics
+            ],
+            priceMinorUnits: 129_900
+        ),
+        Package(
+            id: UUID(), name: "Grooming & deworming combo",
+            packageDescription: "A full groom plus a routine deworming dose in one visit.",
+            items: [
+                PackageItem(id: UUID(), serviceId: services[2].id, quantity: 1), // Grooming
+                PackageItem(id: UUID(), serviceId: services[4].id, quantity: 1), // Deworming
+            ],
+            priceMinorUnits: 99_900
         ),
     ]
 }

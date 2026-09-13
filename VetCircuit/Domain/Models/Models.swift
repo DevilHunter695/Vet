@@ -577,6 +577,39 @@ struct Service: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+// MARK: - Packages/bundles (plan §D4) — "Puppy first-year: 4 visits + 3
+// vaccines" sold as one priced unit. Buying one is currently a checkout-time
+// stub that expands into individual cart lines (see BuyPackageUseCase);
+// redemption/entitlement tracking ("3 of 4 visits used") is a known gap,
+// tracked in Appendix F.
+
+struct PackageItem: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var serviceId: UUID
+    var quantity: Int   // how many bookings of this service the package includes
+}
+
+struct Package: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var name: String
+    var packageDescription: String
+    var items: [PackageItem]
+    var priceMinorUnits: Int
+    var vertical: Vertical = .vet
+
+    /// The saving vs. buying every included service separately at its
+    /// cheapest variant — `catalog` is passed in rather than looked up here
+    /// so this stays pure/testable like the rest of the pricing logic.
+    func discountMinorUnits(catalog: [Service]) -> Int {
+        let separatePrice = items.reduce(0) { total, item in
+            guard let service = catalog.first(where: { $0.id == item.serviceId }),
+                  let cheapest = service.startingPriceMinorUnits else { return total }
+            return total + cheapest * item.quantity
+        }
+        return max(0, separatePrice - priceMinorUnits)
+    }
+}
+
 // MARK: - Domain errors
 
 enum DomainError: Error, LocalizedError, Equatable {

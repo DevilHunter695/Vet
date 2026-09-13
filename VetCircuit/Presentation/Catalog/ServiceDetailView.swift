@@ -8,24 +8,72 @@ struct ServiceDetailView: View {
 
     @Environment(SessionStore.self) private var session
     @State private var selectedVariantId: UUID?
+    @State private var pets: [Pet] = []
+    /// D6: multi-pet in one visit — every selected pet lands on the same
+    /// cart line so PricingEngine's `additionalPetCount` (2nd pet at a
+    /// reduced fee) is exercised for real instead of being unreachable code.
+    @State private var selectedPetIds: Set<UUID> = []
+    /// D3: add-ons attachable to a booking — the data model already carried
+    /// `CartItem.addonIds`, but nothing let a customer populate it.
+    @State private var selectedAddonIds: Set<UUID> = []
     @State private var isAddingToCart = false
     @State private var addedToCart = false
     @State private var errorMessage: String?
 
     private let manageCartUseCase = DependencyContainer.shared.manageCartUseCase()
+    private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
 
     private var selectedVariant: ServiceVariant? {
         service.variants.first { $0.id == selectedVariantId } ?? service.variants.first
     }
 
+    private func loadPets() async {
+        guard let userId = session.currentUser?.id else {
+            pets = pet.map { [$0] } ?? []
+            return
+        }
+        do {
+            pets = try await managePetsUseCase.list(ownerId: userId)
+        } catch {
+            pets = pet.map { [$0] } ?? []
+        }
+        if selectedPetIds.isEmpty {
+            selectedPetIds = Set([pet?.id ?? pets.first?.id].compactMap { $0 })
+        }
+    }
+
+    private func togglePet(_ id: UUID) {
+        Haptics.selection()
+        if selectedPetIds.contains(id) {
+            // Always leave at least one pet selected — an empty selection
+            // isn't a valid cart line (ManageCartUseCase rejects it anyway).
+            guard selectedPetIds.count > 1 else { return }
+            selectedPetIds.remove(id)
+        } else {
+            selectedPetIds.insert(id)
+        }
+    }
+
+    private func toggleAddon(_ id: UUID) {
+        Haptics.selection()
+        if selectedAddonIds.contains(id) {
+            selectedAddonIds.remove(id)
+        } else {
+            selectedAddonIds.insert(id)
+        }
+    }
+
     private func addToCart() async {
-        guard let variant = selectedVariant, let pet, let userId = session.currentUser?.id else { return }
+        guard let variant = selectedVariant, let userId = session.currentUser?.id, !selectedPetIds.isEmpty else { return }
         isAddingToCart = true
         errorMessage = nil
         defer { isAddingToCart = false }
         do {
             let cart = try await manageCartUseCase.current(userId: userId)
-            let item = CartItem(id: UUID(), serviceId: service.id, variantId: variant.id, petIds: [pet.id])
+            let item = CartItem(
+                id: UUID(), serviceId: service.id, variantId: variant.id,
+                petIds: Array(selectedPetIds), addonIds: Array(selectedAddonIds)
+            )
             _ = try await manageCartUseCase.addItem(item, to: cart)
             Haptics.success()
             withAnimation(Theme.springSoft) { addedToCart = true }
@@ -69,19 +117,32 @@ struct ServiceDetailView: View {
                 }
                 .appearAnimation(delay: 0.1)
 
+                if pets.count > 1 {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Pets on this visit").font(.brandHeadline)
+                        Text("The 2nd pet onward is charged the reduced multi-pet rate.")
+                            .font(.brandCaption).foregroundStyle(.secondary)
+                        ForEach(pets) { candidate in
+                            CheckboxRow(
+                                title: candidate.name,
+                                subtitle: candidate.breed,
+                                isSelected: selectedPetIds.contains(candidate.id)
+                            ) { togglePet(candidate.id) }
+                        }
+                    }
+                    .appearAnimation(delay: 0.12)
+                }
+
                 if !service.addons.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Popular add-ons").font(.brandHeadline)
+                        Text("Add-ons").font(.brandHeadline)
                         ForEach(service.addons) { addon in
-                            HStack {
-                                Text(addon.name).font(.brandBody)
-                                Spacer()
-                                Text(CurrencyFormatter.rupees(addon.priceMinorUnits))
-                                    .font(.brandBody).foregroundStyle(.secondary)
-                            }
-                            .padding()
-                            .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .shadow(color: Theme.cardShadow, radius: 6, y: 2)
+                            CheckboxRow(
+                                title: addon.name,
+                                subtitle: nil,
+                                trailing: CurrencyFormatter.rupees(addon.priceMinorUnits),
+                                isSelected: selectedAddonIds.contains(addon.id)
+                            ) { toggleAddon(addon.id) }
                         }
                     }
                     .appearAnimation(delay: 0.15)
@@ -101,7 +162,7 @@ struct ServiceDetailView: View {
                 PrimaryButton(title: addedToCart ? "Added to cart" : "Add to cart", isLoading: isAddingToCart) {
                     Task { await addToCart() }
                 }
-                .disabled(pet == nil || addedToCart)
+                .disabled(selectedPetIds.isEmpty || addedToCart)
                 .appearAnimation(delay: 0.25)
             }
             .padding()
@@ -109,6 +170,7 @@ struct ServiceDetailView: View {
         .background(Color(.systemGroupedBackground))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { selectedVariantId = service.variants.first?.id }
+        .task { await loadPets() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { CartView() } label: { Image(systemName: "cart") }
@@ -148,6 +210,39 @@ private struct VariantRow: View {
         }
         .buttonStyle(PressableStyle())
         .animation(Theme.springQuick, value: isSelected)
+    }
+}
+
+/// Shared checkbox-style row for both the pet multi-select (D6) and the
+/// add-on toggles (D3) — same interaction, different content.
+private struct CheckboxRow: View {
+    let title: String
+    var subtitle: String?
+    var trailing: String?
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(isSelected ? Theme.primary : Color(.tertiaryLabel))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.brandBody).foregroundStyle(.primary)
+                    if let subtitle {
+                        Text(subtitle).font(.brandCaption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if let trailing {
+                    Text(trailing).font(.brandBody).foregroundStyle(.secondary)
+                }
+            }
+            .padding()
+            .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .shadow(color: Theme.cardShadow, radius: 6, y: 2)
+        }
+        .buttonStyle(PressableStyle())
     }
 }
 
