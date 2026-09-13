@@ -174,3 +174,16 @@ protocol LoyaltyRepository: Sendable {
     /// Called when a visit completes; awards points and returns the updated account.
     func awardPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount
 }
+
+protocol NotificationPreferencesRepository: Sendable {
+    /// Returns the default (all-on except promotions) preferences if the user
+    /// has never saved any — there is always a value to render toggles from.
+    func preferences(userId: UUID) async throws -> NotificationPreferences
+    func save(_ preferences: NotificationPreferences) async throws -> NotificationPreferences
+}
+
+protocol AppConfigRepository: Sendable {
+    /// O7/O8: fetched once at launch, no auth required — a signed-out device
+    /// on a killed binary still needs to be told to update.
+    func fetchConfig() async throws -> RemoteAppConfig
+}

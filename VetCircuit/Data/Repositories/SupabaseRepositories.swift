@@ -793,4 +793,81 @@ private struct SupabaseVisitRow: Decodable {
     }
 }
 
+final class SupabaseNotificationPreferencesRepository: NotificationPreferencesRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func preferences(userId: UUID) async throws -> NotificationPreferences {
+        let rows: [SupabaseNotificationPreferencesRow] = try await client
+            .from("notification_preferences").select().eq("user_id", value: userId)
+            .execute().value
+        // No saved row yet = the all-on-except-promotions default, not an error.
+        return rows.first?.toDomain() ?? NotificationPreferences(userId: userId)
+    }
+
+    func save(_ preferences: NotificationPreferences) async throws -> NotificationPreferences {
+        let upsert = SupabaseNotificationPreferencesRow(preferences: preferences)
+        let rows: [SupabaseNotificationPreferencesRow] = try await client
+            .from("notification_preferences").upsert(upsert, onConflict: "user_id").select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+}
+
+final class SupabaseAppConfigRepository: AppConfigRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    /// O7/O8: single public-read singleton row (see migration) — no auth
+    /// header required, so this must work before sign-in too.
+    func fetchConfig() async throws -> RemoteAppConfig {
+        let rows: [SupabaseAppConfigRow] = try await client
+            .from("app_config").select().eq("id", value: 1)
+            .execute().value
+        guard let row = rows.first else { throw DomainError.notFound("App config") }
+        return row.toDomain()
+    }
+}
+
+private struct SupabaseNotificationPreferencesRow: Codable {
+    let userId: UUID
+    let bookingUpdates: Bool
+    let chatMessages: Bool
+    let vaccinationReminders: Bool
+    let promotions: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id", bookingUpdates = "booking_updates", chatMessages = "chat_messages"
+        case vaccinationReminders = "vaccination_reminders", promotions
+    }
+
+    init(preferences: NotificationPreferences) {
+        userId = preferences.userId
+        bookingUpdates = preferences.bookingUpdates
+        chatMessages = preferences.chatMessages
+        vaccinationReminders = preferences.vaccinationReminders
+        promotions = preferences.promotions
+    }
+
+    func toDomain() -> NotificationPreferences {
+        NotificationPreferences(userId: userId, bookingUpdates: bookingUpdates, chatMessages: chatMessages,
+                                 vaccinationReminders: vaccinationReminders, promotions: promotions)
+    }
+}
+
+private struct SupabaseAppConfigRow: Decodable {
+    let minSupportedVersion: String
+    let isMaintenanceMode: Bool
+    let maintenanceMessage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case minSupportedVersion = "min_supported_version", isMaintenanceMode = "is_maintenance_mode"
+        case maintenanceMessage = "maintenance_message"
+    }
+
+    func toDomain() -> RemoteAppConfig {
+        RemoteAppConfig(minSupportedVersion: minSupportedVersion, isMaintenanceMode: isMaintenanceMode, maintenanceMessage: maintenanceMessage)
+    }
+}
+
 #endif

@@ -385,3 +385,44 @@ struct SendReferralUseCase {
         return try await referralRepository.sendInvite(userId: userId, phone: phone)
     }
 }
+
+/// O1: per-category push preferences.
+struct ManageNotificationPreferencesUseCase {
+    let repository: NotificationPreferencesRepository
+
+    func load(userId: UUID) async throws -> NotificationPreferences {
+        try await repository.preferences(userId: userId)
+    }
+
+    func save(_ preferences: NotificationPreferences) async throws -> NotificationPreferences {
+        try await repository.save(preferences)
+    }
+}
+
+/// O7/O8: evaluated once at launch against the running app's
+/// `CFBundleShortVersionString` — the single gate `RootView` checks before
+/// showing sign-in or the tab bar.
+struct CheckAppConfigUseCase {
+    let repository: AppConfigRepository
+
+    enum Gate: Equatable {
+        case ok
+        case maintenance(message: String?)
+        case forceUpgrade(minVersion: String)
+    }
+
+    func execute(currentVersion: String) async -> Gate {
+        guard let config = try? await repository.fetchConfig() else {
+            // Fail open: an unreachable config endpoint must never itself
+            // become an outage (plan §7 — kill switches must fail safe).
+            return .ok
+        }
+        if config.isMaintenanceMode {
+            return .maintenance(message: config.maintenanceMessage)
+        }
+        if !RemoteAppConfig.isSupported(currentVersion: currentVersion, minSupportedVersion: config.minSupportedVersion) {
+            return .forceUpgrade(minVersion: config.minSupportedVersion)
+        }
+        return .ok
+    }
+}

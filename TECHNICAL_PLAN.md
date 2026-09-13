@@ -308,7 +308,7 @@ Service (Home consultation)
 |---|---|---|---|
 | N1 | Referral code + share sheet + attribution + fraud guard | P1 | 🔨 |
 | N2 | Coupon campaigns (first-visit, win-back, cluster-launch) | P1 | ⛔ |
-| N3 | Lifecycle pushes: vaccination due, renewal, dormant 60d, abandoned cart | P1 | ⛔ |
+| N3 | Lifecycle pushes: vaccination due, renewal, dormant 60d, abandoned cart | P1 | 🔨 | Detection + queueing done (`lifecycle-notifications` Edge Function, `notifications` table); actual push-send job to drain the queue is a separate, still-missing piece |
 | N4 | Loyalty points & tiers | P2 | ✅ |
 | N5 | In-app rating prompt (SKStoreReviewController, after a 5★ visit only) | P1 | ⛔ |
 | N6 | Home Screen widget: next visit / vaccination due | P2 | ⛔ |
@@ -318,14 +318,14 @@ Service (Home consultation)
 
 | # | Capability | Pri | Status |
 |---|---|---|---|
-| O1 | Notification preferences per channel/category | P1 | ⛔ |
+| O1 | Notification preferences per channel/category | P1 | ✅ |
 | O2 | Language: English + Hindi (+1 regional at launch cluster) | P1 | ⛔ |
 | O3 | Appearance light/dark/system | P0 | ✅ |
 | O4 | Accessibility: Dynamic Type to AX5, VoiceOver, Reduce Motion | P0 | 🔨 |
 | O5 | **Consent dashboard**: what you collect, why, withdraw consent | P0 (DPDP) | ✅ |
 | O6 | Privacy policy + T&C in-app and on web | P0 | ⛔ |
-| O7 | **Force-upgrade gate** (server-driven minimum version) | **P0** | ⛔ | Your only true rollback lever for a shipped binary |
-| O8 | Maintenance mode screen (server flag) | P0 | ⛔ |
+| O7 | **Force-upgrade gate** (server-driven minimum version) | **P0** | ✅ | Your only true rollback lever for a shipped binary |
+| O8 | Maintenance mode screen (server flag) | P0 | ✅ | Shares `ForceUpdateView` with O7 — one blocking screen, two states |
 
 ### P. Partner (vet) app — P0 set
 

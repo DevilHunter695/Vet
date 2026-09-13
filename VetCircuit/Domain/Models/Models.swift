@@ -577,6 +577,73 @@ struct Service: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+// MARK: - Notification preferences (plan §O1) — per-category opt-out, not a
+// single blunt push toggle. Transactional-ish categories default true;
+// promotions default false so a fresh install isn't opted into marketing.
+
+struct NotificationPreferences: Codable, Equatable {
+    var userId: UUID
+    var bookingUpdates: Bool = true
+    var chatMessages: Bool = true
+    var vaccinationReminders: Bool = true
+    var promotions: Bool = false
+}
+
+// MARK: - Force-upgrade & maintenance mode (plan §O7-O8, §7) — the server's
+// only lever to pull a shipped binary back once it's in the App Store. Fetched
+// once at launch; a signed-out device must still be able to read it, so this
+// is the one table with no auth requirement at all.
+
+struct RemoteAppConfig: Codable, Equatable {
+    var minSupportedVersion: String
+    var isMaintenanceMode: Bool
+    var maintenanceMessage: String?
+
+    /// Dotted-numeric semantic comparison ("1.2.0" < "1.10.0"), not a string
+    /// compare — plan §7 calls this the only true rollback lever, so getting
+    /// "1.10.0" vs "1.2.0" backwards here would silently defeat it.
+    static func isSupported(currentVersion: String, minSupportedVersion: String) -> Bool {
+        compareVersions(currentVersion, minSupportedVersion) >= 0
+    }
+
+    /// Returns -1, 0, or 1 like `Comparable`, comparing dot-separated numeric
+    /// components pairwise; missing trailing components count as 0 ("1.2" == "1.2.0").
+    static func compareVersions(_ lhs: String, _ rhs: String) -> Int {
+        let lhsParts = lhs.split(separator: ".").map { Int($0) ?? 0 }
+        let rhsParts = rhs.split(separator: ".").map { Int($0) ?? 0 }
+        let count = max(lhsParts.count, rhsParts.count)
+        for i in 0..<count {
+            let l = i < lhsParts.count ? lhsParts[i] : 0
+            let r = i < rhsParts.count ? rhsParts[i] : 0
+            if l != r { return l < r ? -1 : 1 }
+        }
+        return 0
+    }
+}
+
+// MARK: - Lifecycle notification queue (plan §5, §6.5, N3) — rows queued by a
+// scheduled Edge Function for a (not-yet-built) push-sending job to pick up;
+// the client only ever reads its own, to show an in-app notification center.
+
+struct AppNotification: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var category: Category
+    var title: String
+    var body: String
+    var sentAt: Date?
+
+    enum Category: String, Codable {
+        case bookingUpdate = "booking_update"
+        case chatMessage = "chat_message"
+        case vaccinationDue = "vaccination_due"
+        case renewalDue = "renewal_due"
+        case dormantWinback = "dormant_winback"
+        case abandonedCart = "abandoned_cart"
+        case promotion
+    }
+}
+
 // MARK: - Domain errors
 
 enum DomainError: Error, LocalizedError, Equatable {

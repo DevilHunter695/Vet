@@ -85,10 +85,26 @@ final class SessionStore {
 
 struct RootView: View {
     @Environment(SessionStore.self) private var session
+    @State private var appConfigGate: CheckAppConfigUseCase.Gate?
+
+    private let checkAppConfigUseCase = DependencyContainer.shared.checkAppConfigUseCase()
+
+    /// O7: the app's own declared version — compared against the server's
+    /// `minSupportedVersion`, never hardcoded, so this keeps working as the
+    /// bundle's version string is bumped release to release.
+    private var currentAppVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+    }
 
     var body: some View {
         Group {
-            if session.isBootstrapping {
+            if case .maintenance(let message) = appConfigGate {
+                ForceUpdateView(mode: .maintenance(message: message))
+                    .transition(.opacity)
+            } else if case .forceUpgrade(let minVersion) = appConfigGate {
+                ForceUpdateView(mode: .forceUpgrade(minVersion: minVersion))
+                    .transition(.opacity)
+            } else if session.isBootstrapping {
                 ZStack {
                     Theme.heroGradient.ignoresSafeArea()
                     PawMascot(size: 88)
@@ -103,6 +119,9 @@ struct RootView: View {
         }
         .animation(Theme.springSoft, value: session.currentUser != nil)
         .animation(Theme.crossFade, value: session.isBootstrapping)
+        // O7/O8: fetched once at launch, before we even know whether there's a
+        // session — a killed binary must be gated for signed-out users too.
+        .task { appConfigGate = await checkAppConfigUseCase.execute(currentVersion: currentAppVersion) }
     }
 }
 

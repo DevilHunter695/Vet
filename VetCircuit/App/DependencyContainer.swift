@@ -30,10 +30,12 @@ final class DependencyContainer {
     let visitOTPRepository: VisitOTPRepository
     let consentRepository: ConsentRepository
     let accountRepository: AccountRepository
+    let notificationPreferencesRepository: NotificationPreferencesRepository
+    let appConfigRepository: AppConfigRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
-        // if AppConfig.isBackendConfigured { use Supabase*Repository } else { use Mock*Repository }
+        // if RemoteAppConfig.isBackendConfigured { use Supabase*Repository } else { use Mock*Repository }
         self.authRepository = MockAuthRepository()
         self.circuitRepository = MockCircuitRepository()
         self.visitRepository = MockVisitRepository()
@@ -58,6 +60,8 @@ final class DependencyContainer {
         self.visitOTPRepository = MockVisitOTPRepository()
         self.consentRepository = MockConsentRepository()
         self.accountRepository = MockAccountRepository()
+        self.notificationPreferencesRepository = MockNotificationPreferencesRepository()
+        self.appConfigRepository = MockAppConfigRepository()
     }
 
     // MARK: Use case factories
@@ -90,4 +94,8 @@ final class DependencyContainer {
     func holdSlotUseCase() -> HoldSlotUseCase { HoldSlotUseCase(circuitRepository: circuitRepository, slotHoldRepository: slotHoldRepository) }
     func manageCartUseCase() -> ManageCartUseCase { ManageCartUseCase(cartRepository: cartRepository) }
     func getQuoteUseCase() -> GetQuoteUseCase { GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository) }
+    func manageNotificationPreferencesUseCase() -> ManageNotificationPreferencesUseCase {
+        ManageNotificationPreferencesUseCase(repository: notificationPreferencesRepository)
+    }
+    func checkAppConfigUseCase() -> CheckAppConfigUseCase { CheckAppConfigUseCase(repository: appConfigRepository) }
 }
