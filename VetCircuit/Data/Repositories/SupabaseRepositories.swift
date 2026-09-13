@@ -151,7 +151,7 @@ final class SupabaseQuoteRepository: QuoteRepository {
         let response: Response = try await client.functions.invoke("create-quote", options: .init(body: [
             "cart_id": cart.id.uuidString, "use_wallet_balance": useWalletBalance,
             "apply_entitlement_credit": applyEntitlementCredit,
-        ] as [String: Any])).value
+        ] as [String: Any]))
         return Quote(id: response.id, cartId: response.cartId, breakdown: response.breakdown,
                      signature: response.signature, expiresAt: response.expiresAt)
     }
@@ -521,7 +521,7 @@ final class SupabaseAccountRepository: AccountRepository {
         // Calls a trusted Edge Function rather than inserting directly — it
         // schedules the purge job and can immediately pause the account
         // (e.g. block new bookings) in the same transaction.
-        let response: Response = try await client.functions.invoke("request-account-deletion", options: .init(body: [:])).value
+        let response: Response = try await client.functions.invoke("request-account-deletion")
         let scheduledPurgeAt = Calendar.current.date(byAdding: .day, value: DeletionRequest.softWindowDays, to: .now) ?? .now
         return DeletionRequest(id: response.id, userId: userId, requestedAt: .now, scheduledPurgeAt: scheduledPurgeAt, status: .pending)
     }
@@ -550,7 +550,7 @@ final class SupabaseAccountRepository: AccountRepository {
         // A real deployment does this as an async job (plan Appendix A:
         // GET /v1/account/export returns a signed download once ready);
         // this synchronous version is the client-visible contract for now.
-        let response: DataExport = try await client.functions.invoke("export-account-data", options: .init(body: [:])).value
+        let response: DataExport = try await client.functions.invoke("export-account-data")
         return response
     }
 }
@@ -566,7 +566,7 @@ final class SupabaseCallRepository: CallRepository {
                 case id, proxyNumber = "proxy_number", expiresAt = "expires_at", visitId = "visit_id"
             }
         }
-        let response: Response = try await client.functions.invoke("start-call", options: .init(body: ["visit_id": visitId.uuidString])).value
+        let response: Response = try await client.functions.invoke("start-call", options: .init(body: ["visit_id": visitId.uuidString]))
         return CallSession(id: response.id, visitId: response.visitId, proxyNumber: response.proxyNumber, expiresAt: response.expiresAt)
     }
 }
@@ -625,10 +625,18 @@ final class SupabaseRefundRepository: RefundRepository {
         // select-only under RLS for every client role, customer or admin.
         // This calls the issue-refund Edge Function, the only writer,
         // instead of inserting directly (which RLS would reject outright).
-        let row: SupabaseRefundRow = try await client.functions.invoke("issue-refund", options: .init(body: [
-            "visit_id": visitId.uuidString, "payment_id": paymentId.uuidString,
-            "amount_minor_units": amountMinorUnits, "reason": reason,
-        ])).value
+        struct Body: Encodable {
+            let visitId: UUID
+            let paymentId: UUID
+            let amountMinorUnits: Int
+            let reason: String
+            enum CodingKeys: String, CodingKey {
+                case visitId = "visit_id", paymentId = "payment_id"
+                case amountMinorUnits = "amount_minor_units", reason
+            }
+        }
+        let body = Body(visitId: visitId, paymentId: paymentId, amountMinorUnits: amountMinorUnits, reason: reason)
+        let row: SupabaseRefundRow = try await client.functions.invoke("issue-refund", options: .init(body: body))
         return row.toDomain()
     }
 
