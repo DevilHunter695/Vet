@@ -345,6 +345,7 @@ actor MockInvoiceRepository: InvoiceRepository {
 
 actor MockSubscriptionRepository: SubscriptionRepository {
     private var subscription: Subscription?
+    private var dunning: DunningState?
 
     func currentSubscription(userId: UUID) async throws -> Subscription? { subscription }
 
@@ -357,6 +358,35 @@ actor MockSubscriptionRepository: SubscriptionRepository {
 
     func cancel(subscriptionId: UUID) async throws {
         if subscription?.id == subscriptionId { subscription?.status = .cancelled }
+    }
+
+    func changePlan(subscriptionId: UUID, to plan: Subscription.PlanType) async throws -> Subscription {
+        guard var sub = subscription, sub.id == subscriptionId else { throw DomainError.notFound("Subscription") }
+        sub.planType = plan
+        subscription = sub
+        return sub
+    }
+
+    func pause(subscriptionId: UUID) async throws -> Subscription {
+        guard var sub = subscription, sub.id == subscriptionId else { throw DomainError.notFound("Subscription") }
+        sub.status = .paused
+        subscription = sub
+        return sub
+    }
+
+    func resume(subscriptionId: UUID) async throws -> Subscription {
+        guard var sub = subscription, sub.id == subscriptionId else { throw DomainError.notFound("Subscription") }
+        sub.status = .active
+        subscription = sub
+        return sub
+    }
+
+    func dunningState(subscriptionId: UUID) async throws -> DunningState? {
+        dunning?.subscriptionId == subscriptionId ? dunning : nil
+    }
+
+    func recordDunningState(_ state: DunningState) async throws {
+        dunning = state
     }
 }
 

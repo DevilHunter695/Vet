@@ -165,7 +165,87 @@ struct Subscription: Identifiable, Codable, Equatable, Hashable {
     }
 
     enum Status: String, Codable {
-        case active, cancelled, expired, pastDue = "past_due"
+        case active, cancelled, expired, pastDue = "past_due", paused
+    }
+}
+
+// MARK: - Subscription management (plan §H3) — upgrade/downgrade/pause/cancel
+// as real business logic, not a pass-through to the repository.
+
+/// Ranks plans by commitment/price tier so upgrade/downgrade can be validated
+/// directionally. Corporate is deliberately outside the linear ladder — it is
+/// a seat-based plan, not a "bigger" individual plan.
+private extension Subscription.PlanType {
+    var tierRank: Int? {
+        switch self {
+        case .monthly: return 0
+        case .quarterly: return 1
+        case .annual: return 2
+        case .corporate: return nil
+        }
+    }
+}
+
+struct SubscriptionManagementPolicy {
+    /// A corporate/RWA plan stops being a valid bulk plan below this — the
+    /// same floor `SubscribeToPlanUseCase` enforces at signup (plan §H7).
+    static let minimumCorporateSeats = 5
+
+    enum Action { case upgrade, downgrade, pause, resume, cancel }
+
+    /// Pure validation — no I/O, so every case is directly testable. Returns
+    /// nil when the action is allowed, or the reason it isn't.
+    static func validate(_ action: Action, subscription: Subscription, targetPlan: Subscription.PlanType? = nil) -> DomainError? {
+        switch action {
+        case .upgrade, .downgrade:
+            guard subscription.status == .active || subscription.status == .pastDue else {
+                return .validation("Only an active subscription can change plans.")
+            }
+            guard let targetPlan else { return .validation("No target plan given.") }
+            guard targetPlan != subscription.planType else {
+                return .validation("Already on that plan.")
+            }
+            // Corporate is a seat-based product, not a rung on the individual
+            // ladder — moving into/out of it goes through pause/cancel + a
+            // fresh subscribe, so the seat-count floor is always enforced.
+            if targetPlan.isBulk || subscription.planType.isBulk {
+                return .validation("Corporate/RWA plans are managed by seat count, not upgrade/downgrade — cancel and start a new corporate plan instead.")
+            }
+            guard let currentRank = subscription.planType.tierRank, let targetRank = targetPlan.tierRank else {
+                return .validation("Unsupported plan change.")
+            }
+            if action == .upgrade && targetRank <= currentRank {
+                return .validation("\(targetPlan.displayName) isn't an upgrade from \(subscription.planType.displayName).")
+            }
+            if action == .downgrade && targetRank >= currentRank {
+                return .validation("\(targetPlan.displayName) isn't a downgrade from \(subscription.planType.displayName).")
+            }
+            return nil
+
+        case .pause:
+            guard subscription.status == .active else {
+                return .validation("Only an active subscription can be paused.")
+            }
+            // A corporate plan below the seat floor isn't a valid product to
+            // resume back into later — force cancellation instead of a pause
+            // that would silently strand it under-quota.
+            if subscription.planType.isBulk && subscription.seatCount < minimumCorporateSeats {
+                return .validation("This corporate plan has fewer than \(minimumCorporateSeats) seats — cancel it instead of pausing.")
+            }
+            return nil
+
+        case .resume:
+            guard subscription.status == .paused else {
+                return .validation("This subscription isn't paused.")
+            }
+            return nil
+
+        case .cancel:
+            guard subscription.status != .cancelled else {
+                return .validation("This subscription is already cancelled.")
+            }
+            return nil
+        }
     }
 }
 
@@ -391,6 +471,56 @@ struct CancellationPolicy {
         } else {
             return Outcome(refundPercent: 0, refundMinorUnits: 0, paidMinorUnits: paidMinorUnits, isPastVisitTime: true)
         }
+    }
+}
+
+// MARK: - Dunning (plan §H5) — failed renewal charge -> retry ladder -> grace
+// -> auto-downgrade. Pure state + policy, mirroring CancellationPolicy above:
+// the domain computes what should happen next, the caller (a scheduled job,
+// per plan §6.5) performs the I/O.
+
+struct DunningState: Codable, Equatable {
+    var subscriptionId: UUID
+    var failedAttempts: Int
+    var nextRetryAt: Date?       // nil once the ladder is exhausted and grace has started
+    var gracePeriodEndsAt: Date?
+}
+
+struct DunningPolicy {
+    /// Days after a failed charge to retry: +1, +3, +7. After the 3rd
+    /// failure the grace period starts instead of a 4th retry.
+    static let retryLadderDays: [Int] = [1, 3, 7]
+    static let gracePeriodDays = 7
+    /// Where an unpaid subscription lands once grace expires unpaid — a
+    /// free/lowest tier rather than a hard cutoff, per plan §H5.
+    static let downgradeTarget: Subscription.PlanType = .monthly
+
+    enum Outcome: Equatable {
+        case retryScheduled(state: DunningState)
+        case graceStarted(state: DunningState)
+        case downgraded(to: Subscription.PlanType)
+    }
+
+    /// Called each time a renewal charge fails. `state` is nil on the first
+    /// failure for this billing cycle.
+    static func onChargeFailed(state: DunningState?, subscriptionId: UUID, now: Date = .now) -> Outcome {
+        let attempts = (state?.failedAttempts ?? 0) + 1
+        if attempts <= retryLadderDays.count {
+            let delayDays = retryLadderDays[attempts - 1]
+            let nextRetryAt = Calendar.current.date(byAdding: .day, value: delayDays, to: now) ?? now
+            return .retryScheduled(state: DunningState(subscriptionId: subscriptionId, failedAttempts: attempts, nextRetryAt: nextRetryAt, gracePeriodEndsAt: nil))
+        } else {
+            let graceEnds = Calendar.current.date(byAdding: .day, value: gracePeriodDays, to: now) ?? now
+            return .graceStarted(state: DunningState(subscriptionId: subscriptionId, failedAttempts: attempts, nextRetryAt: nil, gracePeriodEndsAt: graceEnds))
+        }
+    }
+
+    /// The scheduled job (plan §6.5) polls this: once grace has passed with
+    /// no successful charge, the subscription is downgraded rather than left
+    /// past-due forever.
+    static func shouldAutoDowngrade(state: DunningState, now: Date = .now) -> Bool {
+        guard let gracePeriodEndsAt = state.gracePeriodEndsAt else { return false }
+        return now >= gracePeriodEndsAt
     }
 }
 
