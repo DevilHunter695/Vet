@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import StoreKit
 
 @Observable
 @MainActor
@@ -26,10 +27,24 @@ final class ReviewViewModel {
             _ = try? await loyaltyRepository.awardPoints(userId: userId, points: 20)
             didSubmit = true
             if rating >= 4 { Haptics.success() } else { Haptics.tap() }
+            if rating == 5 { requestAppStoreReviewIfDue() }
         } catch {
             Haptics.error()
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// N5: only after a 5★ visit — the moment a customer is happiest is the
+    /// right moment to ask, and StoreKit's own throttling doesn't stop us
+    /// from prompting on every single 5★ review, so gate it ourselves to
+    /// once per app version (a reasonable judgment call, not an App Store rule).
+    private func requestAppStoreReviewIfDue() {
+        let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        let key = "vc.review_prompt_shown_version"
+        guard UserDefaults.standard.string(forKey: key) != currentVersion else { return }
+        UserDefaults.standard.set(currentVersion, forKey: key)
+        guard let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene else { return }
+        SKStoreReviewController.requestReview(in: scene)
     }
 }
 

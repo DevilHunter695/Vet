@@ -17,7 +17,10 @@ final class ProfileViewModel {
 
     func load(userId: UUID) async {
         do {
-            pets = try await managePetsUseCase.list(ownerId: userId)
+            // includeArchived: this list is the pet-management screen, not a
+            // booking picker — an archived pet still needs to be visible so
+            // its owner can open its record or bring it back (B8).
+            pets = try await managePetsUseCase.list(ownerId: userId, includeArchived: true)
             subscription = try await subscriptionRepository.currentSubscription(userId: userId)
             loyaltyAccount = try await getLoyaltyAccountUseCase.execute(userId: userId)
             if let subscription, subscription.status == .active {
@@ -125,11 +128,15 @@ struct ProfileView: View {
                 }
 
                 Section("Subscription") {
-                    if let subscription = viewModel.subscription, subscription.status == .active {
+                    if let subscription = viewModel.subscription, subscription.status != .cancelled {
                         LabeledContent("Plan", value: subscription.planType.displayName)
+                        LabeledContent("Status", value: subscription.status.rawValue.capitalized)
                         LabeledContent("Renews", value: subscription.renewalDate.formatted(date: .abbreviated, time: .omitted))
                         if subscription.planType.isBulk {
                             LabeledContent("Seats", value: "\(subscription.seatCount)")
+                        }
+                        NavigationLink("Manage subscription") {
+                            ManageSubscriptionView()
                         }
                     } else {
                         ForEach([Subscription.PlanType.monthly, .quarterly, .annual], id: \.self) { plan in
@@ -161,14 +168,52 @@ struct ProfileView: View {
                     NavigationLink("Addresses") {
                         AddressListView()
                     }
+                    NavigationLink("Household") {
+                        HouseholdView()
+                    }
+                    NavigationLink("Notifications") {
+                        NotificationPreferencesView()
+                    }
                     NavigationLink("Privacy & consent") {
                         PrivacyConsentView()
+                    }
+                    NavigationLink("Notifications centre") {
+                        NotificationCenterView()
+                    }
+                }
+
+                Section("Support & legal") {
+                    NavigationLink("Help centre") {
+                        HelpCenterView()
+                    }
+                    NavigationLink("Contact support") {
+                        ContactSupportView()
+                    }
+                    NavigationLink("My tickets") {
+                        MyTicketsView()
+                    }
+                    NavigationLink("Privacy Policy") {
+                        PrivacyPolicyView()
+                    }
+                    NavigationLink("Terms of Service") {
+                        TermsOfServiceView()
                     }
                 }
 
                 Section("Pets") {
                     ForEach(viewModel.pets) { pet in
-                        Text("\(pet.name) · \(pet.species.rawValue.capitalized)")
+                        NavigationLink {
+                            PetDetailView(pet: pet)
+                        } label: {
+                            HStack {
+                                Text("\(pet.name) · \(pet.species.rawValue.capitalized)")
+                                if pet.isArchived {
+                                    Spacer()
+                                    Text(pet.archiveReason?.displayName ?? "")
+                                        .font(.brandCaption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
                     }
                     .onDelete { indexSet in
                         Haptics.warning()

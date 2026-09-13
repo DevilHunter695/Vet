@@ -26,6 +26,14 @@ struct LiabilityWaiverView: View {
                     """)
                     .font(.brandBody)
                     .foregroundStyle(.secondary)
+
+                    // O6: the full legal text lives in-app, not only in this
+                    // summary — required for App Store review and DPDP.
+                    VStack(alignment: .leading, spacing: 8) {
+                        NavigationLink("Read full Privacy Policy") { PrivacyPolicyView() }
+                        NavigationLink("Read full Terms of Service") { TermsOfServiceView() }
+                    }
+                    .font(.brandBody)
                 }
                 .padding()
             }

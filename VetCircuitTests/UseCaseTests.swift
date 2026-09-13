@@ -699,3 +699,755 @@ struct GetCatalogUseCaseTests {
         }
     }
 }
+
+@Suite("ManageCartUseCase — D3/D6 add-ons and multi-pet lines")
+struct ManageCartUseCaseAddonsAndMultiPetTests {
+    @Test("addItem rejects a cart line with no pets")
+    func rejectsEmptyPetSelection() async {
+        let repo = MockCartRepository()
+        let useCase = ManageCartUseCase(cartRepository: repo)
+        let userId = UUID()
+        let cart = try! await repo.currentCart(userId: userId)
+        let item = CartItem(id: UUID(), serviceId: UUID(), variantId: UUID(), petIds: [])
+
+        await #expect(throws: DomainError.validation("Choose at least one pet.")) {
+            _ = try await useCase.addItem(item, to: cart)
+        }
+    }
+
+    @Test("a cart line carries the selected add-ons and every selected pet")
+    func addItemPersistsAddonsAndPets() async throws {
+        let repo = MockCartRepository()
+        let useCase = ManageCartUseCase(cartRepository: repo)
+        let userId = UUID()
+        let cart = try await repo.currentCart(userId: userId)
+        let petIds = [UUID(), UUID()]
+        let addonIds = [UUID()]
+        let item = CartItem(id: UUID(), serviceId: UUID(), variantId: UUID(), petIds: petIds, addonIds: addonIds)
+
+        let saved = try await useCase.addItem(item, to: cart)
+        #expect(saved.items.first?.petIds.count == 2)
+        #expect(saved.items.first?.addonIds == addonIds)
+    }
+
+    @Test("PricingEngine charges the reduced multi-pet rate, not the full base price, for the 2nd pet")
+    func multiPetLinePricesTheSecondPetAtTheReducedRate() {
+        let variant = ServiceVariant(id: UUID(), serviceId: UUID(), name: "Standard 20 min",
+                                      durationMinutes: 20, priceMinorUnits: 59_900, additionalPetPriceMinorUnits: 29_900)
+        let input = PricingEngine.Input(variant: variant, addons: [], additionalPetCount: 1, travelFeeMinorUnits: 0)
+        let breakdown = PricingEngine.quote(input)
+
+        #expect(breakdown.lineItems.contains { $0.label.hasPrefix("Additional pet") && $0.amountMinorUnits == 29_900 })
+        #expect(breakdown.totalMinorUnits < (59_900 + 59_900) * 118 / 100) // cheaper than two full-price bookings, even after GST
+    }
+}
+
+@Suite("Package — D4 packages/bundles")
+struct PackageTests {
+    private func makeCatalog() -> [Service] {
+        [
+            Service(id: UUID(), category: .consult, name: "Home consultation", summary: "",
+                    variants: [ServiceVariant(id: UUID(), serviceId: UUID(), name: "Standard", durationMinutes: 20, priceMinorUnits: 59_900)]),
+            Service(id: UUID(), category: .vaccination, name: "Vaccination", summary: "",
+                    variants: [ServiceVariant(id: UUID(), serviceId: UUID(), name: "Single vaccine", durationMinutes: 15, priceMinorUnits: 49_900)]),
+        ]
+    }
+
+    @Test("a package's discount is the saving vs. buying every included service separately")
+    func discountReflectsSeparatePricing() {
+        let catalog = makeCatalog()
+        let package = Package(
+            id: UUID(), name: "Puppy first-year", packageDescription: "",
+            items: [
+                PackageItem(id: UUID(), serviceId: catalog[0].id, quantity: 4),
+                PackageItem(id: UUID(), serviceId: catalog[1].id, quantity: 3),
+            ],
+            priceMinorUnits: 349_900
+        )
+        // 4×599 + 3×499 = 2396 + 1497 = 3893 rupees separately, vs 3499 bundled.
+        #expect(package.discountMinorUnits(catalog: catalog) == 389_300 - 349_900)
+    }
+
+    @Test("a package referencing an unknown service contributes nothing to the discount, never crashes")
+    func discountIgnoresUnknownServices() {
+        let package = Package(
+            id: UUID(), name: "Mystery bundle", packageDescription: "",
+            items: [PackageItem(id: UUID(), serviceId: UUID(), quantity: 2)],
+            priceMinorUnits: 10_000
+        )
+        #expect(package.discountMinorUnits(catalog: []) == 0)
+    }
+}
+
+@Suite("BuyPackageUseCase — D4 checkout stub")
+struct BuyPackageUseCaseTests {
+    @Test("buying a package adds one cart line per included service occurrence, for every selected pet")
+    func expandsPackageIntoCartLines() async throws {
+        let catalogRepo = MockCatalogRepository()
+        let cartRepo = MockCartRepository()
+        let userId = UUID()
+        let consult = try await catalogRepo.listServices(vertical: .vet).first { $0.category == .consult }!
+        let vaccination = try await catalogRepo.listServices(vertical: .vet).first { $0.category == .vaccination }!
+        let packageRepo = MockPackageRepository()
+        let package = try await packageRepo.listPackages(vertical: .vet).first { $0.name == "Puppy first-year" } ??
+            Package(id: UUID(), name: "Test bundle", packageDescription: "",
+                    items: [PackageItem(id: UUID(), serviceId: consult.id, quantity: 2),
+                            PackageItem(id: UUID(), serviceId: vaccination.id, quantity: 1)],
+                    priceMinorUnits: 100_000)
+
+        let useCase = BuyPackageUseCase(packageRepository: packageRepo, catalogRepository: catalogRepo, cartRepository: cartRepo)
+        let petIds = [UUID(), UUID()]
+        let cart = try await useCase.execute(packageId: package.id, petIds: petIds, userId: userId)
+
+        let expectedLineCount = package.items.reduce(0) { $0 + $1.quantity }
+        #expect(cart.items.count == expectedLineCount)
+        #expect(cart.items.allSatisfy { $0.petIds == petIds })
+    }
+
+    @Test("buying a package with no pets selected is rejected before touching the cart")
+    func rejectsEmptyPetSelection() async {
+        let packageRepo = MockPackageRepository()
+        let catalogRepo = MockCatalogRepository()
+        let cartRepo = MockCartRepository()
+        let useCase = BuyPackageUseCase(packageRepository: packageRepo, catalogRepository: catalogRepo, cartRepository: cartRepo)
+        let anyPackage = try! await packageRepo.listPackages(vertical: nil).first!
+
+        await #expect(throws: DomainError.validation("Choose at least one pet.")) {
+            _ = try await useCase.execute(packageId: anyPackage.id, petIds: [], userId: UUID())
+        }
+    }
+}
+// MARK: - H3: subscription management
+
+@Suite("SubscriptionManagementPolicy")
+struct SubscriptionManagementPolicyTests {
+    private func subscription(plan: Subscription.PlanType, status: Subscription.Status, seatCount: Int = 1) -> Subscription {
+        Subscription(id: UUID(), userId: UUID(), planType: plan, status: status, renewalDate: .now.addingTimeInterval(86400 * 20), seatCount: seatCount)
+    }
+
+    @Test("upgrading to a higher tier is allowed")
+    func upgradeAllowed() {
+        let sub = subscription(plan: .monthly, status: .active)
+        #expect(SubscriptionManagementPolicy.validate(.upgrade, subscription: sub, targetPlan: .annual) == nil)
+    }
+
+    @Test("upgrading to a lower or equal tier is rejected")
+    func upgradeToLowerRejected() {
+        let sub = subscription(plan: .annual, status: .active)
+        #expect(SubscriptionManagementPolicy.validate(.upgrade, subscription: sub, targetPlan: .monthly) != nil)
+        #expect(SubscriptionManagementPolicy.validate(.upgrade, subscription: sub, targetPlan: .annual) != nil)
+    }
+
+    @Test("downgrading to a higher or equal tier is rejected")
+    func downgradeToHigherRejected() {
+        let sub = subscription(plan: .monthly, status: .active)
+        #expect(SubscriptionManagementPolicy.validate(.downgrade, subscription: sub, targetPlan: .annual) != nil)
+    }
+
+    @Test("downgrading to a lower tier is allowed")
+    func downgradeAllowed() {
+        let sub = subscription(plan: .annual, status: .active)
+        #expect(SubscriptionManagementPolicy.validate(.downgrade, subscription: sub, targetPlan: .monthly) == nil)
+    }
+
+    @Test("cannot change plan on a cancelled subscription")
+    func cannotChangeCancelled() {
+        let sub = subscription(plan: .monthly, status: .cancelled)
+        #expect(SubscriptionManagementPolicy.validate(.upgrade, subscription: sub, targetPlan: .annual) != nil)
+    }
+
+    @Test("cannot upgrade/downgrade a corporate plan through the individual ladder")
+    func corporateExcludedFromLadder() {
+        let sub = subscription(plan: .corporate, status: .active, seatCount: 10)
+        #expect(SubscriptionManagementPolicy.validate(.upgrade, subscription: sub, targetPlan: .annual) != nil)
+        let individual = subscription(plan: .monthly, status: .active)
+        #expect(SubscriptionManagementPolicy.validate(.upgrade, subscription: individual, targetPlan: .corporate) != nil)
+    }
+
+    @Test("pausing an active individual plan is allowed")
+    func pauseAllowed() {
+        let sub = subscription(plan: .monthly, status: .active)
+        #expect(SubscriptionManagementPolicy.validate(.pause, subscription: sub) == nil)
+    }
+
+    @Test("pausing an already-paused or cancelled subscription is rejected")
+    func pauseRejectedWhenNotActive() {
+        #expect(SubscriptionManagementPolicy.validate(.pause, subscription: subscription(plan: .monthly, status: .paused)) != nil)
+        #expect(SubscriptionManagementPolicy.validate(.pause, subscription: subscription(plan: .monthly, status: .cancelled)) != nil)
+    }
+
+    @Test("pausing a corporate plan with fewer than 5 seats is rejected — cancel instead")
+    func pauseRejectedBelowCorporateSeatFloor() {
+        let sub = subscription(plan: .corporate, status: .active, seatCount: 3)
+        #expect(SubscriptionManagementPolicy.validate(.pause, subscription: sub) != nil)
+    }
+
+    @Test("pausing a corporate plan at or above 5 seats is allowed")
+    func pauseAllowedAtCorporateSeatFloor() {
+        let sub = subscription(plan: .corporate, status: .active, seatCount: 5)
+        #expect(SubscriptionManagementPolicy.validate(.pause, subscription: sub) == nil)
+    }
+
+    @Test("resuming a paused subscription is allowed; resuming a non-paused one is rejected")
+    func resumeRequiresPaused() {
+        #expect(SubscriptionManagementPolicy.validate(.resume, subscription: subscription(plan: .monthly, status: .paused)) == nil)
+        #expect(SubscriptionManagementPolicy.validate(.resume, subscription: subscription(plan: .monthly, status: .active)) != nil)
+    }
+
+    @Test("cancelling an already-cancelled subscription is rejected")
+    func cancelIdempotencyGuard() {
+        #expect(SubscriptionManagementPolicy.validate(.cancel, subscription: subscription(plan: .monthly, status: .cancelled)) != nil)
+        #expect(SubscriptionManagementPolicy.validate(.cancel, subscription: subscription(plan: .monthly, status: .active)) == nil)
+    }
+}
+
+@Suite("ManageSubscriptionUseCase")
+struct ManageSubscriptionUseCaseTests {
+    @Test("upgrade persists the new plan through the repository")
+    func upgradePersists() async throws {
+        let repo = MockSubscriptionRepository()
+        let userId = UUID()
+        _ = try await repo.subscribe(userId: userId, plan: .monthly)
+        let useCase = ManageSubscriptionUseCase(subscriptionRepository: repo)
+        let current = try await repo.currentSubscription(userId: userId)!
+        let updated = try await useCase.upgrade(subscriptionId: current.id, userId: userId, to: .annual)
+        #expect(updated.planType == .annual)
+    }
+
+    @Test("invalid downgrade throws and never touches the repository")
+    func invalidDowngradeThrows() async throws {
+        let repo = MockSubscriptionRepository()
+        let userId = UUID()
+        _ = try await repo.subscribe(userId: userId, plan: .monthly)
+        let useCase = ManageSubscriptionUseCase(subscriptionRepository: repo)
+        let current = try await repo.currentSubscription(userId: userId)!
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.downgrade(subscriptionId: current.id, userId: userId, to: .annual)
+        }
+        let unchanged = try await repo.currentSubscription(userId: userId)
+        #expect(unchanged?.planType == .monthly)
+    }
+
+    @Test("pause then resume round-trips status")
+    func pauseThenResume() async throws {
+        let repo = MockSubscriptionRepository()
+        let userId = UUID()
+        _ = try await repo.subscribe(userId: userId, plan: .monthly)
+        let useCase = ManageSubscriptionUseCase(subscriptionRepository: repo)
+        let current = try await repo.currentSubscription(userId: userId)!
+        let paused = try await useCase.pause(subscriptionId: current.id, userId: userId)
+        #expect(paused.status == .paused)
+        let resumed = try await useCase.resume(subscriptionId: current.id, userId: userId)
+        #expect(resumed.status == .active)
+    }
+
+    @Test("cancel marks the subscription cancelled")
+    func cancelMarksCancelled() async throws {
+        let repo = MockSubscriptionRepository()
+        let userId = UUID()
+        _ = try await repo.subscribe(userId: userId, plan: .monthly)
+        let useCase = ManageSubscriptionUseCase(subscriptionRepository: repo)
+        let current = try await repo.currentSubscription(userId: userId)!
+        try await useCase.cancel(subscriptionId: current.id, userId: userId)
+        let after = try await repo.currentSubscription(userId: userId)
+        #expect(after?.status == .cancelled)
+    }
+
+    @Test("acting on a subscription id that isn't the caller's throws notFound")
+    func mismatchedSubscriptionIdThrows() async throws {
+        let repo = MockSubscriptionRepository()
+        let userId = UUID()
+        _ = try await repo.subscribe(userId: userId, plan: .monthly)
+        let useCase = ManageSubscriptionUseCase(subscriptionRepository: repo)
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.upgrade(subscriptionId: UUID(), userId: userId, to: .annual)
+        }
+    }
+}
+
+// MARK: - H5: dunning
+
+@Suite("DunningPolicy")
+struct DunningPolicyTests {
+    @Test("first failed charge schedules a retry 1 day out")
+    func firstFailureSchedulesRetryAt1Day() {
+        let now = Date()
+        let outcome = DunningPolicy.onChargeFailed(state: nil, subscriptionId: UUID(), now: now)
+        guard case .retryScheduled(let state) = outcome else {
+            Issue.record("expected retryScheduled")
+            return
+        }
+        #expect(state.failedAttempts == 1)
+        let expected = Calendar.current.date(byAdding: .day, value: 1, to: now)!
+        #expect(abs(state.nextRetryAt!.timeIntervalSince(expected)) < 1)
+    }
+
+    @Test("second and third failures follow the +3 and +7 day ladder")
+    func subsequentFailuresFollowLadder() {
+        let now = Date()
+        let first = DunningState(subscriptionId: UUID(), failedAttempts: 1, nextRetryAt: now, gracePeriodEndsAt: nil)
+        let secondOutcome = DunningPolicy.onChargeFailed(state: first, subscriptionId: first.subscriptionId, now: now)
+        guard case .retryScheduled(let secondState) = secondOutcome else { Issue.record("expected retryScheduled"); return }
+        #expect(secondState.failedAttempts == 2)
+        #expect(abs(secondState.nextRetryAt!.timeIntervalSince(Calendar.current.date(byAdding: .day, value: 3, to: now)!)) < 1)
+
+        let thirdOutcome = DunningPolicy.onChargeFailed(state: secondState, subscriptionId: first.subscriptionId, now: now)
+        guard case .retryScheduled(let thirdState) = thirdOutcome else { Issue.record("expected retryScheduled"); return }
+        #expect(thirdState.failedAttempts == 3)
+        #expect(abs(thirdState.nextRetryAt!.timeIntervalSince(Calendar.current.date(byAdding: .day, value: 7, to: now)!)) < 1)
+    }
+
+    @Test("fourth failure exhausts the ladder and starts the grace period")
+    func fourthFailureStartsGrace() {
+        let now = Date()
+        let third = DunningState(subscriptionId: UUID(), failedAttempts: 3, nextRetryAt: now, gracePeriodEndsAt: nil)
+        let outcome = DunningPolicy.onChargeFailed(state: third, subscriptionId: third.subscriptionId, now: now)
+        guard case .graceStarted(let state) = outcome else {
+            Issue.record("expected graceStarted")
+            return
+        }
+        #expect(state.failedAttempts == 4)
+        #expect(state.nextRetryAt == nil)
+        #expect(abs(state.gracePeriodEndsAt!.timeIntervalSince(Calendar.current.date(byAdding: .day, value: 7, to: now)!)) < 1)
+    }
+
+    @Test("auto-downgrade fires once grace has elapsed, not before")
+    func autoDowngradeTiming() {
+        let now = Date()
+        let state = DunningState(subscriptionId: UUID(), failedAttempts: 4, nextRetryAt: nil, gracePeriodEndsAt: now.addingTimeInterval(3600))
+        #expect(!DunningPolicy.shouldAutoDowngrade(state: state, now: now))
+        #expect(DunningPolicy.shouldAutoDowngrade(state: state, now: now.addingTimeInterval(3601)))
+    }
+
+    @Test("a state with no grace period never auto-downgrades")
+    func noGraceMeansNoDowngrade() {
+        let state = DunningState(subscriptionId: UUID(), failedAttempts: 1, nextRetryAt: .now, gracePeriodEndsAt: nil)
+        #expect(!DunningPolicy.shouldAutoDowngrade(state: state, now: .now.addingTimeInterval(86400 * 30)))
+    }
+}
+
+@Suite("ChatPolicy")
+struct ChatPolicyTests {
+    private func makeVisit(status: Visit.VisitStatus, completedAt: Date?) -> Visit {
+        Visit(id: UUID(), userId: UUID(), petId: UUID(), vetId: UUID(), circuitId: UUID(),
+              status: status, scheduledAt: .now, completedAt: completedAt, notes: nil, paymentId: nil)
+    }
+
+    @Test("chat stays open for a non-completed visit regardless of time")
+    func openWhileNotCompleted() {
+        let visit = makeVisit(status: .enRoute, completedAt: nil)
+        #expect(ChatPolicy.isOpen(visit: visit, now: .now.addingTimeInterval(86400 * 365)))
+    }
+
+    @Test("chat is open just under 48h after completion")
+    func openJustUnder48h() {
+        let completedAt = Date()
+        let visit = makeVisit(status: .completed, completedAt: completedAt)
+        let now = completedAt.addingTimeInterval(48 * 3600 - 1)
+        #expect(ChatPolicy.isOpen(visit: visit, now: now))
+    }
+
+    @Test("chat is closed exactly at the 48h boundary")
+    func closedAtBoundary() {
+        let completedAt = Date()
+        let visit = makeVisit(status: .completed, completedAt: completedAt)
+        let now = completedAt.addingTimeInterval(48 * 3600)
+        #expect(!ChatPolicy.isOpen(visit: visit, now: now))
+    }
+
+    @Test("chat is closed well after the 48h window")
+    func closedLongAfter() {
+        let completedAt = Date().addingTimeInterval(-86400 * 10)
+        let visit = makeVisit(status: .completed, completedAt: completedAt)
+        #expect(!ChatPolicy.isOpen(visit: visit, now: .now))
+    }
+
+    @Test("a completed visit with no completedAt timestamp defaults to open")
+    func completedWithoutTimestampStaysOpen() {
+        // Defensive default: missing data should never silently lock a
+        // customer out of a chat they're entitled to.
+        let visit = makeVisit(status: .completed, completedAt: nil)
+        #expect(ChatPolicy.isOpen(visit: visit, now: .now))
+    }
+}
+
+@Suite("ContactSupportUseCase")
+struct ContactSupportUseCaseTests {
+    @Test("rejects an empty subject")
+    func rejectsEmptySubject() async {
+        let useCase = ContactSupportUseCase(repository: MockSupportRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(userId: UUID(), visitId: nil, subject: "   ", body: "It broke")
+        }
+    }
+
+    @Test("rejects an empty body")
+    func rejectsEmptyBody() async {
+        let useCase = ContactSupportUseCase(repository: MockSupportRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(userId: UUID(), visitId: nil, subject: "Refund", body: "")
+        }
+    }
+
+    @Test("creates a ticket with trimmed subject/body and open status")
+    func createsTicket() async throws {
+        let useCase = ContactSupportUseCase(repository: MockSupportRepository())
+        let userId = UUID()
+        let ticket = try await useCase.execute(userId: userId, visitId: nil, subject: "  Refund  ", body: "  Payment charged twice  ")
+        #expect(ticket.subject == "Refund")
+        #expect(ticket.body == "Payment charged twice")
+        #expect(ticket.status == .open)
+        #expect(ticket.userId == userId)
+    }
+
+    @Test("a ticket opened from a visit carries that visit's id — this is how disputes are filed")
+    func ticketCarriesVisitContext() async throws {
+        let useCase = ContactSupportUseCase(repository: MockSupportRepository())
+        let visitId = UUID()
+        let ticket = try await useCase.execute(userId: UUID(), visitId: visitId, subject: "Vet arrived late", body: "40 minutes late, no notice")
+        #expect(ticket.visitId == visitId)
+    }
+
+    @Test("myTickets only returns the calling user's tickets")
+    func myTicketsScopedToUser() async throws {
+        let repo = MockSupportRepository()
+        let useCase = ContactSupportUseCase(repository: repo)
+        let userA = UUID(), userB = UUID()
+        _ = try await useCase.execute(userId: userA, visitId: nil, subject: "A", body: "A's issue")
+        _ = try await useCase.execute(userId: userB, visitId: nil, subject: "B", body: "B's issue")
+
+        let ticketsForA = try await useCase.myTickets(userId: userA)
+        #expect(ticketsForA.count == 1)
+        #expect(ticketsForA.first?.userId == userA)
+    }
+}
+
+// MARK: - Pet health records (plan §3 B, §3 K)
+
+@Suite("VaccinationPolicy & Vaccination due status")
+struct VaccinationPolicyTests {
+    @Test("suggests a next due date 12 months out by default")
+    func annualBoosterDefault() {
+        let given = Date(timeIntervalSince1970: 0)
+        let nextDue = VaccinationPolicy.suggestedNextDueDate(givenAt: given)
+        let expected = Calendar.current.date(byAdding: .month, value: 12, to: given)!
+        #expect(nextDue == expected)
+    }
+
+    @Test("a vaccination well in the future is up to date")
+    func upToDate() {
+        let vaccination = Vaccination(id: UUID(), petId: UUID(), vaccineName: "Rabies",
+                                       givenAt: .now, nextDueAt: .now.addingTimeInterval(86400 * 200))
+        #expect(vaccination.dueStatus() == .upToDate)
+    }
+
+    @Test("a vaccination due within 30 days is flagged due-soon, not overdue")
+    func dueSoon() {
+        let vaccination = Vaccination(id: UUID(), petId: UUID(), vaccineName: "Rabies",
+                                       givenAt: .now, nextDueAt: .now.addingTimeInterval(86400 * 10))
+        #expect(vaccination.dueStatus() == .dueSoon)
+    }
+
+    @Test("a vaccination past its due date is overdue")
+    func overdue() {
+        let vaccination = Vaccination(id: UUID(), petId: UUID(), vaccineName: "Rabies",
+                                       givenAt: .now.addingTimeInterval(-86400 * 400), nextDueAt: .now.addingTimeInterval(-86400))
+        #expect(vaccination.dueStatus() == .overdue)
+    }
+}
+
+@Suite("ManageVaccinationsUseCase")
+struct ManageVaccinationsUseCaseTests {
+    @Test("recording a vaccination auto-populates a suggested next-due date (K4)")
+    func recordGivenAutoSchedulesNextDue() async throws {
+        let repo = MockVaccinationRepository()
+        let useCase = ManageVaccinationsUseCase(repository: repo)
+        let petId = UUID()
+        let givenAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let vaccination = try await useCase.recordGiven(petId: petId, vaccineName: "Rabies", givenAt: givenAt, batchNumber: "B-1", visitId: nil)
+
+        let expected = Calendar.current.date(byAdding: .month, value: 12, to: givenAt)!
+        #expect(vaccination.nextDueAt == expected)
+    }
+
+    @Test("nextActionable surfaces an overdue or due-soon vaccination, not an up-to-date one")
+    func nextActionableSkipsUpToDate() async throws {
+        let repo = MockVaccinationRepository()
+        let petId = UUID()
+        _ = try await repo.record(Vaccination(id: UUID(), petId: petId, vaccineName: "DHPPi",
+                                               givenAt: .now, nextDueAt: .now.addingTimeInterval(86400 * 300)))
+        let dueSoonVaccination = Vaccination(id: UUID(), petId: petId, vaccineName: "Rabies",
+                                              givenAt: .now, nextDueAt: .now.addingTimeInterval(86400 * 5))
+        _ = try await repo.record(dueSoonVaccination)
+
+        let useCase = ManageVaccinationsUseCase(repository: repo)
+        let actionable = try await useCase.nextActionable(petId: petId)
+        #expect(actionable?.vaccineName == "Rabies")
+    }
+}
+
+@Suite("ManagePetsUseCase archiving (B8)")
+struct ManagePetsArchiveTests {
+    @Test("archiving a pet excludes it from the default (booking-facing) list")
+    func archivedPetExcludedByDefault() async throws {
+        let repo = MockPetRepositoryForTests()
+        let ownerId = UUID()
+        let pet = Pet(id: UUID(), ownerId: ownerId, name: "Milo", species: .cat)
+        _ = try await repo.addPet(pet)
+        let useCase = ManagePetsUseCase(petRepository: repo)
+
+        _ = try await useCase.archive(pet, reason: .rehomed)
+
+        let activeList = try await useCase.list(ownerId: ownerId)
+        #expect(activeList.isEmpty)
+
+        let fullList = try await useCase.list(ownerId: ownerId, includeArchived: true)
+        #expect(fullList.count == 1)
+        #expect(fullList.first?.archiveReason == .rehomed)
+    }
+
+    @Test("unarchiving a pet returns it to the default list")
+    func unarchiveRestoresPet() async throws {
+        let repo = MockPetRepositoryForTests()
+        let ownerId = UUID()
+        let pet = Pet(id: UUID(), ownerId: ownerId, name: "Milo", species: .cat)
+        _ = try await repo.addPet(pet)
+        let useCase = ManagePetsUseCase(petRepository: repo)
+
+        let archived = try await useCase.archive(pet, reason: .deceased)
+        _ = try await useCase.unarchive(archived)
+
+        let activeList = try await useCase.list(ownerId: ownerId)
+        #expect(activeList.count == 1)
+        #expect(activeList.first?.isArchived == false)
+    }
+}
+
+/// A tiny in-memory `PetRepository` local to this test file — the app
+/// target's `MockPetRepository` seeds from `MockData.user.pets`, which isn't
+/// what these tests want to assert against.
+actor MockPetRepositoryForTests: PetRepository {
+    private var pets: [Pet] = []
+
+    func listPets(ownerId: UUID) async throws -> [Pet] { pets.filter { $0.ownerId == ownerId } }
+
+    func addPet(_ pet: Pet) async throws -> Pet {
+        pets.append(pet)
+        return pet
+    }
+
+    func updatePet(_ pet: Pet) async throws -> Pet {
+        guard let index = pets.firstIndex(where: { $0.id == pet.id }) else { throw DomainError.notFound("Pet") }
+        pets[index] = pet
+        return pet
+    }
+
+    func deletePet(id: UUID) async throws {
+        pets.removeAll { $0.id == id }
+    }
+}
+
+@Suite("FollowUpBookingPolicy (K5)")
+struct FollowUpBookingPolicyTests {
+    @Test("a visit completed within the window is eligible for a free follow-up")
+    func eligibleWithinWindow() {
+        let visit = Visit(id: UUID(), userId: UUID(), petId: UUID(), vetId: UUID(), circuitId: UUID(),
+                           status: .completed, scheduledAt: .now.addingTimeInterval(-86400 * 5),
+                           completedAt: .now.addingTimeInterval(-86400 * 5), notes: nil, paymentId: nil)
+        #expect(FollowUpBookingPolicy.isEligible(visit: visit))
+    }
+
+    @Test("a visit completed more than 14 days ago is not eligible")
+    func ineligibleOutsideWindow() {
+        let visit = Visit(id: UUID(), userId: UUID(), petId: UUID(), vetId: UUID(), circuitId: UUID(),
+                           status: .completed, scheduledAt: .now.addingTimeInterval(-86400 * 20),
+                           completedAt: .now.addingTimeInterval(-86400 * 20), notes: nil, paymentId: nil)
+        #expect(!FollowUpBookingPolicy.isEligible(visit: visit))
+    }
+
+    @Test("a visit that hasn't completed yet is never eligible")
+    func ineligibleWhenNotCompleted() {
+        let visit = Visit(id: UUID(), userId: UUID(), petId: UUID(), vetId: UUID(), circuitId: UUID(),
+                           status: .confirmed, scheduledAt: .now.addingTimeInterval(3600), completedAt: nil, notes: nil, paymentId: nil)
+        #expect(!FollowUpBookingPolicy.isEligible(visit: visit))
+    }
+}
+
+// MARK: - C3/C4: discovery filters & sort
+
+@Suite("CircuitFilter")
+struct CircuitFilterTests {
+    private func makeCircuit(vet: Vet, slots: [ScheduleSlot] = []) -> Circuit {
+        Circuit(id: UUID(), vetId: vet.id, vet: vet, clusterArea: "Test Area",
+                schedule: slots.isEmpty ? [ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(3600), endTime: .now.addingTimeInterval(7200))] : slots)
+    }
+
+    @Test("an empty filter matches everything")
+    func emptyFilterMatchesAll() {
+        let vet = Vet(id: UUID(), name: "Dr. Test", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 4.0, reviewCount: 1, photoURL: nil)
+        #expect(CircuitFilter().matches(makeCircuit(vet: vet)))
+    }
+
+    @Test("rating filter excludes a lower-rated vet")
+    func ratingFilterExcludesLowerRated() {
+        let vet = Vet(id: UUID(), name: "Dr. Test", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 3.5, reviewCount: 1, photoURL: nil)
+        let filter = CircuitFilter(minRating: 4.0)
+        #expect(!filter.matches(makeCircuit(vet: vet)))
+    }
+
+    @Test("species filter only matches a vet that handles that species")
+    func speciesFilterMatchesHandledSpecies() {
+        let vet = Vet(id: UUID(), name: "Dr. Test", licenseNumber: "VCI-1", verificationStatus: .verified,
+                      rating: 4.5, reviewCount: 1, photoURL: nil, speciesHandled: [.dog])
+        #expect(CircuitFilter(species: .dog).matches(makeCircuit(vet: vet)))
+        #expect(!CircuitFilter(species: .cat).matches(makeCircuit(vet: vet)))
+    }
+
+    @Test("language filter is case-insensitive")
+    func languageFilterCaseInsensitive() {
+        let vet = Vet(id: UUID(), name: "Dr. Test", licenseNumber: "VCI-1", verificationStatus: .verified,
+                      rating: 4.5, reviewCount: 1, photoURL: nil, languages: ["Hindi"])
+        #expect(CircuitFilter(language: "hindi").matches(makeCircuit(vet: vet)))
+        #expect(!CircuitFilter(language: "tamil").matches(makeCircuit(vet: vet)))
+    }
+
+    @Test("gender filter matches only the requested gender")
+    func genderFilterMatches() {
+        let vet = Vet(id: UUID(), name: "Dr. Test", licenseNumber: "VCI-1", verificationStatus: .verified,
+                      rating: 4.5, reviewCount: 1, photoURL: nil, gender: .female)
+        #expect(CircuitFilter(gender: .female).matches(makeCircuit(vet: vet)))
+        #expect(!CircuitFilter(gender: .male).matches(makeCircuit(vet: vet)))
+    }
+
+    @Test("time-of-day filter requires at least one matching slot")
+    func timeOfDayFilterRequiresMatchingSlot() {
+        let vet = Vet(id: UUID(), name: "Dr. Test", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 4.5, reviewCount: 1, photoURL: nil)
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "Asia/Kolkata")!
+        let morningSlot = ScheduleSlot(id: UUID(), dayOfWeek: 2,
+                                        startTime: calendar.date(bySettingHour: 8, minute: 0, second: 0, of: .now)!,
+                                        endTime: calendar.date(bySettingHour: 9, minute: 0, second: 0, of: .now)!)
+        let circuit = makeCircuit(vet: vet, slots: [morningSlot])
+        var filter = CircuitFilter()
+        filter.timeOfDay = .morning
+        #expect(filter.matches(circuit))
+        filter.timeOfDay = .evening
+        #expect(!filter.matches(circuit))
+    }
+
+    @Test("a circuit with no vet attached fails any vet-level filter rather than passing blindly")
+    func noVetFailsVetLevelFilter() {
+        let circuit = Circuit(id: UUID(), vetId: UUID(), vet: nil, clusterArea: "Test Area", schedule: [])
+        #expect(!CircuitFilter(minRating: 4.0).matches(circuit))
+    }
+
+    @Test("apply filters a list down to only the matches")
+    func applyFiltersList() {
+        let verifiedGoodVet = Vet(id: UUID(), name: "A", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 4.9, reviewCount: 1, photoURL: nil)
+        let lowRatedVet = Vet(id: UUID(), name: "B", licenseNumber: "VCI-2", verificationStatus: .verified, rating: 3.0, reviewCount: 1, photoURL: nil)
+        let circuits = [makeCircuit(vet: verifiedGoodVet), makeCircuit(vet: lowRatedVet)]
+        let result = CircuitFilter.apply(CircuitFilter(minRating: 4.0), to: circuits)
+        #expect(result.count == 1)
+        #expect(result.first?.vetId == verifiedGoodVet.id)
+    }
+}
+
+@Suite("CircuitSortOption")
+struct CircuitSortOptionTests {
+    @Test("topRated sorts by vet rating descending")
+    func topRatedSortsDescending() {
+        let lowVet = Vet(id: UUID(), name: "Low", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 3.5, reviewCount: 1, photoURL: nil)
+        let highVet = Vet(id: UUID(), name: "High", licenseNumber: "VCI-2", verificationStatus: .verified, rating: 4.9, reviewCount: 1, photoURL: nil)
+        let circuits = [
+            Circuit(id: UUID(), vetId: lowVet.id, vet: lowVet, clusterArea: "A", schedule: []),
+            Circuit(id: UUID(), vetId: highVet.id, vet: highVet, clusterArea: "B", schedule: []),
+        ]
+        let sorted = CircuitSortOption.sort(circuits, by: .topRated)
+        #expect(sorted.first?.vetId == highVet.id)
+    }
+
+    @Test("soonest sorts by earliest upcoming slot")
+    func soonestSortsByEarliestSlot() {
+        let vet = Vet(id: UUID(), name: "Test", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 4.0, reviewCount: 1, photoURL: nil)
+        let later = Circuit(id: UUID(), vetId: vet.id, vet: vet, clusterArea: "A",
+                             schedule: [ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(7200), endTime: .now.addingTimeInterval(10800))])
+        let sooner = Circuit(id: UUID(), vetId: vet.id, vet: vet, clusterArea: "B",
+                              schedule: [ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(1800), endTime: .now.addingTimeInterval(3600))])
+        let sorted = CircuitSortOption.sort([later, sooner], by: .soonest)
+        #expect(sorted.first?.clusterArea == "B")
+    }
+
+    @Test("previouslyBooked ranks a previously-booked vet's circuit first")
+    func previouslyBookedRanksFirst() {
+        let newVet = Vet(id: UUID(), name: "New", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 4.9, reviewCount: 1, photoURL: nil)
+        let repeatVet = Vet(id: UUID(), name: "Repeat", licenseNumber: "VCI-2", verificationStatus: .verified, rating: 4.0, reviewCount: 1, photoURL: nil)
+        let circuits = [
+            Circuit(id: UUID(), vetId: newVet.id, vet: newVet, clusterArea: "A", schedule: []),
+            Circuit(id: UUID(), vetId: repeatVet.id, vet: repeatVet, clusterArea: "B", schedule: []),
+        ]
+        let sorted = CircuitSortOption.sort(circuits, by: .previouslyBooked, previouslyBookedVetIds: [repeatVet.id])
+        #expect(sorted.first?.vetId == repeatVet.id)
+    }
+}
+
+@Suite("GetCircuitsUseCase verification filtering")
+struct GetCircuitsUseCaseVerificationTests {
+    @Test("filters out circuits whose vet isn't verified (L1/L3)")
+    func excludesUnverifiedVets() async throws {
+        let repo = MockCircuitRepository()
+        let useCase = GetCircuitsUseCase(repository: repo)
+        let circuits = try await useCase.execute(area: nil, vertical: .vet)
+        #expect(!circuits.isEmpty)
+        #expect(circuits.allSatisfy { $0.vet?.verificationStatus == .verified })
+    }
+}
+
+// MARK: - C5: vet profile / ratings histogram
+
+@Suite("GetVetProfileUseCase")
+struct GetVetProfileUseCaseTests {
+    @Test("histogram counts reviews per star and computes the average")
+    func histogramCountsAndAverages() {
+        let useCase = GetVetProfileUseCase(reviewRepository: MockReviewRepository())
+        let vetId = UUID()
+        let reviews = [5, 5, 4, 3, 5].map {
+            Review(id: UUID(), visitId: UUID(), vetId: vetId, userId: UUID(), rating: $0, comment: nil, createdAt: .now)
+        }
+        let histogram = useCase.histogram(for: reviews)
+        #expect(histogram.totalCount == 5)
+        #expect(histogram.countByStars[5] == 3)
+        #expect(histogram.countByStars[4] == 1)
+        #expect(histogram.countByStars[3] == 1)
+        #expect(abs(histogram.averageRating - 4.4) < 0.001)
+    }
+
+    @Test("an empty review list produces a zeroed histogram, not a crash")
+    func emptyReviewsProduceZeroedHistogram() {
+        let useCase = GetVetProfileUseCase(reviewRepository: MockReviewRepository())
+        let histogram = useCase.histogram(for: [])
+        #expect(histogram.totalCount == 0)
+        #expect(histogram.averageRating == 0)
+    }
+}
+
+// MARK: - C11: emergency path
+
+@Suite("ListEmergencyClinicsUseCase")
+struct ListEmergencyClinicsUseCaseTests {
+    @Test("lists the mock clinic directory")
+    func listsClinics() async throws {
+        let useCase = ListEmergencyClinicsUseCase(repository: MockEmergencyClinicRepository())
+        let clinics = try await useCase.execute()
+        #expect(!clinics.isEmpty)
+        #expect(clinics.allSatisfy { $0.isOpen24x7 })
+    }
+
+    @Test("sorts by proximity when a location is given")
+    func sortsByProximity() async throws {
+        let useCase = ListEmergencyClinicsUseCase(repository: MockEmergencyClinicRepository())
+        let near = MockData.emergencyClinics[0]
+        let clinics = try await useCase.execute(fromLatitude: near.latitude, longitude: near.longitude)
+        #expect(clinics.first?.id == near.id)
+    }
+}

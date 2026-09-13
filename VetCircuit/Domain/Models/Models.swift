@@ -18,10 +18,42 @@ struct Pet: Identifiable, Codable, Equatable, Hashable {
     var species: Species
     var breed: String?
     var dateOfBirth: Date?
+    // B2: the fields a real pet health record needs beyond "what is it" —
+    // sex/neuter status feed vaccination eligibility, weight/allergies matter
+    // to the vet before a visit even starts.
+    var sex: Sex? = nil
+    var isNeutered: Bool? = nil
+    var weightKg: Double? = nil
+    var microchipNumber: String? = nil
+    var allergies: String? = nil
+    var chronicConditions: String? = nil
+    // B8: soft-delete only — an archived pet's visit/vaccination/prescription
+    // history must stay intact, so this is a flag, never a row removal.
+    var archivedAt: Date? = nil
+    var archiveReason: ArchiveReason? = nil
 
     enum Species: String, Codable, CaseIterable {
         case dog, cat, bird, other
     }
+
+    enum Sex: String, Codable, CaseIterable {
+        case male, female, unknown
+    }
+
+    enum ArchiveReason: String, Codable, CaseIterable {
+        case deceased, rehomed, other
+
+        /// §B8: "handle with care in copy" — never the word "delete".
+        var displayName: String {
+            switch self {
+            case .deceased: return "Passed away"
+            case .rehomed: return "Rehomed"
+            case .other: return "No longer with you"
+            }
+        }
+    }
+
+    var isArchived: Bool { archivedAt != nil }
 }
 
 struct Vet: Identifiable, Codable, Equatable, Hashable {
@@ -32,9 +64,24 @@ struct Vet: Identifiable, Codable, Equatable, Hashable {
     var rating: Double
     var reviewCount: Int
     var photoURL: URL?
+    /// C5/C3: profile fields the vet detail screen and filter sheet both need
+    /// — "Hindi-speaking", "female vet" are real, commonly-asked-for filters
+    /// in this market, not nice-to-haves (plan §C3).
+    var bio: String? = nil
+    var yearsOfExperience: Int? = nil
+    var languages: [String] = []
+    var gender: Gender? = nil
+    /// Species this vet actually treats — drives the C3 "handles cats" filter.
+    var speciesHandled: [Pet.Species] = Pet.Species.allCases
 
     enum VerificationStatus: String, Codable {
         case pending, verified, rejected
+    }
+
+    enum Gender: String, Codable, CaseIterable, Identifiable {
+        case male, female, other
+        var id: String { rawValue }
+        var displayName: String { rawValue.capitalized }
     }
 }
 
@@ -165,7 +212,87 @@ struct Subscription: Identifiable, Codable, Equatable, Hashable {
     }
 
     enum Status: String, Codable {
-        case active, cancelled, expired, pastDue = "past_due"
+        case active, cancelled, expired, pastDue = "past_due", paused
+    }
+}
+
+// MARK: - Subscription management (plan §H3) — upgrade/downgrade/pause/cancel
+// as real business logic, not a pass-through to the repository.
+
+/// Ranks plans by commitment/price tier so upgrade/downgrade can be validated
+/// directionally. Corporate is deliberately outside the linear ladder — it is
+/// a seat-based plan, not a "bigger" individual plan.
+private extension Subscription.PlanType {
+    var tierRank: Int? {
+        switch self {
+        case .monthly: return 0
+        case .quarterly: return 1
+        case .annual: return 2
+        case .corporate: return nil
+        }
+    }
+}
+
+struct SubscriptionManagementPolicy {
+    /// A corporate/RWA plan stops being a valid bulk plan below this — the
+    /// same floor `SubscribeToPlanUseCase` enforces at signup (plan §H7).
+    static let minimumCorporateSeats = 5
+
+    enum Action { case upgrade, downgrade, pause, resume, cancel }
+
+    /// Pure validation — no I/O, so every case is directly testable. Returns
+    /// nil when the action is allowed, or the reason it isn't.
+    static func validate(_ action: Action, subscription: Subscription, targetPlan: Subscription.PlanType? = nil) -> DomainError? {
+        switch action {
+        case .upgrade, .downgrade:
+            guard subscription.status == .active || subscription.status == .pastDue else {
+                return .validation("Only an active subscription can change plans.")
+            }
+            guard let targetPlan else { return .validation("No target plan given.") }
+            guard targetPlan != subscription.planType else {
+                return .validation("Already on that plan.")
+            }
+            // Corporate is a seat-based product, not a rung on the individual
+            // ladder — moving into/out of it goes through pause/cancel + a
+            // fresh subscribe, so the seat-count floor is always enforced.
+            if targetPlan.isBulk || subscription.planType.isBulk {
+                return .validation("Corporate/RWA plans are managed by seat count, not upgrade/downgrade — cancel and start a new corporate plan instead.")
+            }
+            guard let currentRank = subscription.planType.tierRank, let targetRank = targetPlan.tierRank else {
+                return .validation("Unsupported plan change.")
+            }
+            if action == .upgrade && targetRank <= currentRank {
+                return .validation("\(targetPlan.displayName) isn't an upgrade from \(subscription.planType.displayName).")
+            }
+            if action == .downgrade && targetRank >= currentRank {
+                return .validation("\(targetPlan.displayName) isn't a downgrade from \(subscription.planType.displayName).")
+            }
+            return nil
+
+        case .pause:
+            guard subscription.status == .active else {
+                return .validation("Only an active subscription can be paused.")
+            }
+            // A corporate plan below the seat floor isn't a valid product to
+            // resume back into later — force cancellation instead of a pause
+            // that would silently strand it under-quota.
+            if subscription.planType.isBulk && subscription.seatCount < minimumCorporateSeats {
+                return .validation("This corporate plan has fewer than \(minimumCorporateSeats) seats — cancel it instead of pausing.")
+            }
+            return nil
+
+        case .resume:
+            guard subscription.status == .paused else {
+                return .validation("This subscription isn't paused.")
+            }
+            return nil
+
+        case .cancel:
+            guard subscription.status != .cancelled else {
+                return .validation("This subscription is already cancelled.")
+            }
+            return nil
+        }
     }
 }
 
@@ -394,6 +521,56 @@ struct CancellationPolicy {
     }
 }
 
+// MARK: - Dunning (plan §H5) — failed renewal charge -> retry ladder -> grace
+// -> auto-downgrade. Pure state + policy, mirroring CancellationPolicy above:
+// the domain computes what should happen next, the caller (a scheduled job,
+// per plan §6.5) performs the I/O.
+
+struct DunningState: Codable, Equatable {
+    var subscriptionId: UUID
+    var failedAttempts: Int
+    var nextRetryAt: Date?       // nil once the ladder is exhausted and grace has started
+    var gracePeriodEndsAt: Date?
+}
+
+struct DunningPolicy {
+    /// Days after a failed charge to retry: +1, +3, +7. After the 3rd
+    /// failure the grace period starts instead of a 4th retry.
+    static let retryLadderDays: [Int] = [1, 3, 7]
+    static let gracePeriodDays = 7
+    /// Where an unpaid subscription lands once grace expires unpaid — a
+    /// free/lowest tier rather than a hard cutoff, per plan §H5.
+    static let downgradeTarget: Subscription.PlanType = .monthly
+
+    enum Outcome: Equatable {
+        case retryScheduled(state: DunningState)
+        case graceStarted(state: DunningState)
+        case downgraded(to: Subscription.PlanType)
+    }
+
+    /// Called each time a renewal charge fails. `state` is nil on the first
+    /// failure for this billing cycle.
+    static func onChargeFailed(state: DunningState?, subscriptionId: UUID, now: Date = .now) -> Outcome {
+        let attempts = (state?.failedAttempts ?? 0) + 1
+        if attempts <= retryLadderDays.count {
+            let delayDays = retryLadderDays[attempts - 1]
+            let nextRetryAt = Calendar.current.date(byAdding: .day, value: delayDays, to: now) ?? now
+            return .retryScheduled(state: DunningState(subscriptionId: subscriptionId, failedAttempts: attempts, nextRetryAt: nextRetryAt, gracePeriodEndsAt: nil))
+        } else {
+            let graceEnds = Calendar.current.date(byAdding: .day, value: gracePeriodDays, to: now) ?? now
+            return .graceStarted(state: DunningState(subscriptionId: subscriptionId, failedAttempts: attempts, nextRetryAt: nil, gracePeriodEndsAt: graceEnds))
+        }
+    }
+
+    /// The scheduled job (plan §6.5) polls this: once grace has passed with
+    /// no successful charge, the subscription is downgraded rather than left
+    /// past-due forever.
+    static func shouldAutoDowngrade(state: DunningState, now: Date = .now) -> Bool {
+        guard let gracePeriodEndsAt = state.gracePeriodEndsAt else { return false }
+        return now >= gracePeriodEndsAt
+    }
+}
+
 struct Refund: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var visitId: UUID
@@ -562,6 +739,14 @@ struct Addon: Identifiable, Codable, Equatable, Hashable {
     var eligibility: ServiceEligibility = ServiceEligibility()
 }
 
+/// C6: a service detail FAQ entry — plain question/answer pairs, ops-managed
+/// the same way the rest of the catalog is.
+struct FAQ: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var question: String
+    var answer: String
+}
+
 struct Service: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var category: ServiceCategory
@@ -571,11 +756,399 @@ struct Service: Identifiable, Codable, Equatable, Hashable {
     var variants: [ServiceVariant]
     var addons: [Addon] = []
     var eligibility: ServiceEligibility = ServiceEligibility()
+    var faqs: [FAQ] = []
 
     var startingPriceMinorUnits: Int? {
         variants.map(\.priceMinorUnits).min()
     }
 }
+
+// MARK: - Packages/bundles (plan §D4) — "Puppy first-year: 4 visits + 3
+// vaccines" sold as one priced unit. Buying one is currently a checkout-time
+// stub that expands into individual cart lines (see BuyPackageUseCase);
+// redemption/entitlement tracking ("3 of 4 visits used") is a known gap,
+// tracked in Appendix F.
+
+struct PackageItem: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var serviceId: UUID
+    var quantity: Int   // how many bookings of this service the package includes
+}
+
+struct Package: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var name: String
+    var packageDescription: String
+    var items: [PackageItem]
+    var priceMinorUnits: Int
+    var vertical: Vertical = .vet
+
+    /// The saving vs. buying every included service separately at its
+    /// cheapest variant — `catalog` is passed in rather than looked up here
+    /// so this stays pure/testable like the rest of the pricing logic.
+    func discountMinorUnits(catalog: [Service]) -> Int {
+        let separatePrice = items.reduce(0) { total, item in
+            guard let service = catalog.first(where: { $0.id == item.serviceId }),
+                  let cheapest = service.startingPriceMinorUnits else { return total }
+            return total + cheapest * item.quantity
+        }
+        return max(0, separatePrice - priceMinorUnits)
+    }
+}
+
+// MARK: - Notification preferences (plan §O1) — per-category opt-out, not a
+// single blunt push toggle. Transactional-ish categories default true;
+// promotions default false so a fresh install isn't opted into marketing.
+
+struct NotificationPreferences: Codable, Equatable {
+    var userId: UUID
+    var bookingUpdates: Bool = true
+    var chatMessages: Bool = true
+    var vaccinationReminders: Bool = true
+    var promotions: Bool = false
+}
+
+// MARK: - Force-upgrade & maintenance mode (plan §O7-O8, §7) — the server's
+// only lever to pull a shipped binary back once it's in the App Store. Fetched
+// once at launch; a signed-out device must still be able to read it, so this
+// is the one table with no auth requirement at all.
+
+struct RemoteAppConfig: Codable, Equatable {
+    var minSupportedVersion: String
+    var isMaintenanceMode: Bool
+    var maintenanceMessage: String?
+
+    /// Dotted-numeric semantic comparison ("1.2.0" < "1.10.0"), not a string
+    /// compare — plan §7 calls this the only true rollback lever, so getting
+    /// "1.10.0" vs "1.2.0" backwards here would silently defeat it.
+    static func isSupported(currentVersion: String, minSupportedVersion: String) -> Bool {
+        compareVersions(currentVersion, minSupportedVersion) >= 0
+    }
+
+    /// Returns -1, 0, or 1 like `Comparable`, comparing dot-separated numeric
+    /// components pairwise; missing trailing components count as 0 ("1.2" == "1.2.0").
+    static func compareVersions(_ lhs: String, _ rhs: String) -> Int {
+        let lhsParts = lhs.split(separator: ".").map { Int($0) ?? 0 }
+        let rhsParts = rhs.split(separator: ".").map { Int($0) ?? 0 }
+        let count = max(lhsParts.count, rhsParts.count)
+        for i in 0..<count {
+            let l = i < lhsParts.count ? lhsParts[i] : 0
+            let r = i < rhsParts.count ? rhsParts[i] : 0
+            if l != r { return l < r ? -1 : 1 }
+        }
+        return 0
+    }
+}
+
+// MARK: - Lifecycle notification queue (plan §5, §6.5, N3) — rows queued by a
+// scheduled Edge Function for a (not-yet-built) push-sending job to pick up;
+// the client only ever reads its own, to show an in-app notification center.
+
+struct AppNotification: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var category: Category
+    var title: String
+    var body: String
+    var sentAt: Date?
+    var createdAt: Date = .now
+    /// J7: notification centre read/unread state — nil until the customer
+    /// opens `NotificationCenterView` and views this row.
+    var readAt: Date?
+
+    var isRead: Bool { readAt != nil }
+
+    enum Category: String, Codable {
+        case bookingUpdate = "booking_update"
+        case chatMessage = "chat_message"
+        case vaccinationDue = "vaccination_due"
+        case renewalDue = "renewal_due"
+        case dormantWinback = "dormant_winback"
+        case abandonedCart = "abandoned_cart"
+        case promotion
+    }
+}
+
+// MARK: - Help centre / FAQ (plan §M1) — remote content so answers can change
+// without an app-store release.
+
+struct HelpArticle: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var category: Category
+    var question: String
+    var answer: String
+
+    enum Category: String, Codable, CaseIterable {
+        case booking, cancellation, payment, pets, account, visits
+
+        var displayName: String {
+            switch self {
+            case .booking: return "Booking"
+            case .cancellation: return "Cancellation & rescheduling"
+            case .payment: return "Payment & refunds"
+            case .pets: return "Pets & records"
+            case .account: return "Account & privacy"
+            case .visits: return "During a visit"
+            }
+        }
+    }
+}
+
+// MARK: - Support tickets & disputes (plan §M2, §K8) — one model serves both
+// "Contact support" and "Report a problem with this visit": a dispute is
+// just a ticket with `visitId` set, so it inherits the same queue, status
+// tracking and audit trail rather than needing a parallel table.
+
+struct SupportTicket: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var visitId: UUID?
+    var subject: String
+    var body: String
+    var status: Status
+    var createdAt: Date
+
+    enum Status: String, Codable, CaseIterable {
+        case open, inProgress = "in_progress", resolved
+
+        var displayName: String {
+            switch self {
+            case .open: return "Open"
+            case .inProgress: return "In progress"
+            case .resolved: return "Resolved"
+            }
+        }
+    }
+}
+
+// MARK: - Chat auto-close (plan §J5) — prevents unpaid consulting over chat
+// once a visit is long done; pure policy so it's testable without a clock
+// dependency injected anywhere but here.
+
+struct ChatPolicy {
+    static let openWindow: TimeInterval = 48 * 3600
+
+    /// Chat stays open for any non-completed visit (there's still an active
+    /// booking to discuss); once completed, it closes 48h after `completedAt`.
+    static func isOpen(visit: Visit, now: Date = .now) -> Bool {
+        guard visit.status == .completed, let completedAt = visit.completedAt else { return true }
+        return now.timeIntervalSince(completedAt) < openWindow
+    }
+}
+
+// MARK: - Pet health records (plan §3 B, §3 K)
+
+/// B3: one weight reading. A trend chart needs a series, not just the
+/// pet's latest weight — kept as its own table/model rather than overwriting
+/// `Pet.weightKg` on every entry.
+struct PetWeightEntry: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var petId: UUID
+    var weightKg: Double
+    var recordedAt: Date
+}
+
+/// B4 (P0) + K4: a vaccination given (or due). `nextDueAt` is what the N3
+/// lifecycle job reminds against — see `VaccinationPolicy` for how it gets
+/// computed rather than left for a human to guess.
+struct Vaccination: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var petId: UUID
+    var vaccineName: String
+    var givenAt: Date?
+    var nextDueAt: Date
+    var batchNumber: String?
+    var visitId: UUID? = nil
+
+    enum DueStatus { case upToDate, dueSoon, overdue }
+
+    /// Amber inside 30 days of due, red once past it — the thresholds the
+    /// history screen colors rows by.
+    static let dueSoonWindowDays = 30
+
+    func dueStatus(now: Date = .now) -> DueStatus {
+        if nextDueAt < now { return .overdue }
+        let daysUntilDue = Calendar.current.dateComponents([.day], from: now, to: nextDueAt).day ?? .max
+        return daysUntilDue <= Self.dueSoonWindowDays ? .dueSoon : .upToDate
+    }
+}
+
+/// K4's "auto-scheduling" is scoped to computing the next due date, not a
+/// calendar invite or a generated PDF certificate (known gap, see plan notes
+/// — same shape as A7's export-PDF gap).
+struct VaccinationPolicy {
+    /// Default annual-booster cadence; a real deployment would look this up
+    /// per vaccine (rabies vs. a puppy series differ) but every vaccine this
+    /// app catalogs today is an annual core/non-core shot.
+    static let defaultBoosterIntervalMonths = 12
+
+    static func suggestedNextDueDate(givenAt: Date, intervalMonths: Int = defaultBoosterIntervalMonths, calendar: Calendar = .current) -> Date {
+        calendar.date(byAdding: .month, value: intervalMonths, to: givenAt) ?? givenAt
+    }
+}
+
+/// K2: prescription issued at a completed visit.
+struct Prescription: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var visitId: UUID
+    var petId: UUID
+    var medicationName: String
+    var dosage: String
+    var instructions: String?
+    var prescribedByVetId: UUID
+    var issuedAt: Date
+}
+
+
+// MARK: - Discovery filters & sort (plan §C3-C4) — pure, testable logic; the
+// UI only ever calls `CircuitFilter.apply` / `CircuitSortOption.sort`, it
+// never re-implements the matching rules itself.
+
+struct CircuitFilter: Equatable {
+    var serviceCategory: ServiceCategory? = nil
+    var onOrAfter: Date? = nil
+    var timeOfDay: TimeOfDay? = nil
+    var maxPriceMinorUnits: Int? = nil
+    var minRating: Double? = nil
+    var species: Pet.Species? = nil
+    var language: String? = nil
+    var gender: Vet.Gender? = nil
+
+    var isEmpty: Bool { self == CircuitFilter() }
+
+    enum TimeOfDay: String, CaseIterable, Identifiable {
+        case morning, afternoon, evening
+        var id: String { rawValue }
+        var displayName: String { rawValue.capitalized }
+        /// Hour range (start..<end), matched against a slot's `startTime` in
+        /// the visit's local calendar.
+        var hourRange: Range<Int> {
+            switch self {
+            case .morning: return 5..<12
+            case .afternoon: return 12..<17
+            case .evening: return 17..<22
+            }
+        }
+    }
+
+    /// A circuit matches when *some* schedule slot satisfies the date/time
+    /// filters and the vet-level attributes all match — a circuit isn't
+    /// dropped just because one of its several slots doesn't fit.
+    func matches(_ circuit: Circuit, catalog: [Service] = []) -> Bool {
+        if let vet = circuit.vet {
+            if let minRating, vet.rating < minRating { return false }
+            if let species, !vet.speciesHandled.contains(species) { return false }
+            if let language, !vet.languages.contains(where: { $0.localizedCaseInsensitiveCompare(language) == .orderedSame }) { return false }
+            if let gender, vet.gender != gender { return false }
+        } else if minRating != nil || species != nil || language != nil || gender != nil {
+            // No vet attached at all — can't confirm a vet-level filter, so
+            // exclude rather than silently show a possibly-non-matching row.
+            return false
+        }
+
+        if onOrAfter != nil || timeOfDay != nil {
+            let calendar = Calendar.current
+            let hasMatchingSlot = circuit.schedule.contains { slot in
+                if let onOrAfter, slot.startTime < calendar.startOfDay(for: onOrAfter) { return false }
+                if let timeOfDay {
+                    let hour = calendar.component(.hour, from: slot.startTime)
+                    guard timeOfDay.hourRange.contains(hour) else { return false }
+                }
+                return true
+            }
+            if !hasMatchingSlot { return false }
+        }
+
+        if maxPriceMinorUnits != nil || serviceCategory != nil {
+            // Price/category filters are catalog-scoped, not circuit-scoped —
+            // a circuit only fails them if a catalog was supplied and nothing
+            // in it clears the bar (an empty catalog means "not applicable").
+            guard !catalog.isEmpty else { return true }
+            let candidates = serviceCategory.map { category in catalog.filter { $0.category == category } } ?? catalog
+            if serviceCategory != nil && candidates.isEmpty { return false }
+            if let maxPriceMinorUnits {
+                let anyAffordable = candidates.contains { ($0.startingPriceMinorUnits ?? Int.max) <= maxPriceMinorUnits }
+                if !anyAffordable { return false }
+            }
+        }
+        return true
+    }
+
+    static func apply(_ filter: CircuitFilter, to circuits: [Circuit], catalog: [Service] = []) -> [Circuit] {
+        guard !filter.isEmpty else { return circuits }
+        return circuits.filter { filter.matches($0, catalog: catalog) }
+    }
+}
+
+enum CircuitSortOption: String, CaseIterable, Identifiable {
+    case soonest, cheapest, topRated = "top_rated", previouslyBooked = "previously_booked"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .soonest: return "Soonest"
+        case .cheapest: return "Cheapest"
+        case .topRated: return "Top rated"
+        case .previouslyBooked: return "Previously booked"
+        }
+    }
+
+    /// `previouslyBookedVetIds` lets "previously booked" rank a repeat vet
+    /// first without the sort needing its own repository access — the
+    /// caller (a use case or view model) already has visit history in hand.
+    static func sort(_ circuits: [Circuit], by option: CircuitSortOption, previouslyBookedVetIds: Set<UUID> = []) -> [Circuit] {
+        switch option {
+        case .soonest:
+            return circuits.sorted { (lhs, rhs) in
+                (lhs.schedule.map(\.startTime).min() ?? .distantFuture) < (rhs.schedule.map(\.startTime).min() ?? .distantFuture)
+            }
+        case .cheapest:
+            // Circuits don't carry a price themselves; a lower vet review
+            // count is a poor proxy, so absent a per-circuit price this falls
+            // back to cluster-area alphabetical (stable, deterministic) —
+            // real pricing comes from the catalog/quote, not the circuit.
+            return circuits.sorted { $0.clusterArea < $1.clusterArea }
+        case .topRated:
+            return circuits.sorted { (lhs, rhs) in
+                (lhs.vet?.rating ?? 0) > (rhs.vet?.rating ?? 0)
+            }
+        case .previouslyBooked:
+            return circuits.sorted { (lhs, rhs) in
+                let lhsBooked = previouslyBookedVetIds.contains(lhs.vetId)
+                let rhsBooked = previouslyBookedVetIds.contains(rhs.vetId)
+                if lhsBooked != rhsBooked { return lhsBooked }
+                return (lhs.vet?.rating ?? 0) > (rhs.vet?.rating ?? 0)
+            }
+        }
+    }
+}
+
+// MARK: - Emergency path (plan §C11, §L8) — VetCircuit is explicitly not an
+// emergency service; this is the data behind the "route out" escalation,
+// not a substitute for a real emergency vet.
+
+struct EmergencyClinic: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var name: String
+    var address: String
+    var phone: String
+    var latitude: Double
+    var longitude: Double
+    var isOpen24x7: Bool = true
+
+    /// `tel://` scheme for a tap-to-call action.
+    var telURL: URL? {
+        URL(string: "tel://\(phone.filter { $0.isNumber || $0 == "+" })")
+    }
+
+    /// Apple Maps deep link for tap-to-navigate.
+    var mapsURL: URL? {
+        let query = "\(latitude),\(longitude)"
+        return URL(string: "https://maps.apple.com/?daddr=\(query)")
+    }
+}
+
 
 // MARK: - Domain errors
 

@@ -74,6 +74,18 @@ protocol SubscriptionRepository: Sendable {
     func currentSubscription(userId: UUID) async throws -> Subscription?
     func subscribe(userId: UUID, plan: Subscription.PlanType) async throws -> Subscription
     func cancel(subscriptionId: UUID) async throws
+
+    // H3: manage — upgrade/downgrade/pause/resume. Each returns the updated
+    // row rather than Void so the UI can show the new renewal date/plan
+    // without a second round trip.
+    func changePlan(subscriptionId: UUID, to plan: Subscription.PlanType) async throws -> Subscription
+    func pause(subscriptionId: UUID) async throws -> Subscription
+    func resume(subscriptionId: UUID) async throws -> Subscription
+
+    // H5: dunning state, read/written by the retry-ladder job (plan §6.5)
+    // and surfaced read-only to the customer app ("payment failed, retrying...").
+    func dunningState(subscriptionId: UUID) async throws -> DunningState?
+    func recordDunningState(_ state: DunningState) async throws
 }
 
 protocol PaymentRepository: Sendable {
@@ -93,6 +105,16 @@ protocol ChatRepository: Sendable {
 
 protocol ReviewRepository: Sendable {
     func submit(visitId: UUID, rating: Int, comment: String?) async throws -> Review
+    /// C5: reviews for a vet's profile — the ratings histogram and review
+    /// list are both computed client-side from this.
+    func reviews(vetId: UUID) async throws -> [Review]
+}
+
+// MARK: - Emergency path (plan §C11) — public-read, admin-write list of
+// 24x7 emergency clinics to route a customer to when this app says outright
+// it is not the right tool for the situation.
+protocol EmergencyClinicRepository: Sendable {
+    func listClinics() async throws -> [EmergencyClinic]
 }
 
 protocol PetRepository: Sendable {
@@ -100,6 +122,23 @@ protocol PetRepository: Sendable {
     func addPet(_ pet: Pet) async throws -> Pet
     func updatePet(_ pet: Pet) async throws -> Pet
     func deletePet(id: UUID) async throws
+}
+
+// MARK: - Pet health records (plan §3 B, §3 K)
+
+protocol PetWeightRepository: Sendable {
+    /// Oldest-first, so the chart in `PetDetailView` can plot it directly.
+    func history(petId: UUID) async throws -> [PetWeightEntry]
+    func addEntry(_ entry: PetWeightEntry) async throws -> PetWeightEntry
+}
+
+protocol VaccinationRepository: Sendable {
+    func history(petId: UUID) async throws -> [Vaccination]
+    func record(_ vaccination: Vaccination) async throws -> Vaccination
+}
+
+protocol PrescriptionRepository: Sendable {
+    func history(petId: UUID) async throws -> [Prescription]
 }
 
 protocol PushTokenRepository: Sendable {
@@ -169,8 +208,106 @@ protocol CatalogRepository: Sendable {
     func service(id: UUID) async throws -> Service
 }
 
+protocol PackageRepository: Sendable {
+    /// D4: packages/bundles, browsed the same way services are.
+    func listPackages(vertical: Vertical?) async throws -> [Package]
+    func package(id: UUID) async throws -> Package
+}
+
 protocol LoyaltyRepository: Sendable {
     func account(userId: UUID) async throws -> LoyaltyAccount
     /// Called when a visit completes; awards points and returns the updated account.
     func awardPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount
+}
+
+protocol NotificationPreferencesRepository: Sendable {
+    /// Returns the default (all-on except promotions) preferences if the user
+    /// has never saved any — there is always a value to render toggles from.
+    func preferences(userId: UUID) async throws -> NotificationPreferences
+    func save(_ preferences: NotificationPreferences) async throws -> NotificationPreferences
+}
+
+protocol AppConfigRepository: Sendable {
+    /// O7/O8: fetched once at launch, no auth required — a signed-out device
+    /// on a killed binary still needs to be told to update.
+    func fetchConfig() async throws -> RemoteAppConfig
+}
+
+// MARK: - Support, help & notifications (plan §M, §J7)
+
+protocol HelpRepository: Sendable {
+    /// M1: remote FAQ content — no app-store release needed to fix an answer.
+    func listArticles() async throws -> [HelpArticle]
+}
+
+protocol SupportRepository: Sendable {
+    /// M2/K8: a ticket, optionally carrying visit context (a dispute is just
+    /// a ticket with `visitId` set). No update method on purpose — once
+    /// submitted, only ops can change its status (mirrors `refunds`: the
+    /// client reads state, never writes it after creation).
+    func createTicket(userId: UUID, visitId: UUID?, subject: String, body: String) async throws -> SupportTicket
+    func myTickets(userId: UUID) async throws -> [SupportTicket]
+}
+
+protocol AppNotificationRepository: Sendable {
+    /// J7: the in-app notification centre/history — distinct from
+    /// `NotificationPreferencesRepository`'s per-channel opt-in/out toggles.
+    func notifications(userId: UUID) async throws -> [AppNotification]
+    func markRead(id: UUID) async throws
+}
+
+// MARK: - A9 household sharing
+
+protocol HouseholdRepository: Sendable {
+    /// The household a user belongs to (owner or member), if any — a user
+    /// can be a member of at most one household in this model, matching
+    /// the plan's "invite spouse/family" scope rather than arbitrary groups.
+    func myHousehold(userId: UUID) async throws -> Household?
+    func createHousehold(name: String, ownerId: UUID) async throws -> Household
+    func members(householdId: UUID) async throws -> [HouseholdMember]
+    /// Invites by phone; the member row exists (with `invitedPhone` set)
+    /// even before the invitee's own user row does, mirroring `Referral`.
+    func invite(householdId: UUID, phone: String) async throws -> HouseholdMember
+    /// A member removes themselves, or the owner removes anyone — enforced
+    /// server-side by RLS (0020_households.sql), not just in the UI.
+    func removeMember(householdId: UUID, memberId: UUID) async throws
+}
+
+// MARK: - C10 waitlist
+
+// MARK: - C8 search — "Postgres FTS is enough; do not add a search cluster"
+// (plan §3 C8). Default extensions give every conformer (including any mock
+// or preview stub not updated here) a working client-side substring search
+// over whatever `listCircuits`/`listServices` already returns; the Supabase
+// conformers override these with a real server-side FTS/ILIKE query so
+// search doesn't require pulling the entire catalog to the client in prod.
+
+extension CircuitRepository {
+    func searchCircuits(term: String, area: String?) async throws -> [Circuit] {
+        let circuits = try await listCircuits(area: area)
+        let needle = term.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else { return circuits }
+        return circuits.filter {
+            $0.clusterArea.lowercased().contains(needle) || ($0.vet?.name.lowercased().contains(needle) ?? false)
+        }
+    }
+}
+
+extension CatalogRepository {
+    func searchServices(term: String, vertical: Vertical?) async throws -> [Service] {
+        let services = try await listServices(vertical: vertical)
+        let needle = term.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else { return services }
+        return services.filter {
+            $0.name.lowercased().contains(needle) || $0.summary.lowercased().contains(needle)
+        }
+    }
+}
+
+protocol WaitlistRepository: Sendable {
+    func join(userId: UUID, addressId: UUID?, latitude: Double, longitude: Double, areaLabel: String?) async throws -> WaitlistEntry
+    /// Count only — never the individual rows, so "N neighbours waiting"
+    /// never exposes who they are (see `waitlist_count_near` RPC).
+    func countNear(latitude: Double, longitude: Double, radiusKm: Double) async throws -> Int
+    func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool
 }

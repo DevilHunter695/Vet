@@ -129,7 +129,7 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | A6 | **Delete account + data** | **P0** | ✅ | **App Store guideline 5.1.1(v) — a hard rejection if missing.** 30-day soft window, financial records retained per statute with justification shown to user |
 | A7 | Export my data (JSON + PDF of records) | P1 | 🔨 | DPDP data-principal right — JSON export done, no PDF |
 | A8 | Multiple addresses (home/office/parents), default, geofence check | **P0** | ✅ | A circuit is *address-scoped* — this is core inventory logic, not a nicety |
-| A9 | Household: invite spouse/family to same pets & bookings | P1 | ⛔ | Very common real-world need; roles: owner/member |
+| A9 | Household: invite spouse/family to same pets & bookings | P1 | 🔨 | Roles: owner/member. `Household`/`HouseholdMember` + `HouseholdRepository`, `HouseholdView` linked from Profile. Pets keep `owner_id`; visibility only, via an additional RLS policy (see 0020_households.sql) — no pet-ownership model change |
 | A10 | Biometric lock on app (Face ID) | P1 | ⛔ | Medical records = sensitive |
 | A11 | Blocked/deactivated account handling | P1 | ⛔ | Graceful screen, support path |
 
@@ -138,13 +138,13 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | # | Capability | Pri | Status | Notes |
 |---|---|---|---|---|
 | B1 | Multiple pets per household, add/**edit**/**delete**/archive | P0 | 🔨 | Delete = soft-delete; visit history must survive |
-| B2 | Pet detail screen: photo, species, breed, DOB, sex, neutered, weight, microchip, allergies, chronic conditions | P0 | 🔨 | Currently only name/species/breed/DOB |
-| B3 | Weight & vitals history (chart) | P1 | ⛔ | Strong retention hook |
-| B4 | Vaccination record + **next-due reminders** | **P0** | ⛔ | This is the single best repeat-purchase driver in pet care |
-| B5 | Prescription history | P1 | ⛔ | Must be vet-issued only (see §8.7) |
+| B2 | Pet detail screen: photo, species, breed, DOB, sex, neutered, weight, microchip, allergies, chronic conditions | P0 | 🔨 | `PetDetailView` built (no photo upload — known gap); fields live on `Pet` and edit in place |
+| B3 | Weight & vitals history (chart) | P1 | 🔨 | `pet_weights` table + `PetWeightRepository` + Swift Charts line chart in `PetDetailView`; vitals beyond weight (temp, HR) not modeled |
+| B4 | Vaccination record + **next-due reminders** | **P0** | 🔨 | Extends 0019's `vaccinations` table (batch number, visit link); `VaccinationPolicy` auto-computes next-due (+12mo) on record; history view color-codes overdue/due-soon with 1-tap "book vaccination visit" |
+| B5 | Prescription history | P1 | 🔨 | Same feature as K2 — see that row. Must be vet-issued only (see §8.7) |
 | B6 | Document vault (upload prior reports, insurance) | P1 | ⛔ | Private bucket, signed URLs, virus scan |
 | B7 | Shareable pet health summary (PDF) | P2 | ⛔ | For boarding/travel/clinic referral |
-| B8 | Deceased/rehomed pet handling | P1 | ⛔ | Stops reminders; handle with care in copy |
+| B8 | Deceased/rehomed pet handling | P1 | 🔨 | Soft-delete via `Pet.archivedAt`/`archiveReason`; excluded from `ManagePetsUseCase.list` (booking picker, vaccination nagging) by default; confirmation dialog uses calm copy, never "delete" |
 
 ### C. Discovery, detail & "multiple options"
 
@@ -152,15 +152,15 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 |---|---|---|---|---|
 | C1 | Address-first discovery: pick address → show circuits serving it | P0 | 🔨 | Replaces v1's free-text "area" |
 | C2 | Circuit list with next-available slot, price-from, vet rating | P0 | ✅ | |
-| C3 | **Filters**: service type, date, time-of-day, price, rating, species handled, language, gender of vet | **P0** | ⛔ | "Vet who handles cats", "Hindi-speaking" are real filters in India |
-| C4 | **Sort**: soonest, cheapest, top-rated, previously-booked | P0 | ⛔ | |
-| C5 | **Vet detail screen**: photo, bio, VCI reg no. (verified badge), years of experience, species, languages, services + prices, ratings histogram, reviews w/ photos, next 7 days availability | **P0** | 🔨 | Today there is no vet detail screen at all |
-| C6 | **Service detail screen**: what's included, duration, what to prepare, price, add-ons, FAQs | **P0** | ⛔ | Directly your "showing details" requirement |
+| C3 | **Filters**: service type, date, time-of-day, price, rating, species handled, language, gender of vet | **P0** | ✅ | `CircuitFilter` (client-side, applied over the fetched list) + a filter sheet in `CircuitsListView`. Cheapest/price filtering is catalog-scoped since a circuit itself has no price. |
+| C4 | **Sort**: soonest, cheapest, top-rated, previously-booked | P0 | ✅ | `CircuitSortOption` wired into a sort menu. "Cheapest" falls back to cluster-area order — circuits don't carry a per-circuit price, only the catalog does (known gap). |
+| C5 | **Vet detail screen**: photo, bio, VCI reg no. (verified badge), years of experience, species, languages, services + prices, ratings histogram, reviews w/ photos, next 7 days availability | **P0** | ✅ | New `VetDetailView`. Reviews have no photo field yet (`Review` model gap, out of scope here) — text reviews and star ratings only. |
+| C6 | **Service detail screen**: what's included, duration, what to prepare, price, add-ons, FAQs | **P0** | ✅ | `ServiceDetailView` already covered everything except FAQs before this pass (tag was wrong — it wasn't ⛔); added `Service.faqs` + a disclosure-row section. |
 | C7 | Map view of cluster coverage | P1 | 🔨 | |
-| C8 | Search (vet name, service, symptom) | P1 | ⛔ | Postgres FTS is enough; do not add a search cluster |
-| C9 | Recently viewed / rebook last visit (1 tap) | P1 | ⛔ | Highest-converting element in repeat marketplaces |
-| C10 | Waitlist for uncovered clusters + "N neighbours waiting" | P1 | ⛔ | Demand aggregation, not a dead end |
-| C11 | Emergency path: "This is urgent" → nearest 24×7 clinic + triage call | **P0** | ⛔ | Safety-critical. You are not an emergency service — say so and route out. |
+| C8 | Search (vet name, service, symptom) | P1 | 🔨 | Postgres FTS (0022_search_fts.sql: generated `tsvector` + GIN on services/vets), `SearchUseCase`, search bar on CircuitsListView now matches vet name + service, not just area |
+| C9 | Recently viewed / rebook last visit (1 tap) | P1 | 🔨 | Highest-converting element in repeat marketplaces. `RecentlyViewedStore` (UserDefaults), "Recently viewed" rail + "Rebook last visit" card on CircuitsListView |
+| C10 | Waitlist for uncovered clusters + "N neighbours waiting" | P1 | 🔨 | Demand aggregation, not a dead end. `WaitlistEntry`/`WaitlistRepository`, `waitlist_count_near` RPC returns only a count, "Not yet covered" addresses now show a join button |
+| C11 | Emergency path: "This is urgent" → nearest 24×7 clinic + triage call | **P0** | ✅ | New `EmergencyView` (from `CircuitsListView`'s banner and `TriageView`'s "This is an emergency" button): disclaimer + `EmergencyClinicRepository` (mock: 3 Bangalore clinics) with tap-to-call/tap-to-navigate, plus a link into the existing symptom-triage flow. |
 
 ### D. Service catalog (the "multiple options for each thing")
 
@@ -178,11 +178,11 @@ Service (Home consultation)
 |---|---|---|---|
 | D1 | Service catalog w/ categories (Consult, Vaccination, Grooming, Diagnostics, Deworming, Dental, Elder-care visit, Physio session) | **P0** | 🔨 |
 | D2 | Variants per service (duration/tier/package) | **P0** | 🔨 |
-| D3 | Add-ons attachable to a booking | P1 | ⛔ |
-| D4 | Packages/bundles ("Puppy first-year: 4 visits + 3 vaccines") | P1 | ⛔ |
+| D3 | Add-ons attachable to a booking | P1 | ✅ | ServiceDetailView now toggles add-ons into `CartItem.addonIds`; PricingEngine/create_quote already priced them |
+| D4 | Packages/bundles ("Puppy first-year: 4 visits + 3 vaccines") | P1 | 🔨 | `Package`/`PackageRepository` + `PackagesView` + `0015_packages.sql` ship; buying one is a stub that expands into individual cart lines — no redemption/entitlement tracking ("3 of 4 visits used") yet |
 | D5 | Per-vet service availability & per-vet pricing overrides | P1 | ⛔ |
-| D6 | Multi-pet in one visit (2nd pet at reduced fee) | **P0** | ⛔ | Extremely common; breaks the whole pricing model if bolted on later |
-| D7 | Catalog managed from ops console, not hardcoded | P0 | ⛔ |
+| D6 | Multi-pet in one visit (2nd pet at reduced fee) | **P0** | ✅ | ServiceDetailView's pet multi-select feeds `CartItem.petIds`, which already drove `PricingEngine.additionalPetCount` — that wiring was the only missing piece |
+| D7 | Catalog managed from ops console, not hardcoded | P0 | 🔨 | iOS `SupabaseCatalogRepository`/`SupabasePackageRepository` read services/packages from Postgres (Mock repos stay hardcoded for local dev, by design); the ops console side is a separate workstream |
 
 ### E. Cart, pricing & checkout
 
@@ -234,9 +234,9 @@ Service (Home consultation)
 |---|---|---|---|
 | H1 | Plan catalog with visible inclusions & fair-use limits | P0 | 🔨 |
 | H2 | Purchase via gateway **recurring mandate (UPI Autopay / e-mandate)** | P0 | 🔨 |
-| H3 | Manage: upgrade, downgrade, **pause**, **cancel**, view next renewal | **P0** | ⛔ |
+| H3 | Manage: upgrade, downgrade, **pause**, **cancel**, view next renewal | **P0** | 🔨 |
 | H4 | Renewal reminders (T-7, T-1) + receipt | P0 | 🔨 |
-| H5 | Dunning: failed renewal → retry ladder → grace → downgrade | P1 | ⛔ |
+| H5 | Dunning: failed renewal → retry ladder → grace → downgrade | P1 | 🔨 |
 | H6 | Subscription credits consumed by bookings (entitlement engine) | P1 | ⛔ |
 | H7 | Corporate/RWA seat-based plan + seat assignment | P2 | 🔨 |
 
@@ -246,7 +246,7 @@ Service (Home consultation)
 |---|---|---|---|---|
 | I1 | Persistent "what's happening now" card on Home | P0 | 🔨 | The highest-trust feature per unit of effort |
 | I2 | Status timeline w/ timestamps (requested → confirmed → assigned → en route → arrived → in progress → completed) | P0 | 🔨 | 8-state enum + legal-transition table done; timestamped timeline UI still uses badges, not a full timeline view |
-| I3 | **Live Activity + Dynamic Island** for "vet en route / ETA" | P1 | ⛔ | iOS-native differentiator; huge perceived-quality win |
+| I3 | **Live Activity + Dynamic Island** for "vet en route / ETA" | P1 | 🔨 | iOS-native differentiator; huge perceived-quality win. `VetEnRouteAttributes` + `Activity<T>.request` call site wired from LiveTrackingView. **Known gap:** no Widget Extension target exists yet (project.yml is single-target) — nothing renders on the Lock Screen/Island until that target is added in Xcode; see VetEnRouteActivity.swift |
 | I4 | Live map tracking with ETA | P1 | 🔨 | |
 | I5 | **Start-of-visit OTP** (customer reads 4-digit code to vet) | **P0** | 🔨 | Anti-fraud + proof-of-service. Cheap, high value. |
 | I6 | Digital consent/liability waiver accepted in-app before first visit | **P0** | ✅ | Legal shield |
@@ -261,9 +261,9 @@ Service (Home consultation)
 | J2 | Chat attachments (photo of the symptom) | **P0** | 🔨 | Pet owners send photos. Always. |
 | J3 | Read receipts, typing, unread badge | P1 | 🔨 | |
 | J4 | **Masked voice calling** (Exotel/Twilio proxy — real numbers never exposed) | **P0** | 🔨 | Privacy + safety + "vet can't find the gate" reality |
-| J5 | Chat auto-closes 48h post-visit, with escalation to support | P1 | ⛔ | Prevents unpaid consulting over chat |
+| J5 | Chat auto-closes 48h post-visit, with escalation to support | P1 | ✅ | `ChatPolicy.isOpen` (domain, tested) gates `ChatView`'s input bar and shows a "chat has closed — contact support" banner |
 | J6 | Video consult | P2 | 🔨 (stub) | |
-| J7 | Notification centre in-app + per-channel preferences | P1 | ⛔ | |
+| J7 | Notification centre in-app + per-channel preferences | P1 | ✅ | Per-channel toggles were already ✅ (`NotificationPreferencesView`); this adds `NotificationCenterView`, reading the `notifications` table (extended with `read_at` in 0020) via a new `AppNotificationRepository` |
 | J8 | Transactional SMS/WhatsApp fallback when push fails | P1 | ⛔ | Android-less households, push disabled |
 
 ### K. Post-visit care
@@ -271,13 +271,13 @@ Service (Home consultation)
 | # | Capability | Pri | Status |
 |---|---|---|---|
 | K1 | Visit record: diagnosis notes, procedures done, meds given | P0 | 🔨 |
-| K2 | Prescription (structured, vet-signed, PDF) | P1 | ⛔ |
+| K2 | Prescription (structured, vet-signed, PDF) | P1 | 🔨 | `prescriptions` table + read-only `PrescriptionRepository`, shown in `PetDetailView`; structured data + vet-signed only via server-side RLS (no client insert policy) — PDF generation not built (known gap, same shape as A7's export-PDF gap) |
 | K3 | Medication reminders | P2 | ⛔ |
-| K4 | Vaccination certificate PDF + next-due auto-scheduling | P1 | ⛔ |
-| K5 | Follow-up booking in 1 tap (free follow-up window) | P1 | ⛔ |
+| K4 | Vaccination certificate PDF + next-due auto-scheduling | P1 | 🔨 | Next-due date auto-populates (+12mo) when a vaccination is recorded — the "auto-scheduling" plan means; certificate PDF is a known gap |
+| K5 | Follow-up booking in 1 tap (free follow-up window) | P1 | 🔨 | `FollowUpBookingPolicy` (14-day window) gates a "Book free follow-up" button on `VisitDetailView`, pre-filling the same pet + the existing free follow-up variant via `ServiceDetailView`; that screen adds to cart rather than booking a specific circuit slot directly, so "same vet/circuit" isn't yet enforced end-to-end — known gap |
 | K6 | Lab test ordering + report delivery | P2 | ⛔ |
 | K7 | Rate & review (stars + tags + optional photo) | P0 | ✅ |
-| K8 | Report a problem with this visit → dispute ticket | **P0** | ⛔ |
+| K8 | Report a problem with this visit → dispute ticket | **P0** | ✅ | Uses the same `SupportTicket` model as M2, with `visitId` set — "Report a problem with this visit" button on completed visits in `VisitDetailView` opens `ContactSupportView` pre-filled |
 
 ### L. Trust, safety & emergency
 
@@ -285,19 +285,19 @@ Service (Home consultation)
 |---|---|---|---|---|
 | L1 | Manual VCI registration verification before a vet goes live | P0 | 🔨 | Do this by hand, every time, forever |
 | L2 | Document-backed onboarding: degree, VCI cert, ID, police verification, photo | P0 | ⛔ | |
-| L3 | "Verified" badge + credentials visible on vet profile | P0 | ⛔ | |
+| L3 | "Verified" badge + credentials visible on vet profile | P0 | ✅ | `VerifiedBadge` on `VetDetailView`, the booking-flow vet card, and the circuit list row. Also closed a real gap: `CircuitRepository.listCircuits` previously surfaced unverified vets in the booking flow at all — it now filters to `verificationStatus == .verified` server-query-side (Supabase) / actor-side (mock), per L1's "verified before going live". |
 | L4 | **SOS button + share-my-visit link** during an in-home visit | P1 | ⛔ | A stranger is inside a home. Take this seriously. |
 | L5 | Incident reporting (both directions) + vet suspension flow | P1 | ⛔ | |
 | L6 | Review moderation (profanity, PII, defamation) | P1 | ⛔ | |
 | L7 | Professional indemnity / liability insurance requirement for vets | P1 | ⛔ | Commercial, not code — but blocks launch legally |
-| L8 | Clear "not an emergency service" disclaimer + escalation routing | **P0** | ⛔ | |
+| L8 | Clear "not an emergency service" disclaimer + escalation routing | **P0** | ✅ | Full disclaimer on `EmergencyView`; a brief caption version under `CircuitsListView`'s "Not sure?"/emergency entry points too, so it's not only reachable via the emergency path. |
 
 ### M. Support & disputes
 
 | # | Capability | Pri | Status |
 |---|---|---|---|
-| M1 | Help centre / FAQ (remote content, not app-updated) | P0 | ⛔ |
-| M2 | In-app "Contact support" → ticket with visit context attached | P0 | ⛔ |
+| M1 | Help centre / FAQ (remote content, not app-updated) | P0 | ✅ | `HelpCenterView` (grouped by category, searchable) + `HelpRepository`, backed by public-read `help_articles` (migration 0020); Mock repo ships ~10 FAQ entries |
+| M2 | In-app "Contact support" → ticket with visit context attached | P0 | ✅ | `ContactSupportView`/`MyTicketsView` + `SupportRepository` against `support_tickets` (0020) — owner read/insert, no client update, mirroring `refunds` |
 | M3 | Ops ticket queue + SLA + canned responses | P0 | 🔨 |
 | M4 | Refund/credit issuance from a ticket, with audit trail | P0 | ⛔ |
 | M5 | Call support (business hours) | P1 | ⛔ |
@@ -308,24 +308,24 @@ Service (Home consultation)
 |---|---|---|---|
 | N1 | Referral code + share sheet + attribution + fraud guard | P1 | 🔨 |
 | N2 | Coupon campaigns (first-visit, win-back, cluster-launch) | P1 | ⛔ |
-| N3 | Lifecycle pushes: vaccination due, renewal, dormant 60d, abandoned cart | P1 | ⛔ |
+| N3 | Lifecycle pushes: vaccination due, renewal, dormant 60d, abandoned cart | P1 | 🔨 | Detection + queueing done (`lifecycle-notifications` Edge Function, `notifications` table); actual push-send job to drain the queue is a separate, still-missing piece |
 | N4 | Loyalty points & tiers | P2 | ✅ |
-| N5 | In-app rating prompt (SKStoreReviewController, after a 5★ visit only) | P1 | ⛔ |
+| N5 | In-app rating prompt (SKStoreReviewController, after a 5★ visit only) | P1 | ✅ | `ReviewView` calls `SKStoreReviewController.requestReview` only on a 5★ submit, gated to once per app version via `UserDefaults` (StoreKit's own throttling is a separate, opaque layer on top) |
 | N6 | Home Screen widget: next visit / vaccination due | P2 | ⛔ |
-| N7 | Deep links + universal links for every campaign target | P1 | ⛔ |
+| N7 | Deep links + universal links for every campaign target | P1 | 🔨 | `DeepLinkParser` (pure) + `.onOpenURL`; `vetcircuit://visit`, `/book`, `/household` parsed and routed to the right tab. **Known gap** (plan §6.1): no shared Router/typed-Route `NavigationStack(path:)` exists — each tab still runs its own stack, so a deep link only jumps to the right tab and (for `/book`) resolves a specific circuit; it can't yet push arbitrary nested screens (e.g. a specific visit's chat) from outside |
 
 ### O. Settings, privacy & platform UX
 
 | # | Capability | Pri | Status |
 |---|---|---|---|
-| O1 | Notification preferences per channel/category | P1 | ⛔ |
+| O1 | Notification preferences per channel/category | P1 | ✅ |
 | O2 | Language: English + Hindi (+1 regional at launch cluster) | P1 | ⛔ |
 | O3 | Appearance light/dark/system | P0 | ✅ |
 | O4 | Accessibility: Dynamic Type to AX5, VoiceOver, Reduce Motion | P0 | 🔨 |
 | O5 | **Consent dashboard**: what you collect, why, withdraw consent | P0 (DPDP) | ✅ |
-| O6 | Privacy policy + T&C in-app and on web | P0 | ⛔ |
-| O7 | **Force-upgrade gate** (server-driven minimum version) | **P0** | ⛔ | Your only true rollback lever for a shipped binary |
-| O8 | Maintenance mode screen (server flag) | P0 | ⛔ |
+| O6 | Privacy policy + T&C in-app and on web | P0 | 🔨 | In-app done: static `PrivacyPolicyView`/`TermsOfServiceView`, linked from Profile and from `LiabilityWaiverView`. Web (public-web) is a separate workstream, not touched here — best-effort draft text, not legal advice |
+| O7 | **Force-upgrade gate** (server-driven minimum version) | **P0** | ✅ | Your only true rollback lever for a shipped binary |
+| O8 | Maintenance mode screen (server flag) | P0 | ✅ | Shares `ForceUpdateView` with O7 — one blocking screen, two states |
 
 ### P. Partner (vet) app — P0 set
 
@@ -342,6 +342,13 @@ coupon & catalog management · user lookup + impersonate-read-only (audited) · 
 
 > **The console is P0, not P2.** Every hour you don't have it, you are running ops with `psql` against
 > production — which is how student projects lose real customer data.
+
+**Built:** refund/credit issuance (admin-web/app/disputes/page.tsx, calling the existing issue-refund
+Edge Function — `refunds` stays select-only under RLS), feature-flag & kill-switch panel
+(admin-web/app/flags/page.tsx, `feature_flags` table, migration 0015), manual status override — audited
+(admin-web/app/visits/page.tsx, `admin_override_visit_status()` RPC, migration 0015, logs to
+`visit_events`). Still open from this list: circuit & slot editor, live visit board with stuck-state
+alerts, coupon & catalog management, user lookup + impersonate-read-only, metrics dashboard.
 
 ### R. Platform services (invisible but P0)
 
@@ -953,14 +960,16 @@ live-tracking view · Postgres schema with RLS · signature-verified payment web
 shells · XcodeGen + GitHub Actions CI · design system (Theme/Mascot/motion) · Keychain token storage.
 
 **The gap to deployable**, in priority order:
-1. Catalog + variants + add-ons (D) — everything downstream depends on it
+1. 🔨 Catalog + variants + add-ons (D) — everything downstream depends on it. Categories/variants/add-ons/multi-pet (D1-D3, D6) and a packages/bundles stub (D4) are now wired end-to-end (catalog → cart → PricingEngine → quote); still open: per-vet pricing overrides (D5) and the ops-console write side of D7
 2. Addresses + capacity slots + holds (A8, F2, E7)
 3. Server-authoritative quote + cart + price breakdown (E)
 4. ✅ `book_visit()` transaction + idempotency (7.1) — atomic, capacity-locked, idempotent by key; not yet quote-referencing (see note below)
 5. Cancel/reschedule policy + refunds + invoices (F3–F4, G4–G5)
 6. 8-state machine + visit OTP + consent + record (I)
 7. Delete account, consent dashboard, export (A6, A7, O5) — App Store + DPDP blockers
-8. Ops console for verification, refunds, disputes, flags (Q)
+8. ✅ Ops console for verification, refunds, disputes, flags (Q) — verification queue, refund issuance,
+   dispute review, and the feature-flag panel are built; circuit/slot editor, live visit board, coupon
+   management, user lookup/impersonate, and metrics dashboard remain open
 9. Masked calling + chat photos (J2, J4)
 10. Vet payouts (G7) — without it, supply churns
 

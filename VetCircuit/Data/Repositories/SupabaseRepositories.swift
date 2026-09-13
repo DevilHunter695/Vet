@@ -59,7 +59,10 @@ final class SupabaseCircuitRepository: CircuitRepository {
     init(client: SupabaseClient) { self.client = client }
 
     func listCircuits(area: String?) async throws -> [Circuit] {
-        var query = client.from("circuits").select("*, vet:vets(*), schedule:schedule_slots(*)")
+        // L1/L3: server-side filter (RLS/query, not a client-side badge) so
+        // an unverified vet is never reachable in the customer booking flow.
+        var query = client.from("circuits").select("*, vet:vets!inner(*), schedule:schedule_slots(*)")
+            .eq("vet.verification_status", value: Vet.VerificationStatus.verified.rawValue)
         if let area { query = query.eq("cluster_area", value: area) }
         let rows: [SupabaseCircuitRow] = try await query.execute().value
         return rows.map { $0.toDomain() }
@@ -217,13 +220,94 @@ final class SupabaseAddressRepository: AddressRepository {
     }
 }
 
+final class SupabasePetRepository: PetRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func listPets(ownerId: UUID) async throws -> [Pet] {
+        let rows: [SupabasePetRow] = try await client
+            .from("pets").select().eq("owner_id", value: ownerId).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func addPet(_ pet: Pet) async throws -> Pet {
+        let insert = SupabasePetInsert(pet: pet)
+        let rows: [SupabasePetRow] = try await client.from("pets").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func updatePet(_ pet: Pet) async throws -> Pet {
+        let insert = SupabasePetInsert(pet: pet)
+        let rows: [SupabasePetRow] = try await client
+            .from("pets").update(insert).eq("id", value: pet.id).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Pet") }
+        return row.toDomain()
+    }
+
+    func deletePet(id: UUID) async throws {
+        try await client.from("pets").delete().eq("id", value: id).execute()
+    }
+}
+
+/// B3: weight/vitals history.
+final class SupabasePetWeightRepository: PetWeightRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func history(petId: UUID) async throws -> [PetWeightEntry] {
+        let rows: [SupabasePetWeightRow] = try await client
+            .from("pet_weights").select().eq("pet_id", value: petId).order("recorded_at").execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func addEntry(_ entry: PetWeightEntry) async throws -> PetWeightEntry {
+        let insert = SupabasePetWeightInsert(entry: entry)
+        let rows: [SupabasePetWeightRow] = try await client.from("pet_weights").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+}
+
+/// B4 (P0): vaccination history + next-due reminders.
+final class SupabaseVaccinationRepository: VaccinationRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func history(petId: UUID) async throws -> [Vaccination] {
+        let rows: [SupabaseVaccinationRow] = try await client
+            .from("vaccinations").select().eq("pet_id", value: petId).order("next_due_at").execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func record(_ vaccination: Vaccination) async throws -> Vaccination {
+        let insert = SupabaseVaccinationInsert(vaccination: vaccination)
+        let rows: [SupabaseVaccinationRow] = try await client.from("vaccinations").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+}
+
+/// K2: prescription history — read-only from the client (see 0020's RLS: no
+/// insert/update policy, a vet/ops flow writes these).
+final class SupabasePrescriptionRepository: PrescriptionRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func history(petId: UUID) async throws -> [Prescription] {
+        let rows: [SupabasePrescriptionRow] = try await client
+            .from("prescriptions").select().eq("pet_id", value: petId).order("issued_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
 final class SupabaseCatalogRepository: CatalogRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
     func listServices(vertical: Vertical?) async throws -> [Service] {
         var query = client.from("services")
-            .select("*, service_variants(*), addons(*)")
+            .select("*, service_variants(*), addons(*), faqs(*)")
             .eq("is_active", value: true)
         if let vertical {
             let categories = ServiceCategory.allCases.filter { $0.vertical == vertical }.map(\.rawValue)
@@ -236,11 +320,40 @@ final class SupabaseCatalogRepository: CatalogRepository {
     func service(id: UUID) async throws -> Service {
         let rows: [SupabaseServiceRow] = try await client
             .from("services")
-            .select("*, service_variants(*), addons(*)")
+            .select("*, service_variants(*), addons(*), faqs(*)")
             .eq("id", value: id)
             .execute()
             .value
         guard let row = rows.first else { throw DomainError.notFound("Service") }
+        return row.toDomain()
+    }
+}
+
+/// D4/D7: packages are ops-managed rows, same read pattern as the service
+/// catalog — the app never hardcodes a bundle's contents or price.
+final class SupabasePackageRepository: PackageRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func listPackages(vertical: Vertical?) async throws -> [Package] {
+        var query = client.from("packages")
+            .select("*, package_items(*)")
+            .eq("is_active", value: true)
+        if let vertical {
+            query = query.eq("vertical", value: vertical.rawValue)
+        }
+        let rows: [SupabasePackageRow] = try await query.execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func package(id: UUID) async throws -> Package {
+        let rows: [SupabasePackageRow] = try await client
+            .from("packages")
+            .select("*, package_items(*)")
+            .eq("id", value: id)
+            .execute()
+            .value
+        guard let row = rows.first else { throw DomainError.notFound("Package") }
         return row.toDomain()
     }
 }
@@ -474,11 +587,158 @@ private struct SupabasePetRow: Decodable {
     let species: String
     let breed: String?
     let dob: Date?
+    let sex: String?
+    let isNeutered: Bool?
+    let weightKg: Double?
+    let microchipNumber: String?
+    let allergies: String?
+    let chronicConditions: String?
+    let archivedAt: Date?
+    let archiveReason: String?
 
-    enum CodingKeys: String, CodingKey { case id, ownerId = "owner_id", name, species, breed, dob }
+    enum CodingKeys: String, CodingKey {
+        case id, name, species, breed, dob, sex, allergies
+        case ownerId = "owner_id", isNeutered = "is_neutered", weightKg = "weight_kg"
+        case microchipNumber = "microchip_number", chronicConditions = "chronic_conditions"
+        case archivedAt = "archived_at", archiveReason = "archive_reason"
+    }
 
     func toDomain() -> Pet {
-        Pet(id: id, ownerId: ownerId, name: name, species: Pet.Species(rawValue: species) ?? .other, breed: breed, dateOfBirth: dob)
+        Pet(id: id, ownerId: ownerId, name: name, species: Pet.Species(rawValue: species) ?? .other, breed: breed, dateOfBirth: dob,
+            sex: sex.flatMap(Pet.Sex.init(rawValue:)), isNeutered: isNeutered, weightKg: weightKg,
+            microchipNumber: microchipNumber, allergies: allergies, chronicConditions: chronicConditions,
+            archivedAt: archivedAt, archiveReason: archiveReason.flatMap(Pet.ArchiveReason.init(rawValue:)))
+    }
+}
+
+private struct SupabasePetInsert: Encodable {
+    let ownerId: UUID
+    let name: String
+    let species: String
+    let breed: String?
+    let dob: Date?
+    let sex: String?
+    let isNeutered: Bool?
+    let weightKg: Double?
+    let microchipNumber: String?
+    let allergies: String?
+    let chronicConditions: String?
+    let archivedAt: Date?
+    let archiveReason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name, species, breed, dob, sex, allergies
+        case ownerId = "owner_id", isNeutered = "is_neutered", weightKg = "weight_kg"
+        case microchipNumber = "microchip_number", chronicConditions = "chronic_conditions"
+        case archivedAt = "archived_at", archiveReason = "archive_reason"
+    }
+
+    init(pet: Pet) {
+        ownerId = pet.ownerId
+        name = pet.name
+        species = pet.species.rawValue
+        breed = pet.breed
+        dob = pet.dateOfBirth
+        sex = pet.sex?.rawValue
+        isNeutered = pet.isNeutered
+        weightKg = pet.weightKg
+        microchipNumber = pet.microchipNumber
+        allergies = pet.allergies
+        chronicConditions = pet.chronicConditions
+        archivedAt = pet.archivedAt
+        archiveReason = pet.archiveReason?.rawValue
+    }
+}
+
+private struct SupabasePetWeightRow: Decodable {
+    let id: UUID
+    let petId: UUID
+    let weightKg: Double
+    let recordedAt: Date
+
+    enum CodingKeys: String, CodingKey { case id, petId = "pet_id", weightKg = "weight_kg", recordedAt = "recorded_at" }
+
+    func toDomain() -> PetWeightEntry { PetWeightEntry(id: id, petId: petId, weightKg: weightKg, recordedAt: recordedAt) }
+}
+
+private struct SupabasePetWeightInsert: Encodable {
+    let petId: UUID
+    let weightKg: Double
+    let recordedAt: Date
+
+    enum CodingKeys: String, CodingKey { case petId = "pet_id", weightKg = "weight_kg", recordedAt = "recorded_at" }
+
+    init(entry: PetWeightEntry) {
+        petId = entry.petId
+        weightKg = entry.weightKg
+        recordedAt = entry.recordedAt
+    }
+}
+
+private struct SupabaseVaccinationRow: Decodable {
+    let id: UUID
+    let petId: UUID
+    let vaccineName: String
+    let administeredAt: Date?
+    let nextDueAt: Date
+    let batchNumber: String?
+    let visitId: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case id, batchNumber = "batch_number"
+        case petId = "pet_id", vaccineName = "vaccine_name", administeredAt = "administered_at"
+        case nextDueAt = "next_due_at", visitId = "visit_id"
+    }
+
+    func toDomain() -> Vaccination {
+        Vaccination(id: id, petId: petId, vaccineName: vaccineName, givenAt: administeredAt,
+                    nextDueAt: nextDueAt, batchNumber: batchNumber, visitId: visitId)
+    }
+}
+
+private struct SupabaseVaccinationInsert: Encodable {
+    let petId: UUID
+    let vaccineName: String
+    let administeredAt: Date?
+    let nextDueAt: Date
+    let batchNumber: String?
+    let visitId: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case batchNumber = "batch_number"
+        case petId = "pet_id", vaccineName = "vaccine_name", administeredAt = "administered_at"
+        case nextDueAt = "next_due_at", visitId = "visit_id"
+    }
+
+    init(vaccination: Vaccination) {
+        petId = vaccination.petId
+        vaccineName = vaccination.vaccineName
+        administeredAt = vaccination.givenAt
+        nextDueAt = vaccination.nextDueAt
+        batchNumber = vaccination.batchNumber
+        visitId = vaccination.visitId
+    }
+}
+
+private struct SupabasePrescriptionRow: Decodable {
+    let id: UUID
+    let visitId: UUID
+    let petId: UUID
+    let prescribedByVetId: UUID
+    let medicationName: String
+    let dosage: String
+    let instructions: String?
+    let issuedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, dosage, instructions
+        case visitId = "visit_id", petId = "pet_id", prescribedByVetId = "prescribed_by_vet_id"
+        case medicationName = "medication_name", issuedAt = "issued_at"
+    }
+
+    func toDomain() -> Prescription {
+        Prescription(id: id, visitId: visitId, petId: petId, medicationName: medicationName, dosage: dosage,
+                     instructions: instructions, prescribedByVetId: prescribedByVetId, issuedAt: issuedAt)
     }
 }
 
@@ -524,6 +784,41 @@ private struct SupabaseConsentRow: Decodable {
 
     func toDomain() -> ConsentRecord {
         ConsentRecord(id: id, userId: userId, purpose: purpose, version: version, grantedAt: grantedAt, withdrawnAt: withdrawnAt)
+    }
+}
+
+private struct SupabaseSubscriptionRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let planType: String
+    let status: String
+    let renewalDate: Date
+    let seatCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, status
+        case userId = "user_id", planType = "plan_type", renewalDate = "renewal_date", seatCount = "seat_count"
+    }
+
+    func toDomain() -> Subscription {
+        Subscription(id: id, userId: userId, planType: Subscription.PlanType(rawValue: planType) ?? .monthly,
+                      status: Subscription.Status(rawValue: status) ?? .active, renewalDate: renewalDate,
+                      seatCount: seatCount ?? 1)
+    }
+}
+
+private struct SupabaseDunningRow: Decodable {
+    let id: UUID
+    let failedAttempts: Int
+    let nextRetryAt: Date?
+    let gracePeriodEndsAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, failedAttempts = "failed_attempts", nextRetryAt = "next_retry_at", gracePeriodEndsAt = "grace_period_ends_at"
+    }
+
+    func toDomain() -> DunningState {
+        DunningState(subscriptionId: id, failedAttempts: failedAttempts, nextRetryAt: nextRetryAt, gracePeriodEndsAt: gracePeriodEndsAt)
     }
 }
 
@@ -680,12 +975,13 @@ private struct SupabaseServiceRow: Decodable {
     let minPetAgeMonths: Int?
     let serviceVariants: [SupabaseServiceVariantRow]?
     let addons: [SupabaseAddonRow]?
+    let faqs: [SupabaseFAQRow]?
 
     enum CodingKeys: String, CodingKey {
         case id, category, name, summary
         case whatToPrepare = "what_to_prepare", eligibleSpecies = "eligible_species"
         case requiresPrescriberVet = "requires_prescriber_vet", minPetAgeMonths = "min_pet_age_months"
-        case serviceVariants = "service_variants", addons
+        case serviceVariants = "service_variants", addons, faqs
     }
 
     func toDomain() -> Service {
@@ -698,9 +994,48 @@ private struct SupabaseServiceRow: Decodable {
                 species: eligibleSpecies?.compactMap { Pet.Species(rawValue: $0) },
                 requiresPrescriberVet: requiresPrescriberVet,
                 minPetAgeMonths: minPetAgeMonths
-            )
+            ),
+            faqs: (faqs ?? []).map { $0.toDomain() }
         )
     }
+}
+
+private struct SupabaseFAQRow: Decodable {
+    let id: UUID
+    let question: String
+    let answer: String
+
+    func toDomain() -> FAQ { FAQ(id: id, question: question, answer: answer) }
+}
+
+private struct SupabasePackageRow: Decodable {
+    let id: UUID
+    let name: String
+    let description: String
+    let priceMinorUnits: Int
+    let vertical: String
+    let packageItems: [SupabasePackageItemRow]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, description, priceMinorUnits = "price_minor_units", vertical
+        case packageItems = "package_items"
+    }
+
+    func toDomain() -> Package {
+        Package(id: id, name: name, packageDescription: description,
+                items: (packageItems ?? []).map { $0.toDomain() },
+                priceMinorUnits: priceMinorUnits, vertical: Vertical(rawValue: vertical) ?? .vet)
+    }
+}
+
+private struct SupabasePackageItemRow: Decodable {
+    let id: UUID
+    let serviceId: UUID
+    let quantity: Int
+
+    enum CodingKeys: String, CodingKey { case id, serviceId = "service_id", quantity }
+
+    func toDomain() -> PackageItem { PackageItem(id: id, serviceId: serviceId, quantity: quantity) }
 }
 
 private struct SupabaseServiceVariantRow: Decodable {
@@ -746,16 +1081,90 @@ private struct SupabaseVetRow: Decodable {
     let verificationStatus: String
     let rating: Double
     let reviewCount: Int
+    let bio: String?
+    let yearsOfExperience: Int?
+    let languages: [String]?
+    let gender: String?
+    let speciesHandled: [String]?
 
     enum CodingKeys: String, CodingKey {
         case id, name, licenseNumber = "license_number", verificationStatus = "verification_status"
-        case rating, reviewCount = "review_count"
+        case rating, reviewCount = "review_count", bio, languages, gender
+        case yearsOfExperience = "years_of_experience", speciesHandled = "species_handled"
     }
 
     func toDomain() -> Vet {
         Vet(id: id, name: name, licenseNumber: licenseNumber,
             verificationStatus: Vet.VerificationStatus(rawValue: verificationStatus) ?? .pending,
-            rating: rating, reviewCount: reviewCount, photoURL: nil)
+            rating: rating, reviewCount: reviewCount, photoURL: nil,
+            bio: bio, yearsOfExperience: yearsOfExperience, languages: languages ?? [],
+            gender: gender.flatMap(Vet.Gender.init(rawValue:)),
+            speciesHandled: (speciesHandled ?? []).compactMap(Pet.Species.init(rawValue:)))
+    }
+}
+
+/// C11: public-read emergency clinic directory.
+final class SupabaseEmergencyClinicRepository: EmergencyClinicRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func listClinics() async throws -> [EmergencyClinic] {
+        struct Row: Decodable {
+            let id: UUID, name: String, address: String, phone: String
+            let latitude: Double, longitude: Double, isOpen24x7: Bool
+            enum CodingKeys: String, CodingKey {
+                case id, name, address, phone, latitude, longitude
+                case isOpen24x7 = "is_open_24x7"
+            }
+        }
+        let rows: [Row] = try await client.from("emergency_clinics").select().execute().value
+        return rows.map {
+            EmergencyClinic(id: $0.id, name: $0.name, address: $0.address, phone: $0.phone,
+                             latitude: $0.latitude, longitude: $0.longitude, isOpen24x7: $0.isOpen24x7)
+        }
+    }
+}
+
+/// C5: reviews for a vet's profile. Submission remains a stub here — the
+/// review-submit flow's Supabase wiring predates this file and is a known
+/// pre-existing gap, not something introduced by C5.
+final class SupabaseReviewRepository: ReviewRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func submit(visitId: UUID, rating: Int, comment: String?) async throws -> Review {
+        struct Insert: Encodable {
+            let visitId: UUID, rating: Int, comment: String?
+            enum CodingKeys: String, CodingKey { case visitId = "visit_id", rating, comment }
+        }
+        struct Row: Decodable {
+            let id: UUID, visitId: UUID, vetId: UUID, userId: UUID, rating: Int, comment: String?, createdAt: Date
+            enum CodingKeys: String, CodingKey {
+                case id, rating, comment
+                case visitId = "visit_id", vetId = "vet_id", userId = "user_id", createdAt = "created_at"
+            }
+        }
+        let rows: [Row] = try await client.from("reviews")
+            .insert(Insert(visitId: visitId, rating: rating, comment: comment)).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return Review(id: row.id, visitId: row.visitId, vetId: row.vetId, userId: row.userId,
+                      rating: row.rating, comment: row.comment, createdAt: row.createdAt)
+    }
+
+    func reviews(vetId: UUID) async throws -> [Review] {
+        struct Row: Decodable {
+            let id: UUID, visitId: UUID, vetId: UUID, userId: UUID, rating: Int, comment: String?, createdAt: Date
+            enum CodingKeys: String, CodingKey {
+                case id, rating, comment
+                case visitId = "visit_id", vetId = "vet_id", userId = "user_id", createdAt = "created_at"
+            }
+        }
+        let rows: [Row] = try await client.from("reviews").select().eq("vet_id", value: vetId)
+            .order("created_at", ascending: false).execute().value
+        return rows.map {
+            Review(id: $0.id, visitId: $0.visitId, vetId: $0.vetId, userId: $0.userId,
+                   rating: $0.rating, comment: $0.comment, createdAt: $0.createdAt)
+        }
     }
 }
 
@@ -774,6 +1183,88 @@ private struct SupabaseScheduleRow: Decodable {
 
     func toDomain() -> ScheduleSlot {
         ScheduleSlot(id: id, dayOfWeek: dayOfWeek, startTime: startTime, endTime: endTime, capacity: capacity, bookedCount: bookedCount)
+    }
+}
+
+final class SupabaseSubscriptionRepository: SubscriptionRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func currentSubscription(userId: UUID) async throws -> Subscription? {
+        let rows: [SupabaseSubscriptionRow] = try await client.from("subscriptions")
+            .select().eq("user_id", value: userId).order("created_at", ascending: false).limit(1).execute().value
+        return rows.first?.toDomain()
+    }
+
+    func subscribe(userId: UUID, plan: Subscription.PlanType) async throws -> Subscription {
+        struct Insert: Encodable {
+            let userId: UUID, planType: String, renewalDate: String
+            enum CodingKeys: String, CodingKey { case userId = "user_id", planType = "plan_type", renewalDate = "renewal_date" }
+        }
+        let renewal = Calendar.current.date(byAdding: .month, value: 1, to: .now) ?? .now
+        let rows: [SupabaseSubscriptionRow] = try await client.from("subscriptions")
+            .insert(Insert(userId: userId, planType: plan.rawValue, renewalDate: ISO8601DateFormatter().string(from: renewal)))
+            .select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func cancel(subscriptionId: UUID) async throws {
+        try await client.from("subscriptions").update(["status": Subscription.Status.cancelled.rawValue])
+            .eq("id", value: subscriptionId).execute()
+    }
+
+    // Manage (H3): the "subscriptions all own" RLS policy (0001_init.sql)
+    // already lets the owner update their own row, so these are plain
+    // updates — the validation that matters (upgrade/downgrade legality,
+    // corporate seat floor) already ran in ManageSubscriptionUseCase.
+    func changePlan(subscriptionId: UUID, to plan: Subscription.PlanType) async throws -> Subscription {
+        let rows: [SupabaseSubscriptionRow] = try await client.from("subscriptions")
+            .update(["plan_type": plan.rawValue]).eq("id", value: subscriptionId).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Subscription") }
+        return row.toDomain()
+    }
+
+    func pause(subscriptionId: UUID) async throws -> Subscription {
+        let rows: [SupabaseSubscriptionRow] = try await client.from("subscriptions")
+            .update(["status": Subscription.Status.paused.rawValue]).eq("id", value: subscriptionId).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Subscription") }
+        return row.toDomain()
+    }
+
+    func resume(subscriptionId: UUID) async throws -> Subscription {
+        let rows: [SupabaseSubscriptionRow] = try await client.from("subscriptions")
+            .update(["status": Subscription.Status.active.rawValue]).eq("id", value: subscriptionId).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Subscription") }
+        return row.toDomain()
+    }
+
+    // Dunning (H5): failed_attempts/next_retry_at/grace_period_ends_at live on
+    // the subscriptions row itself (migration 0015) rather than a separate
+    // table — there is exactly one live dunning cycle per subscription at a
+    // time, unlike visit_events' append-only history of many transitions.
+    func dunningState(subscriptionId: UUID) async throws -> DunningState? {
+        let rows: [SupabaseDunningRow] = try await client.from("subscriptions")
+            .select("id, failed_attempts, next_retry_at, grace_period_ends_at").eq("id", value: subscriptionId).execute().value
+        guard let row = rows.first, row.failedAttempts > 0 else { return nil }
+        return row.toDomain()
+    }
+
+    func recordDunningState(_ state: DunningState) async throws {
+        struct Update: Encodable {
+            let failedAttempts: Int
+            let nextRetryAt: String?
+            let gracePeriodEndsAt: String?
+            enum CodingKeys: String, CodingKey {
+                case failedAttempts = "failed_attempts", nextRetryAt = "next_retry_at", gracePeriodEndsAt = "grace_period_ends_at"
+            }
+        }
+        let update = Update(
+            failedAttempts: state.failedAttempts,
+            nextRetryAt: state.nextRetryAt.map { ISO8601DateFormatter().string(from: $0) },
+            gracePeriodEndsAt: state.gracePeriodEndsAt.map { ISO8601DateFormatter().string(from: $0) }
+        )
+        try await client.from("subscriptions").update(update).eq("id", value: state.subscriptionId).execute()
     }
 }
 
@@ -798,6 +1289,411 @@ private struct SupabaseVisitRow: Decodable {
         Visit(id: id, userId: userId, petId: petId, vetId: vetId, circuitId: circuitId,
               status: Visit.VisitStatus(rawValue: status) ?? .requested,
               scheduledAt: scheduledAt, completedAt: completedAt, notes: notes, paymentId: paymentId)
+    }
+}
+
+final class SupabaseNotificationPreferencesRepository: NotificationPreferencesRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func preferences(userId: UUID) async throws -> NotificationPreferences {
+        let rows: [SupabaseNotificationPreferencesRow] = try await client
+            .from("notification_preferences").select().eq("user_id", value: userId)
+            .execute().value
+        // No saved row yet = the all-on-except-promotions default, not an error.
+        return rows.first?.toDomain() ?? NotificationPreferences(userId: userId)
+    }
+
+    func save(_ preferences: NotificationPreferences) async throws -> NotificationPreferences {
+        let upsert = SupabaseNotificationPreferencesRow(preferences: preferences)
+        let rows: [SupabaseNotificationPreferencesRow] = try await client
+            .from("notification_preferences").upsert(upsert, onConflict: "user_id").select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+}
+
+// C8: server-side FTS override, per plan §3 C8's "Postgres FTS is enough" —
+// `.textSearch` against the generated `search_vector` column added in
+// 0022_search_fts.sql, using the SDK's `TextSearchType` the same way `.eq`/
+// `.in` are used elsewhere in this file for other filtered queries.
+extension SupabaseCircuitRepository {
+    func searchCircuits(term: String, area: String?) async throws -> [Circuit] {
+        let needle = term.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return try await listCircuits(area: area) }
+        // Vet name isn't a column on `circuits` itself, so this searches the
+        // joined vet's tsvector via `vet.search_vector` — falls back to a
+        // client-side area/vet-name filter if the embedded-resource text
+        // search syntax isn't supported by the SDK version in use.
+        var query = client.from("circuits").select("*, vet:vets!inner(*), schedule:schedule_slots(*)")
+        if let area { query = query.eq("cluster_area", value: area) }
+        do {
+            let rows: [SupabaseCircuitRow] = try await query
+                .or("cluster_area.ilike.%\(needle)%,vets.search_vector.fts.\(needle)")
+                .execute().value
+            return rows.map { $0.toDomain() }
+        } catch {
+            // Same client-side fallback the default protocol extension uses —
+            // keeps search available even if the embedded `.or` filter above
+            // isn't accepted by a given PostgREST/SDK version.
+            let circuits = try await listCircuits(area: area)
+            return try await self.searchCircuitsFallback(circuits, term: needle)
+        }
+    }
+
+    private func searchCircuitsFallback(_ circuits: [Circuit], term: String) async throws -> [Circuit] {
+        let lower = term.lowercased()
+        return circuits.filter {
+            $0.clusterArea.lowercased().contains(lower) || ($0.vet?.name.lowercased().contains(lower) ?? false)
+        }
+    }
+}
+
+extension SupabaseCatalogRepository {
+    func searchServices(term: String, vertical: Vertical?) async throws -> [Service] {
+        let needle = term.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return try await listServices(vertical: vertical) }
+        var query = client.from("services")
+            .select("*, service_variants(*), addons(*)")
+            .eq("is_active", value: true)
+        if let vertical {
+            let categories = ServiceCategory.allCases.filter { $0.vertical == vertical }.map(\.rawValue)
+            query = query.in("category", values: categories)
+        }
+        let rows: [SupabaseServiceRow] = try await query
+            .textSearch("search_vector", query: needle, config: "english")
+            .execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+final class SupabaseAppConfigRepository: AppConfigRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    /// O7/O8: single public-read singleton row (see migration) — no auth
+    /// header required, so this must work before sign-in too.
+    func fetchConfig() async throws -> RemoteAppConfig {
+        let rows: [SupabaseAppConfigRow] = try await client
+            .from("app_config").select().eq("id", value: 1)
+            .execute().value
+        guard let row = rows.first else { throw DomainError.notFound("App config") }
+        return row.toDomain()
+    }
+}
+
+private struct SupabaseNotificationPreferencesRow: Codable {
+    let userId: UUID
+    let bookingUpdates: Bool
+    let chatMessages: Bool
+    let vaccinationReminders: Bool
+    let promotions: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id", bookingUpdates = "booking_updates", chatMessages = "chat_messages"
+        case vaccinationReminders = "vaccination_reminders", promotions
+    }
+
+    init(preferences: NotificationPreferences) {
+        userId = preferences.userId
+        bookingUpdates = preferences.bookingUpdates
+        chatMessages = preferences.chatMessages
+        vaccinationReminders = preferences.vaccinationReminders
+        promotions = preferences.promotions
+    }
+
+    func toDomain() -> NotificationPreferences {
+        NotificationPreferences(userId: userId, bookingUpdates: bookingUpdates, chatMessages: chatMessages,
+                                 vaccinationReminders: vaccinationReminders, promotions: promotions)
+    }
+}
+
+// MARK: - A9 household
+
+final class SupabaseHouseholdRepository: HouseholdRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func myHousehold(userId: UUID) async throws -> Household? {
+        let memberRows: [SupabaseHouseholdMemberRow] = try await client
+            .from("household_members").select().eq("user_id", value: userId)
+            .execute().value
+        guard let membership = memberRows.first else { return nil }
+        let rows: [SupabaseHouseholdRow] = try await client
+            .from("households").select().eq("id", value: membership.householdId)
+            .execute().value
+        return rows.first?.toDomain()
+    }
+
+    func createHousehold(name: String, ownerId: UUID) async throws -> Household {
+        struct Insert: Encodable {
+            let name: String
+            let ownerId: UUID
+            enum CodingKeys: String, CodingKey { case name, ownerId = "owner_id" }
+        }
+        let rows: [SupabaseHouseholdRow] = try await client
+            .from("households").insert(Insert(name: name, ownerId: ownerId)).select()
+            .execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        // The owner is a member of their own household too, so `myHousehold`
+        // and `members` see them the same way any invited member would be.
+        struct MemberInsert: Encodable {
+            let householdId: UUID
+            let userId: UUID
+            let role: String
+            enum CodingKeys: String, CodingKey { case householdId = "household_id", userId = "user_id", role }
+        }
+        try await client.from("household_members")
+            .insert(MemberInsert(householdId: row.id, userId: ownerId, role: "owner"))
+            .execute()
+        return row.toDomain()
+    }
+
+    func members(householdId: UUID) async throws -> [HouseholdMember] {
+        let rows: [SupabaseHouseholdMemberRow] = try await client
+            .from("household_members").select().eq("household_id", value: householdId)
+            .execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func invite(householdId: UUID, phone: String) async throws -> HouseholdMember {
+        // The invitee's `user_id` isn't known yet — this inserts a
+        // placeholder member row keyed by phone, matched to a real user_id
+        // by a server-side trigger/Edge Function once that phone signs up
+        // (mirrors the referral flow's pending-until-joined shape).
+        struct Insert: Encodable {
+            let householdId: UUID
+            let invitedPhone: String
+            let role: String
+            enum CodingKeys: String, CodingKey { case householdId = "household_id", invitedPhone = "invited_phone", role }
+        }
+        let rows: [SupabaseHouseholdMemberRow] = try await client
+            .from("household_members")
+            .insert(Insert(householdId: householdId, invitedPhone: phone, role: "member")).select()
+            .execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func removeMember(householdId: UUID, memberId: UUID) async throws {
+        try await client.from("household_members").delete().eq("id", value: memberId).execute()
+    }
+}
+
+private struct SupabaseHouseholdRow: Decodable {
+    let id: UUID
+    let name: String
+    let ownerId: UUID
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, ownerId = "owner_id", createdAt = "created_at"
+    }
+
+    func toDomain() -> Household {
+        Household(id: id, name: name, ownerId: ownerId, createdAt: createdAt)
+    }
+}
+
+private struct SupabaseHouseholdMemberRow: Decodable {
+    let id: UUID
+    let householdId: UUID
+    let userId: UUID
+    let role: String
+    let invitedPhone: String?
+    let joinedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, role
+        case householdId = "household_id", userId = "user_id", invitedPhone = "invited_phone", joinedAt = "joined_at"
+    }
+
+    func toDomain() -> HouseholdMember {
+        HouseholdMember(id: id, householdId: householdId, userId: userId,
+                         role: HouseholdMember.Role(rawValue: role) ?? .member,
+                         invitedPhone: invitedPhone, joinedAt: joinedAt)
+    }
+}
+
+// MARK: - C10 waitlist
+
+final class SupabaseWaitlistRepository: WaitlistRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func join(userId: UUID, addressId: UUID?, latitude: Double, longitude: Double, areaLabel: String?) async throws -> WaitlistEntry {
+        struct Insert: Encodable {
+            let userId: UUID
+            let addressId: UUID?
+            let latitude: Double
+            let longitude: Double
+            let areaLabel: String?
+            enum CodingKeys: String, CodingKey {
+                case userId = "user_id", addressId = "address_id", latitude, longitude, areaLabel = "area_label"
+            }
+        }
+        // Upsert on the (user_id, address_id) unique constraint (0021_waitlist.sql)
+        // so a repeat tap is a no-op, matching the mock's dedup behavior.
+        let rows: [SupabaseWaitlistRow] = try await client
+            .from("waitlist_entries")
+            .upsert(Insert(userId: userId, addressId: addressId, latitude: latitude, longitude: longitude, areaLabel: areaLabel),
+                    onConflict: "user_id,address_id")
+            .select()
+            .execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func countNear(latitude: Double, longitude: Double, radiusKm: Double) async throws -> Int {
+        let count: Int = try await client.rpc("waitlist_count_near", params: [
+            "p_lat": latitude, "p_lng": longitude, "radius_km": radiusKm,
+        ]).execute().value
+        return count
+    }
+
+    func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool {
+        var query = client.from("waitlist_entries").select("id").eq("user_id", value: userId)
+        query = addressId.map { query.eq("address_id", value: $0) } ?? query.is("address_id", value: nil)
+        let rows: [SupabaseWaitlistRow] = try await query.execute().value
+        return !rows.isEmpty
+    }
+}
+
+private struct SupabaseWaitlistRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let addressId: UUID?
+    let latitude: Double
+    let longitude: Double
+    let areaLabel: String?
+    let joinedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, latitude, longitude
+        case userId = "user_id", addressId = "address_id", areaLabel = "area_label", joinedAt = "joined_at"
+    }
+
+    func toDomain() -> WaitlistEntry {
+        WaitlistEntry(id: id, userId: userId, addressId: addressId, latitude: latitude, longitude: longitude, areaLabel: areaLabel, joinedAt: joinedAt)
+    }
+}
+
+private struct SupabaseAppConfigRow: Decodable {
+    let minSupportedVersion: String
+    let isMaintenanceMode: Bool
+    let maintenanceMessage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case minSupportedVersion = "min_supported_version", isMaintenanceMode = "is_maintenance_mode"
+        case maintenanceMessage = "maintenance_message"
+    }
+
+    func toDomain() -> RemoteAppConfig {
+        RemoteAppConfig(minSupportedVersion: minSupportedVersion, isMaintenanceMode: isMaintenanceMode, maintenanceMessage: maintenanceMessage)
+    }
+}
+
+// MARK: - Help centre, support tickets & notification centre (plan §M, §J7)
+
+final class SupabaseHelpRepository: HelpRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func listArticles() async throws -> [HelpArticle] {
+        // Public-read (M1: "remote content, not app-updated") — anyone can
+        // browse FAQs before signing in, mirroring the catalog tables.
+        let rows: [SupabaseHelpArticleRow] = try await client.from("help_articles").select().execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+final class SupabaseSupportRepository: SupportRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func createTicket(userId: UUID, visitId: UUID?, subject: String, body: String) async throws -> SupportTicket {
+        struct Insert: Encodable {
+            let userId: UUID, visitId: UUID?, subject: String, body: String
+            enum CodingKeys: String, CodingKey { case userId = "user_id", visitId = "visit_id", subject, body }
+        }
+        let rows: [SupabaseSupportTicketRow] = try await client.from("support_tickets")
+            .insert(Insert(userId: userId, visitId: visitId, subject: subject, body: body)).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func myTickets(userId: UUID) async throws -> [SupportTicket] {
+        let rows: [SupabaseSupportTicketRow] = try await client.from("support_tickets")
+            .select().eq("user_id", value: userId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+final class SupabaseAppNotificationRepository: AppNotificationRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func notifications(userId: UUID) async throws -> [AppNotification] {
+        let rows: [SupabaseAppNotificationRow] = try await client.from("notifications")
+            .select().eq("user_id", value: userId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func markRead(id: UUID) async throws {
+        try await client.from("notifications").update(["read_at": ISO8601DateFormatter().string(from: Date())])
+            .eq("id", value: id).execute()
+    }
+}
+
+private struct SupabaseHelpArticleRow: Decodable {
+    let id: UUID
+    let category: String
+    let question: String
+    let answer: String
+
+    func toDomain() -> HelpArticle {
+        HelpArticle(id: id, category: HelpArticle.Category(rawValue: category) ?? .account, question: question, answer: answer)
+    }
+}
+
+private struct SupabaseSupportTicketRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let visitId: UUID?
+    let subject: String
+    let body: String
+    let status: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, subject, body, status
+        case userId = "user_id", visitId = "visit_id", createdAt = "created_at"
+    }
+
+    func toDomain() -> SupportTicket {
+        SupportTicket(id: id, userId: userId, visitId: visitId, subject: subject, body: body,
+                       status: SupportTicket.Status(rawValue: status) ?? .open, createdAt: createdAt)
+    }
+}
+
+private struct SupabaseAppNotificationRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let category: String
+    let title: String
+    let body: String
+    let sentAt: Date?
+    let createdAt: Date
+    let readAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, category, title, body
+        case userId = "user_id", sentAt = "sent_at", createdAt = "created_at", readAt = "read_at"
+    }
+
+    func toDomain() -> AppNotification {
+        AppNotification(id: id, userId: userId, category: AppNotification.Category(rawValue: category) ?? .promotion,
+                         title: title, body: body, sentAt: sentAt, createdAt: createdAt, readAt: readAt)
     }
 }
 

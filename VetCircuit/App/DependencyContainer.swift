@@ -30,10 +30,23 @@ final class DependencyContainer {
     let visitOTPRepository: VisitOTPRepository
     let consentRepository: ConsentRepository
     let accountRepository: AccountRepository
+    let packageRepository: PackageRepository
+    let notificationPreferencesRepository: NotificationPreferencesRepository
+    let appConfigRepository: AppConfigRepository
+    let helpRepository: HelpRepository
+    let supportRepository: SupportRepository
+    let appNotificationRepository: AppNotificationRepository
+    let petWeightRepository: PetWeightRepository
+    let vaccinationRepository: VaccinationRepository
+    let prescriptionRepository: PrescriptionRepository
+    /// C11: 24x7 emergency clinic directory.
+    let emergencyClinicRepository: EmergencyClinicRepository
+    let householdRepository: HouseholdRepository
+    let waitlistRepository: WaitlistRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
-        // if AppConfig.isBackendConfigured { use Supabase*Repository } else { use Mock*Repository }
+        // if RemoteAppConfig.isBackendConfigured { use Supabase*Repository } else { use Mock*Repository }
         self.authRepository = MockAuthRepository()
         self.circuitRepository = MockCircuitRepository()
         self.visitRepository = MockVisitRepository()
@@ -58,6 +71,18 @@ final class DependencyContainer {
         self.visitOTPRepository = MockVisitOTPRepository()
         self.consentRepository = MockConsentRepository()
         self.accountRepository = MockAccountRepository()
+        self.packageRepository = MockPackageRepository()
+        self.notificationPreferencesRepository = MockNotificationPreferencesRepository()
+        self.appConfigRepository = MockAppConfigRepository()
+        self.helpRepository = MockHelpRepository()
+        self.supportRepository = MockSupportRepository()
+        self.appNotificationRepository = MockAppNotificationRepository()
+        self.petWeightRepository = MockPetWeightRepository()
+        self.vaccinationRepository = MockVaccinationRepository()
+        self.prescriptionRepository = MockPrescriptionRepository()
+        self.emergencyClinicRepository = MockEmergencyClinicRepository()
+        self.householdRepository = MockHouseholdRepository()
+        self.waitlistRepository = MockWaitlistRepository()
     }
 
     // MARK: Use case factories
@@ -76,6 +101,9 @@ final class DependencyContainer {
     func subscribeToPlanUseCase() -> SubscribeToPlanUseCase {
         SubscribeToPlanUseCase(subscriptionRepository: subscriptionRepository, paymentRepository: paymentRepository)
     }
+    func manageSubscriptionUseCase() -> ManageSubscriptionUseCase {
+        ManageSubscriptionUseCase(subscriptionRepository: subscriptionRepository)
+    }
     func sendChatMessageUseCase() -> SendChatMessageUseCase { SendChatMessageUseCase(chatRepository: chatRepository) }
     func submitReviewUseCase() -> SubmitReviewUseCase { SubmitReviewUseCase(reviewRepository: reviewRepository) }
     func managePetsUseCase() -> ManagePetsUseCase { ManagePetsUseCase(petRepository: petRepository) }
@@ -90,4 +118,24 @@ final class DependencyContainer {
     func holdSlotUseCase() -> HoldSlotUseCase { HoldSlotUseCase(circuitRepository: circuitRepository, slotHoldRepository: slotHoldRepository) }
     func manageCartUseCase() -> ManageCartUseCase { ManageCartUseCase(cartRepository: cartRepository) }
     func getQuoteUseCase() -> GetQuoteUseCase { GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository) }
+    func browsePackagesUseCase() -> BrowsePackagesUseCase { BrowsePackagesUseCase(packageRepository: packageRepository) }
+    func buyPackageUseCase() -> BuyPackageUseCase {
+        BuyPackageUseCase(packageRepository: packageRepository, catalogRepository: catalogRepository, cartRepository: cartRepository)
+    }
+    func manageNotificationPreferencesUseCase() -> ManageNotificationPreferencesUseCase {
+        ManageNotificationPreferencesUseCase(repository: notificationPreferencesRepository)
+    }
+    func checkAppConfigUseCase() -> CheckAppConfigUseCase { CheckAppConfigUseCase(repository: appConfigRepository) }
+    func getHelpArticlesUseCase() -> GetHelpArticlesUseCase { GetHelpArticlesUseCase(repository: helpRepository) }
+    func contactSupportUseCase() -> ContactSupportUseCase { ContactSupportUseCase(repository: supportRepository) }
+    func getNotificationCenterUseCase() -> GetNotificationCenterUseCase { GetNotificationCenterUseCase(repository: appNotificationRepository) }
+    func managePetWeightsUseCase() -> ManagePetWeightsUseCase { ManagePetWeightsUseCase(repository: petWeightRepository) }
+    func manageVaccinationsUseCase() -> ManageVaccinationsUseCase { ManageVaccinationsUseCase(repository: vaccinationRepository) }
+    func managePrescriptionsUseCase() -> ManagePrescriptionsUseCase { ManagePrescriptionsUseCase(repository: prescriptionRepository) }
+    func listEmergencyClinicsUseCase() -> ListEmergencyClinicsUseCase { ListEmergencyClinicsUseCase(repository: emergencyClinicRepository) }
+    func getVetProfileUseCase() -> GetVetProfileUseCase { GetVetProfileUseCase(reviewRepository: reviewRepository) }
+    func manageHouseholdUseCase() -> ManageHouseholdUseCase { ManageHouseholdUseCase(householdRepository: householdRepository) }
+    func searchUseCase() -> SearchUseCase { SearchUseCase(circuitRepository: circuitRepository, catalogRepository: catalogRepository) }
+    func rebookLastVisitUseCase() -> RebookLastVisitUseCase { RebookLastVisitUseCase(visitRepository: visitRepository, circuitRepository: circuitRepository) }
+    func joinWaitlistUseCase() -> JoinWaitlistUseCase { JoinWaitlistUseCase(waitlistRepository: waitlistRepository) }
 }

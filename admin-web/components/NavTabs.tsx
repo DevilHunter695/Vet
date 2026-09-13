@@ -9,6 +9,8 @@ const TABS = [
   { href: "/circuits", label: "Circuits" },
   { href: "/disputes", label: "Disputes" },
   { href: "/payouts", label: "Payouts" },
+  { href: "/flags", label: "Flags" },
+  { href: "/visits", label: "Visits" },
 ];
 
 export default function NavTabs() {

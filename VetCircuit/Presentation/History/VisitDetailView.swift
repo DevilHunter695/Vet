@@ -8,9 +8,14 @@ struct VisitDetailView: View {
     @State private var activeCallSession: CallSession?
     @State private var callErrorMessage: String?
     @State private var visitOTP: VisitOTP?
+    @State private var showingReportProblem = false
+    @State private var followUpService: Service?
+    @State private var followUpPet: Pet?
 
     private let startCallUseCase = DependencyContainer.shared.startCallUseCase()
     private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
+    private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
+    private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
 
     var body: some View {
         ScrollView {
@@ -125,6 +130,29 @@ struct VisitDetailView: View {
                 if visit.status == .completed {
                     PrimaryButton(title: "Rate this visit") { showingReview = true }
                         .appearAnimation(delay: 0.1)
+
+                    // K8 (P0): a dispute is just a support ticket carrying
+                    // this visit's id — same queue, same audit trail.
+                    Button {
+                        Haptics.tap()
+                        showingReportProblem = true
+                    } label: {
+                        ActionRow(title: "Report a problem with this visit", systemImage: "exclamationmark.bubble.fill", tint: Theme.danger)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .appearAnimation(delay: 0.12)
+                }
+
+                // K5: 1-tap follow-up — same pet, same vet/circuit, the free
+                // "within 14 days" variant preselected, no re-picking anything.
+                if FollowUpBookingPolicy.isEligible(visit: visit) {
+                    Button {
+                        Task { await prepareFollowUp() }
+                    } label: {
+                        ActionRow(title: "Book free follow-up", systemImage: "arrow.uturn.forward.circle.fill", tint: Theme.accent)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .appearAnimation(delay: 0.12)
                 }
             }
             .padding()
@@ -138,10 +166,28 @@ struct VisitDetailView: View {
         .sheet(isPresented: $showingReschedule) {
             RescheduleVisitView(visit: visit)
         }
+        .sheet(isPresented: $showingReportProblem) {
+            ContactSupportView(visitId: visit.id, subjectPlaceholder: "Problem with visit on \(visit.scheduledAt.formatted(date: .abbreviated, time: .omitted))")
+        }
+        .sheet(item: $followUpService) { service in
+            NavigationStack {
+                ServiceDetailView(service: service, pet: followUpPet, preselectedVariantId: service.variants.first(where: \.isFollowUp)?.id)
+            }
+        }
         .task {
             guard visit.status == .arrived else { return }
             visitOTP = try? await visitOTPRepository.generateOTP(visitId: visit.id)
         }
+    }
+
+    /// K5: resolves the same pet and the consult service's free follow-up
+    /// variant before presenting booking — the customer never re-selects
+    /// either.
+    private func prepareFollowUp() async {
+        guard let services = try? await getCatalogUseCase.execute(vertical: .vet),
+              let service = services.first(where: { $0.variants.contains(where: \.isFollowUp) }) else { return }
+        followUpPet = try? await managePetsUseCase.list(ownerId: visit.userId).first { $0.id == visit.petId }
+        followUpService = service
     }
 }
 

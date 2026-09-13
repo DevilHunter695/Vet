@@ -26,9 +26,13 @@ actor MockAuthRepository: AuthRepository {
 }
 
 actor MockCircuitRepository: CircuitRepository {
+    /// L1/L3: a vet must be verified before "going live" — an unverified vet
+    /// was previously visible and bookable here, which is the real gap plan
+    /// §L1/§L3 call out, not just a missing badge on an already-safe list.
     func listCircuits(area: String?) async throws -> [Circuit] {
-        guard let area else { return MockData.circuits }
-        return MockData.circuits.filter { $0.clusterArea.localizedCaseInsensitiveContains(area) }
+        let verifiedOnly = MockData.circuits.filter { $0.vet?.verificationStatus == .verified }
+        guard let area else { return verifiedOnly }
+        return verifiedOnly.filter { $0.clusterArea.localizedCaseInsensitiveContains(area) }
     }
 
     func circuit(id: UUID) async throws -> Circuit {
@@ -248,6 +252,20 @@ actor MockCatalogRepository: CatalogRepository {
     }
 }
 
+actor MockPackageRepository: PackageRepository {
+    func listPackages(vertical: Vertical?) async throws -> [Package] {
+        guard let vertical else { return MockData.packages }
+        return MockData.packages.filter { $0.vertical == vertical }
+    }
+
+    func package(id: UUID) async throws -> Package {
+        guard let package = MockData.packages.first(where: { $0.id == id }) else {
+            throw DomainError.notFound("Package")
+        }
+        return package
+    }
+}
+
 actor MockVisitRepository: VisitRepository {
     private var visits: [Visit] = MockData.visits
     /// Simulates the DB's `idempotency_keys` table (Appendix D): the same
@@ -331,6 +349,7 @@ actor MockInvoiceRepository: InvoiceRepository {
 
 actor MockSubscriptionRepository: SubscriptionRepository {
     private var subscription: Subscription?
+    private var dunning: DunningState?
 
     func currentSubscription(userId: UUID) async throws -> Subscription? { subscription }
 
@@ -343,6 +362,35 @@ actor MockSubscriptionRepository: SubscriptionRepository {
 
     func cancel(subscriptionId: UUID) async throws {
         if subscription?.id == subscriptionId { subscription?.status = .cancelled }
+    }
+
+    func changePlan(subscriptionId: UUID, to plan: Subscription.PlanType) async throws -> Subscription {
+        guard var sub = subscription, sub.id == subscriptionId else { throw DomainError.notFound("Subscription") }
+        sub.planType = plan
+        subscription = sub
+        return sub
+    }
+
+    func pause(subscriptionId: UUID) async throws -> Subscription {
+        guard var sub = subscription, sub.id == subscriptionId else { throw DomainError.notFound("Subscription") }
+        sub.status = .paused
+        subscription = sub
+        return sub
+    }
+
+    func resume(subscriptionId: UUID) async throws -> Subscription {
+        guard var sub = subscription, sub.id == subscriptionId else { throw DomainError.notFound("Subscription") }
+        sub.status = .active
+        subscription = sub
+        return sub
+    }
+
+    func dunningState(subscriptionId: UUID) async throws -> DunningState? {
+        dunning?.subscriptionId == subscriptionId ? dunning : nil
+    }
+
+    func recordDunningState(_ state: DunningState) async throws {
+        dunning = state
     }
 }
 
@@ -385,9 +433,25 @@ actor MockChatRepository: ChatRepository {
 }
 
 actor MockReviewRepository: ReviewRepository {
+    private var submitted: [Review] = []
+
     func submit(visitId: UUID, rating: Int, comment: String?) async throws -> Review {
-        Review(id: UUID(), visitId: visitId, vetId: MockData.circuits[0].vetId, userId: MockData.user.id,
-               rating: rating, comment: comment, createdAt: .now)
+        let review = Review(id: UUID(), visitId: visitId, vetId: MockData.circuits[0].vetId, userId: MockData.user.id,
+                             rating: rating, comment: comment, createdAt: .now)
+        submitted.append(review)
+        return review
+    }
+
+    func reviews(vetId: UUID) async throws -> [Review] {
+        (MockData.reviews[vetId] ?? []) + submitted.filter { $0.vetId == vetId }
+    }
+}
+
+/// C11: mock 24x7 emergency clinic list — a handful of real Bangalore-area
+/// examples so the emergency path has something plausible to route to.
+actor MockEmergencyClinicRepository: EmergencyClinicRepository {
+    func listClinics() async throws -> [EmergencyClinic] {
+        MockData.emergencyClinics
     }
 }
 
@@ -409,6 +473,46 @@ actor MockPetRepository: PetRepository {
 
     func deletePet(id: UUID) async throws {
         pets.removeAll { $0.id == id }
+    }
+}
+
+actor MockPetWeightRepository: PetWeightRepository {
+    private var entries: [PetWeightEntry] = []
+
+    func history(petId: UUID) async throws -> [PetWeightEntry] {
+        entries.filter { $0.petId == petId }
+    }
+
+    func addEntry(_ entry: PetWeightEntry) async throws -> PetWeightEntry {
+        entries.append(entry)
+        return entry
+    }
+}
+
+actor MockVaccinationRepository: VaccinationRepository {
+    // Seeded so PetDetailView has something to render before anyone logs one.
+    private var vaccinations: [Vaccination] = [
+        Vaccination(id: UUID(), petId: MockData.user.pets.first?.id ?? UUID(), vaccineName: "Rabies",
+                    givenAt: Calendar.current.date(byAdding: .month, value: -11, to: .now),
+                    nextDueAt: Calendar.current.date(byAdding: .month, value: 1, to: .now) ?? .now,
+                    batchNumber: "RB-2291"),
+    ]
+
+    func history(petId: UUID) async throws -> [Vaccination] {
+        vaccinations.filter { $0.petId == petId }
+    }
+
+    func record(_ vaccination: Vaccination) async throws -> Vaccination {
+        vaccinations.append(vaccination)
+        return vaccination
+    }
+}
+
+actor MockPrescriptionRepository: PrescriptionRepository {
+    private var prescriptions: [Prescription] = []
+
+    func history(petId: UUID) async throws -> [Prescription] {
+        prescriptions.filter { $0.petId == petId }
     }
 }
 
@@ -502,19 +606,40 @@ enum MockData {
     static let vets: [Vet] = [
         Vet(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
             name: "Dr. Rohan Mehta", licenseNumber: "VCI-2024-11234",
-            verificationStatus: .verified, rating: 4.8, reviewCount: 132, photoURL: nil),
+            verificationStatus: .verified, rating: 4.8, reviewCount: 132, photoURL: nil,
+            bio: "Small-animal vet with a focus on gentle, at-home care for anxious pets.",
+            yearsOfExperience: 9, languages: ["English", "Hindi"], gender: .male,
+            speciesHandled: [.dog, .cat]),
         Vet(id: UUID(), name: "Dr. Priya Nair", licenseNumber: "VCI-2023-88213",
-            verificationStatus: .verified, rating: 4.9, reviewCount: 211, photoURL: nil),
+            verificationStatus: .verified, rating: 4.9, reviewCount: 211, photoURL: nil,
+            bio: "12 years treating dogs and cats across Bangalore, with a special interest in dermatology.",
+            yearsOfExperience: 12, languages: ["English", "Hindi", "Kannada"], gender: .female,
+            speciesHandled: [.dog, .cat, .bird]),
         Vet(id: UUID(), name: "Dr. Arjun Kapoor", licenseNumber: "VCI-2022-55021",
-            verificationStatus: .verified, rating: 4.6, reviewCount: 87, photoURL: nil),
+            verificationStatus: .verified, rating: 4.6, reviewCount: 87, photoURL: nil,
+            bio: "General practitioner focused on preventive care and vaccinations.",
+            yearsOfExperience: 6, languages: ["English", "Hindi"], gender: .male,
+            speciesHandled: [.dog, .cat, .other]),
         Vet(id: UUID(), name: "Dr. Sneha Reddy", licenseNumber: "VCI-2024-90344",
-            verificationStatus: .verified, rating: 4.7, reviewCount: 156, photoURL: nil),
+            verificationStatus: .verified, rating: 4.7, reviewCount: 156, photoURL: nil,
+            bio: "Passionate about grooming and dental care for dogs of all breeds.",
+            yearsOfExperience: 7, languages: ["English", "Telugu", "Kannada"], gender: .female,
+            speciesHandled: [.dog]),
         Vet(id: UUID(), name: "Dr. Vikram Singh", licenseNumber: "VCI-2021-67789",
-            verificationStatus: .pending, rating: 4.3, reviewCount: 29, photoURL: nil),
+            verificationStatus: .pending, rating: 4.3, reviewCount: 29, photoURL: nil,
+            bio: "Newly onboarded — verification in progress.",
+            yearsOfExperience: 4, languages: ["English", "Hindi"], gender: .male,
+            speciesHandled: [.dog, .cat]),
         Vet(id: UUID(), name: "Dr. Meera Iyer", licenseNumber: "VCI-2023-40012",
-            verificationStatus: .verified, rating: 5.0, reviewCount: 64, photoURL: nil),
+            verificationStatus: .verified, rating: 5.0, reviewCount: 64, photoURL: nil,
+            bio: "Diagnostics specialist — comfortable with everything from blood panels to X-rays at home.",
+            yearsOfExperience: 10, languages: ["English", "Tamil"], gender: .female,
+            speciesHandled: [.dog, .cat, .bird, .other]),
         Vet(id: UUID(), name: "Dr. Karthik Rao", licenseNumber: "VCI-2020-33456",
-            verificationStatus: .verified, rating: 4.5, reviewCount: 198, photoURL: nil),
+            verificationStatus: .verified, rating: 4.5, reviewCount: 198, photoURL: nil,
+            bio: "14 years of practice, with a soft spot for senior pet wellness.",
+            yearsOfExperience: 14, languages: ["English", "Kannada"], gender: .male,
+            speciesHandled: [.dog, .cat]),
     ]
 
     private static let areas = [
@@ -555,6 +680,14 @@ enum MockData {
                 Addon(id: UUID(), name: "Nail trim", priceMinorUnits: 14_900),
                 Addon(id: UUID(), name: "Deworming", priceMinorUnits: 24_900),
                 Addon(id: UUID(), name: "Blood sample pickup", priceMinorUnits: 39_900),
+            ],
+            faqs: [
+                FAQ(id: UUID(), question: "Do I need to be present for the whole visit?",
+                    answer: "Yes — an adult needs to be home to let the vet in and stay with the pet."),
+                FAQ(id: UUID(), question: "What if my pet needs a follow-up?",
+                    answer: "Follow-ups within 14 days of this visit are free — just book the \"Follow-up\" variant."),
+                FAQ(id: UUID(), question: "Can I reschedule after booking?",
+                    answer: "Yes, up to 4 hours before the slot without any fee."),
             ]
         ),
         Service(
@@ -620,4 +753,225 @@ enum MockData {
             ]
         ),
     ]
+
+    /// D4: example packages/bundles, priced below buying the included
+    /// services separately — `discountMinorUnits(catalog:)` computes and
+    /// shows that saving rather than just asserting it.
+    static let packages: [Package] = [
+        Package(
+            id: UUID(), name: "Puppy first-year",
+            packageDescription: "4 home consultations + 3 core vaccines through your puppy's first year.",
+            items: [
+                PackageItem(id: UUID(), serviceId: services[0].id, quantity: 4), // Home consultation
+                PackageItem(id: UUID(), serviceId: services[1].id, quantity: 3), // Vaccination
+            ],
+            priceMinorUnits: 349_900
+        ),
+        Package(
+            id: UUID(), name: "Senior wellness quarterly",
+            packageDescription: "Quarterly consultation + diagnostics panel for pets 7 years and older.",
+            items: [
+                PackageItem(id: UUID(), serviceId: services[0].id, quantity: 1),
+                PackageItem(id: UUID(), serviceId: services[3].id, quantity: 1), // Sample pickup & diagnostics
+            ],
+            priceMinorUnits: 129_900
+        ),
+        Package(
+            id: UUID(), name: "Grooming & deworming combo",
+            packageDescription: "A full groom plus a routine deworming dose in one visit.",
+            items: [
+                PackageItem(id: UUID(), serviceId: services[2].id, quantity: 1), // Grooming
+                PackageItem(id: UUID(), serviceId: services[4].id, quantity: 1), // Deworming
+            ],
+            priceMinorUnits: 99_900
+        ),
+    ]
+
+    /// C5: sample reviews per vet, used to build the ratings histogram and
+    /// review list on the vet detail screen.
+    static let reviews: [UUID: [Review]] = {
+        var result: [UUID: [Review]] = [:]
+        for vet in vets where vet.reviewCount > 0 {
+            let ratings = [5, 5, 4, 5, 3, 4, 5, 2, 5, 4]
+            result[vet.id] = ratings.enumerated().map { index, rating in
+                Review(id: UUID(), visitId: UUID(), vetId: vet.id, userId: UUID(), rating: rating,
+                       comment: index % 3 == 0 ? "Very gentle with my dog, on time too." : nil,
+                       createdAt: Calendar.current.date(byAdding: .day, value: -index * 3, to: .now) ?? .now)
+            }
+        }
+        return result
+    }()
+
+    /// C11: a handful of real, well-known Bangalore 24x7 emergency clinics —
+    /// illustrative examples for the mock, not a claim of a live partnership.
+    static let emergencyClinics: [EmergencyClinic] = [
+        EmergencyClinic(id: UUID(), name: "CARE Veterinary Emergency & Referral Hospital",
+                         address: "80 Feet Road, Indiranagar, Bangalore", phone: "+918041234567",
+                         latitude: 12.9719, longitude: 77.6412, isOpen24x7: true),
+        EmergencyClinic(id: UUID(), name: "Cessna Lifeline Veterinary Hospital",
+                         address: "Sarjapur Road, Bellandur, Bangalore", phone: "+918049876543",
+                         latitude: 12.9260, longitude: 77.6762, isOpen24x7: true),
+        EmergencyClinic(id: UUID(), name: "Vet Care Corner 24x7 Clinic",
+                         address: "Koramangala 5th Block, Bangalore", phone: "+918022334455",
+                         latitude: 12.9352, longitude: 77.6146, isOpen24x7: true),
+    ]
+}
+
+actor MockNotificationPreferencesRepository: NotificationPreferencesRepository {
+    private var stored: [UUID: NotificationPreferences] = [:]
+
+    func preferences(userId: UUID) async throws -> NotificationPreferences {
+        stored[userId] ?? NotificationPreferences(userId: userId)
+    }
+
+    func save(_ preferences: NotificationPreferences) async throws -> NotificationPreferences {
+        stored[preferences.userId] = preferences
+        return preferences
+    }
+}
+
+actor MockAppConfigRepository: AppConfigRepository {
+    var config = RemoteAppConfig(minSupportedVersion: "1.0", isMaintenanceMode: false, maintenanceMessage: nil)
+
+    func fetchConfig() async throws -> RemoteAppConfig { config }
+}
+
+// MARK: - Help centre, support & notification centre (plan §M, §J7)
+
+actor MockHelpRepository: HelpRepository {
+    /// ~8-10 realistic entries covering booking/cancellation/payment/pets —
+    /// enough to make search and category grouping in `HelpCenterView`
+    /// meaningful without a backend.
+    private let articles: [HelpArticle] = [
+        HelpArticle(id: UUID(), category: .booking, question: "How do I book a visit?",
+                    answer: "Pick your address, choose a service and pet, then a slot from your circuit vet's schedule. You'll see the full price before you pay."),
+        HelpArticle(id: UUID(), category: .booking, question: "Can I book for more than one pet in the same visit?",
+                    answer: "Yes — add each pet on the service screen. The second pet onward is priced at a reduced additional-pet fee, shown in the breakdown."),
+        HelpArticle(id: UUID(), category: .cancellation, question: "What's the cancellation policy?",
+                    answer: "Cancel more than 4 hours before your slot for a full refund. Inside 4 hours, 50% is refunded. A no-show is charged in full — the vet has already blocked that slot for you."),
+        HelpArticle(id: UUID(), category: .cancellation, question: "How do I reschedule instead of cancelling?",
+                    answer: "Open the visit from the Visits tab and tap \"Reschedule this visit\" — you keep the same booking and chat history, just a new slot."),
+        HelpArticle(id: UUID(), category: .payment, question: "How long do refunds take?",
+                    answer: "Refunds are issued to your original payment method and typically reflect in 5-7 business days, depending on your bank/UPI app."),
+        HelpArticle(id: UUID(), category: .payment, question: "Can I pay the vet in cash or UPI at the visit?",
+                    answer: "Where available for your circuit, yes — choose \"Pay after visit\" at checkout instead of paying online."),
+        HelpArticle(id: UUID(), category: .payment, question: "Where can I find my invoice?",
+                    answer: "Every completed visit has a GST invoice attached in Visits → Visit detail."),
+        HelpArticle(id: UUID(), category: .pets, question: "How do I add or edit a pet's details?",
+                    answer: "Go to Profile → Pets to add a pet, or tap a pet to edit its details. Removing a pet keeps its past visit history intact."),
+        HelpArticle(id: UUID(), category: .pets, question: "Will I get reminders when a vaccination is due?",
+                    answer: "Yes, once your vet logs a vaccination during a visit, we schedule a reminder ahead of its next-due date."),
+        HelpArticle(id: UUID(), category: .visits, question: "What is the code my vet asks me to read out?",
+                    answer: "That's your start-of-visit OTP — reading it to the vet confirms the visit actually started. It's shown only to you, once, when the vet arrives."),
+        HelpArticle(id: UUID(), category: .account, question: "How do I delete my account and data?",
+                    answer: "Profile → Privacy & consent → Delete account. There's a 30-day window to change your mind before it's permanently purged (financial records are retained as required by law)."),
+    ]
+
+    func listArticles() async throws -> [HelpArticle] { articles }
+}
+
+actor MockSupportRepository: SupportRepository {
+    private var tickets: [SupportTicket] = []
+
+    func createTicket(userId: UUID, visitId: UUID?, subject: String, body: String) async throws -> SupportTicket {
+        let ticket = SupportTicket(id: UUID(), userId: userId, visitId: visitId, subject: subject, body: body, status: .open, createdAt: .now)
+        tickets.append(ticket)
+        return ticket
+    }
+
+    func myTickets(userId: UUID) async throws -> [SupportTicket] {
+        tickets.filter { $0.userId == userId }.sorted { $0.createdAt > $1.createdAt }
+    }
+}
+
+actor MockAppNotificationRepository: AppNotificationRepository {
+    private var stored: [AppNotification] = []
+    private var seeded = false
+
+    private func seedIfNeeded(userId: UUID) {
+        guard !seeded else { return }
+        seeded = true
+        stored = [
+            AppNotification(id: UUID(), userId: userId, category: .bookingUpdate, title: "Visit confirmed",
+                             body: "Your vet visit is confirmed for this week.", sentAt: .now.addingTimeInterval(-3600 * 26), createdAt: .now.addingTimeInterval(-3600 * 26), readAt: .now.addingTimeInterval(-3600 * 25)),
+            AppNotification(id: UUID(), userId: userId, category: .vaccinationDue, title: "Vaccination due soon",
+                             body: "Bruno's next vaccination is due in 7 days — book a slot to stay on schedule.", sentAt: .now.addingTimeInterval(-3600 * 3), createdAt: .now.addingTimeInterval(-3600 * 3), readAt: nil),
+        ]
+    }
+
+    func notifications(userId: UUID) async throws -> [AppNotification] {
+        seedIfNeeded(userId: userId)
+        return stored.filter { $0.userId == userId }.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func markRead(id: UUID) async throws {
+        guard let index = stored.firstIndex(where: { $0.id == id }) else { return }
+        stored[index].readAt = .now
+    }
+}
+
+// MARK: - A9 household
+
+actor MockHouseholdRepository: HouseholdRepository {
+    private var households: [Household] = []
+    private var membersByHousehold: [UUID: [HouseholdMember]] = [:]
+
+    func myHousehold(userId: UUID) async throws -> Household? {
+        households.first { household in
+            (membersByHousehold[household.id] ?? []).contains { $0.userId == userId }
+        }
+    }
+
+    func createHousehold(name: String, ownerId: UUID) async throws -> Household {
+        let household = Household(id: UUID(), name: name, ownerId: ownerId, createdAt: .now)
+        households.append(household)
+        membersByHousehold[household.id] = [
+            HouseholdMember(id: UUID(), householdId: household.id, userId: ownerId, role: .owner, invitedPhone: nil, joinedAt: .now)
+        ]
+        return household
+    }
+
+    func members(householdId: UUID) async throws -> [HouseholdMember] {
+        membersByHousehold[householdId] ?? []
+    }
+
+    func invite(householdId: UUID, phone: String) async throws -> HouseholdMember {
+        // Mock stand-in for "not yet a user" — a real invite resolves to a
+        // user row once the invitee signs up with this phone number.
+        let member = HouseholdMember(id: UUID(), householdId: householdId, userId: UUID(), role: .member, invitedPhone: phone, joinedAt: .now)
+        membersByHousehold[householdId, default: []].append(member)
+        return member
+    }
+
+    func removeMember(householdId: UUID, memberId: UUID) async throws {
+        membersByHousehold[householdId]?.removeAll { $0.id == memberId }
+    }
+}
+
+// MARK: - C10 waitlist
+
+actor MockWaitlistRepository: WaitlistRepository {
+    private var entries: [WaitlistEntry] = []
+
+    func join(userId: UUID, addressId: UUID?, latitude: Double, longitude: Double, areaLabel: String?) async throws -> WaitlistEntry {
+        // Dedup by (user, address) — matches the DB's unique constraint
+        // (0021_waitlist.sql) so tapping "join" twice is a no-op, not two rows.
+        if let existing = entries.first(where: { $0.userId == userId && $0.addressId == addressId }) {
+            return existing
+        }
+        let entry = WaitlistEntry(id: UUID(), userId: userId, addressId: addressId, latitude: latitude, longitude: longitude, areaLabel: areaLabel, joinedAt: .now)
+        entries.append(entry)
+        return entry
+    }
+
+    func countNear(latitude: Double, longitude: Double, radiusKm: Double) async throws -> Int {
+        let thresholdDegrees = radiusKm / 111.0 // ~111km per degree of latitude, coarse like matchCluster's mock
+        return entries.filter {
+            abs($0.latitude - latitude) < thresholdDegrees && abs($0.longitude - longitude) < thresholdDegrees
+        }.count
+    }
+
+    func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool {
+        entries.contains { $0.userId == userId && $0.addressId == addressId }
+    }
 }

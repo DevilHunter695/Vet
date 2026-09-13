@@ -44,11 +44,25 @@ struct TriageView: View {
                         PawMascot(size: 44, animated: false)
                         Text("Tell us what's going on").font(.brandTitle).brandDisplayText()
                     }
-                    Text("This isn't a diagnosis — it helps us point you to the right next step.")
+                    Text("This isn't a diagnosis — it helps us point you to the right next step. VetCircuit isn't an emergency service.")
                         .font(.brandBody)
                         .foregroundStyle(.secondary)
                 }
                 .appearAnimation()
+
+                // C11: the explicit emergency escalation, reachable from the
+                // same place a worried owner already is.
+                NavigationLink {
+                    EmergencyView()
+                } label: {
+                    Label("This is an emergency", systemImage: "exclamationmark.triangle.fill")
+                        .font(.brandHeadline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .foregroundStyle(.white)
+                        .background(Theme.danger, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(PressableStyle())
 
                 Picker("Pet type", selection: $viewModel.species) {
                     ForEach(Pet.Species.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
