@@ -66,13 +66,13 @@ enum VetEnRouteActivityManager {
     static func update(etaMinutes: Int?, status: Visit.VisitStatus) {
         guard let currentActivity else { return }
         let state = VetEnRouteAttributes.ContentState(etaMinutes: etaMinutes, status: status)
-        Task { await currentActivity.update(.init(state: state, staleDate: nil)) }
+        Task { [currentActivity] in await currentActivity.update(.init(state: state, staleDate: nil)) }
     }
 
     static func end() {
         guard let activity = currentActivity else { return }
         currentActivity = nil
-        Task { await activity.end(nil, dismissalPolicy: .immediate) }
+        Task { [activity] in await activity.end(nil, dismissalPolicy: .immediate) }
     }
 }
 #endif
