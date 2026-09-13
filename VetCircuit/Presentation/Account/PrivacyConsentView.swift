@@ -176,7 +176,7 @@ struct PrivacyConsentView: View {
             Text("Your account and data will be permanently deleted in \(DeletionRequest.softWindowDays) days. You can cancel any time before then. Financial records are retained as required by law.")
         }
         .sheet(item: $viewModel.exportedFileURL) { url in
-            ShareSheet(items: [url])
+            ShareSheet(activityItems: [url])
         }
     }
 
@@ -187,14 +187,6 @@ struct PrivacyConsentView: View {
         default: return purpose.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
-}
-
-private struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 #Preview {

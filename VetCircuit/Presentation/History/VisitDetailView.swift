@@ -9,13 +9,36 @@ struct VisitDetailView: View {
     @State private var callErrorMessage: String?
     @State private var visitOTP: VisitOTP?
     @State private var showingReportProblem = false
+    @State private var showingIncidentReport = false
     @State private var followUpService: Service?
     @State private var followUpPet: Pet?
+    @State private var showingTip = false
+    @State private var hasTipped = false
+    // F6: a pending vet-initiated reschedule proposal, if any.
+    @State private var pendingProposal: RescheduleProposal?
+    @State private var proposalActionMessage: String?
+    @State private var isRespondingToProposal = false
+    // F7: vet no-show reporting.
+    @State private var noShowMessage: String?
+    @State private var isReportingNoShow = false
+    // G9: an active gateway dispute against this visit's payment, if any.
+    @State private var activeDispute: PaymentDispute?
 
     private let startCallUseCase = DependencyContainer.shared.startCallUseCase()
+    private let paymentDisputeRepository = DependencyContainer.shared.paymentDisputeRepository
     private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
     private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
+    private let rescheduleProposalRepository = DependencyContainer.shared.rescheduleProposalRepository
+    private let respondToRescheduleProposalUseCase = DependencyContainer.shared.respondToRescheduleProposalUseCase()
+    private let reportVetNoShowUseCase = DependencyContainer.shared.reportVetNoShowUseCase()
+
+    /// F7: a visit stuck en route to being serviced, past its scheduled time
+    /// by the grace window, is eligible for the customer to report a no-show.
+    private var canReportVetNoShow: Bool {
+        (visit.status == .assigned || visit.status == .enRoute)
+            && Date().timeIntervalSince(visit.scheduledAt) / 60 >= NoShowPolicy.vetGraceWindowMinutes
+    }
 
     var body: some View {
         ScrollView {
@@ -34,6 +57,58 @@ struct VisitDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .appearAnimation()
+
+                // G9: a gateway dispute (chargeback) was opened against this
+                // visit's payment — surfaced so the customer isn't left
+                // confused about a hold on their money. Read-only: the
+                // customer can't act on it here, only see that it's happening.
+                if let activeDispute {
+                    PaymentDisputeStatusView(dispute: activeDispute)
+                        .appearAnimation(delay: 0.01)
+                }
+
+                // F6: vet-initiated reschedule accept/decline banner.
+                if let pendingProposal {
+                    Card {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Your vet proposed a new time", systemImage: "calendar.badge.exclamationmark")
+                                .font(.brandHeadline).foregroundStyle(Theme.warning)
+                            Text("Accepting moves this visit to the new slot right away. Declining keeps your original time and adds a goodwill credit to your account.")
+                                .font(.brandCaption).foregroundStyle(.secondary)
+                            if let proposalActionMessage {
+                                Text(proposalActionMessage).font(.brandCaption).foregroundStyle(Theme.danger)
+                            }
+                            HStack(spacing: 12) {
+                                PrimaryButton(title: "Accept", isLoading: isRespondingToProposal) {
+                                    Task { await respond(to: pendingProposal, accept: true) }
+                                }
+                                Button("Decline", role: .destructive) {
+                                    Task { await respond(to: pendingProposal, accept: false) }
+                                }
+                                .disabled(isRespondingToProposal)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .appearAnimation(delay: 0.02)
+                }
+
+                if canReportVetNoShow {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Button {
+                            Haptics.tap()
+                            Task { await reportVetNoShow() }
+                        } label: {
+                            ActionRow(title: "Vet didn't show up", systemImage: "exclamationmark.triangle.fill", tint: Theme.danger)
+                        }
+                        .buttonStyle(PressableStyle())
+                        .disabled(isReportingNoShow)
+                        if let noShowMessage {
+                            Text(noShowMessage).font(.brandCaption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .appearAnimation(delay: 0.04)
+                }
 
                 if visit.status == .enRoute {
                     NavigationLink {
@@ -94,6 +169,31 @@ struct VisitDetailView: View {
                 .buttonStyle(PressableStyle())
                 .appearAnimation(delay: 0.1)
 
+                // K6: always reachable from a visit's detail page — the view
+                // itself renders an empty state when this pet has no lab
+                // test reports (most visits won't).
+                NavigationLink {
+                    LabTestReportsView(petId: visit.petId, visitId: visit.id)
+                } label: {
+                    ActionRow(title: "Lab test reports", systemImage: "cross.vial.fill", tint: Theme.accent)
+                }
+                .buttonStyle(PressableStyle())
+                .appearAnimation(delay: 0.1)
+
+                // L5: safety-specific, separate from "Report a problem with
+                // this visit" below (a billing/service dispute) — see the
+                // doc comment on IncidentReport. Available at any visit
+                // status, not just completed, since a safety concern can
+                // arise at any point in the visit's lifecycle.
+                Button {
+                    Haptics.tap()
+                    showingIncidentReport = true
+                } label: {
+                    ActionRow(title: "Report an incident", systemImage: "shield.lefthalf.filled", tint: Theme.danger)
+                }
+                .buttonStyle(PressableStyle())
+                .appearAnimation(delay: 0.11)
+
                 if visit.status == .requested || visit.status == .confirmed {
                     Button {
                         Task {
@@ -131,6 +231,18 @@ struct VisitDetailView: View {
                     PrimaryButton(title: "Rate this visit") { showingReview = true }
                         .appearAnimation(delay: 0.1)
 
+                    // E11: shown once per completed visit — 100% to the vet.
+                    if !hasTipped {
+                        Button {
+                            Haptics.tap()
+                            showingTip = true
+                        } label: {
+                            ActionRow(title: "Add a tip for your vet", systemImage: "heart.fill", tint: Theme.accent)
+                        }
+                        .buttonStyle(PressableStyle())
+                        .appearAnimation(delay: 0.11)
+                    }
+
                     // K8 (P0): a dispute is just a support ticket carrying
                     // this visit's id — same queue, same audit trail.
                     Button {
@@ -163,11 +275,17 @@ struct VisitDetailView: View {
         .sheet(isPresented: $showingReview) {
             ReviewView(visitId: visit.id)
         }
+        .sheet(isPresented: $showingTip) {
+            TipVetView(visitId: visit.id) { hasTipped = true }
+        }
         .sheet(isPresented: $showingReschedule) {
             RescheduleVisitView(visit: visit)
         }
         .sheet(isPresented: $showingReportProblem) {
             ContactSupportView(visitId: visit.id, subjectPlaceholder: "Problem with visit on \(visit.scheduledAt.formatted(date: .abbreviated, time: .omitted))")
+        }
+        .sheet(isPresented: $showingIncidentReport) {
+            IncidentReportView(visitId: visit.id)
         }
         .sheet(item: $followUpService) { service in
             NavigationStack {
@@ -175,8 +293,39 @@ struct VisitDetailView: View {
             }
         }
         .task {
-            guard visit.status == .arrived else { return }
-            visitOTP = try? await visitOTPRepository.generateOTP(visitId: visit.id)
+            if visit.status == .arrived {
+                visitOTP = try? await visitOTPRepository.generateOTP(visitId: visit.id)
+            }
+            pendingProposal = try? await rescheduleProposalRepository.pendingProposal(visitId: visit.id)
+            activeDispute = try? await paymentDisputeRepository.disputes(visitId: visit.id).first { $0.isActive }
+        }
+    }
+
+    /// F6: accept reschedules the visit immediately (bypassing the
+    /// customer-side 4h policy window, since the vet moved the slot);
+    /// decline awards the goodwill credit. Either way the banner clears.
+    private func respond(to proposal: RescheduleProposal, accept: Bool) async {
+        isRespondingToProposal = true
+        proposalActionMessage = nil
+        defer { isRespondingToProposal = false }
+        do {
+            _ = try await respondToRescheduleProposalUseCase.execute(proposal: proposal, visit: visit, accept: accept)
+            pendingProposal = nil
+        } catch {
+            proposalActionMessage = error.localizedDescription
+        }
+    }
+
+    /// F7: reports the vet as a no-show once the grace window has passed —
+    /// transitions the visit to `noShowVet` and triggers the full refund + credit.
+    private func reportVetNoShow() async {
+        isReportingNoShow = true
+        defer { isReportingNoShow = false }
+        do {
+            let outcome = try await reportVetNoShowUseCase.execute(visit: visit)
+            noShowMessage = "Reported. Your ₹\(outcome.refundMinorUnits / 100) refund and \(outcome.goodwillCreditPoints) goodwill points are on the way."
+        } catch {
+            noShowMessage = error.localizedDescription
         }
     }
 
@@ -211,6 +360,40 @@ private struct ActionRow: View {
         .padding()
         .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: Theme.cardShadow, radius: 8, y: 3)
+    }
+}
+
+/// G9: a small banner explaining a gateway dispute (chargeback) is under
+/// review for this visit's payment — the customer-facing half of dispute
+/// handling. There is nothing to act on here (evidence, response, etc. are
+/// ops/gateway concerns), only enough context that a hold doesn't look like
+/// a silent problem.
+struct PaymentDisputeStatusView: View {
+    let dispute: PaymentDispute
+
+    private var message: String {
+        switch dispute.status {
+        case .open, .needsResponse:
+            return "A payment dispute is under review for this visit. We're looking into it — no action is needed from you right now."
+        case .won:
+            return "The payment dispute on this visit has been resolved in your favor."
+        case .lost:
+            return "The payment dispute on this visit has been resolved."
+        }
+    }
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Payment under review", systemImage: "exclamationmark.shield.fill")
+                    .font(.brandHeadline)
+                    .foregroundStyle(dispute.isActive ? Theme.warning : .secondary)
+                Text(message)
+                    .font(.brandCaption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 

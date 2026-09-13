@@ -128,7 +128,11 @@ final class SupabaseQuoteRepository: QuoteRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
-    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote {
+    // Pricing (including D5 overrides) runs entirely inside the
+    // `create-quote` edge function server-side (Appendix C) — `overrides`
+    // is accepted here only to match the protocol; the function reads
+    // vet_service_overrides itself from cart_id's circuit.
+    func createQuote(for cart: Cart, catalog: [Service], overrides: [VetServiceOverride], useWalletBalance: Bool, applyEntitlementCredit: Bool) async throws -> Quote {
         struct Response: Decodable {
             let id: UUID
             let cartId: UUID
@@ -141,9 +145,97 @@ final class SupabaseQuoteRepository: QuoteRepository {
                 case cartId = "cart_id", totalMinorUnits = "total_minor_units", expiresAt = "expires_at"
             }
         }
-        let response: Response = try await client.functions.invoke("create-quote", options: .init(body: ["cart_id": cart.id.uuidString]))
+        // H6: the edge function re-derives and re-checks entitlement
+        // eligibility itself (see the protocol doc comment) — this flag is
+        // only "the client thinks a credit applies here," never authority.
+        let response: Response = try await client.functions.invoke("create-quote", options: .init(body: [
+            "cart_id": cart.id.uuidString, "use_wallet_balance": useWalletBalance,
+            "apply_entitlement_credit": applyEntitlementCredit,
+        ] as [String: Any]))
         return Quote(id: response.id, cartId: response.cartId, breakdown: response.breakdown,
                      signature: response.signature, expiresAt: response.expiresAt)
+    }
+}
+
+final class SupabaseWalletRepository: WalletRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    struct Row: Decodable {
+        let id: UUID
+        let userId: UUID
+        let amountMinorUnits: Int
+        let reason: String
+        let relatedVisitId: UUID?
+        let relatedRefundId: UUID?
+        let createdAt: Date
+        enum CodingKeys: String, CodingKey {
+            case id, reason
+            case userId = "user_id", amountMinorUnits = "amount_minor_units"
+            case relatedVisitId = "related_visit_id", relatedRefundId = "related_refund_id"
+            case createdAt = "created_at"
+        }
+        func toDomain() -> WalletLedgerEntry {
+            WalletLedgerEntry(id: id, userId: userId, amountMinorUnits: amountMinorUnits, reason: reason,
+                               relatedVisitId: relatedVisitId, relatedRefundId: relatedRefundId, createdAt: createdAt)
+        }
+    }
+
+    // The client has no insert policy on wallet_ledger at all (0026), so
+    // this is read-only by construction — the balance is just a fold, not
+    // a separate trusted column, matching the ledger's "no stored balance" rule.
+    func balanceMinorUnits(userId: UUID) async throws -> Int {
+        try await entries(userId: userId).reduce(0) { $0 + $1.amountMinorUnits }
+    }
+
+    func entries(userId: UUID) async throws -> [WalletLedgerEntry] {
+        let rows: [Row] = try await client.from("wallet_ledger").select()
+            .eq("user_id", value: userId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+final class SupabaseCouponRepository: CouponRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    struct Row: Decodable {
+        let id: UUID
+        let code: String
+        let discountType: String
+        let discountValue: Int
+        let maxDiscountMinorUnits: Int?
+        let validFrom: Date
+        let validUntil: Date
+        let usageLimit: Int?
+        let perUserLimit: Int?
+        let minSpendMinorUnits: Int?
+        let campaignName: String?
+        enum CodingKeys: String, CodingKey {
+            case id, code
+            case discountType = "discount_type", discountValue = "discount_value"
+            case maxDiscountMinorUnits = "max_discount_minor_units"
+            case validFrom = "valid_from", validUntil = "valid_until"
+            case usageLimit = "usage_limit", perUserLimit = "per_user_limit"
+            case minSpendMinorUnits = "min_spend_minor_units", campaignName = "campaign_name"
+        }
+        func toDomain() -> Coupon? {
+            guard let type = Coupon.DiscountType(rawValue: discountType) else { return nil }
+            return Coupon(id: id, code: code, discountType: type, discountValue: discountValue,
+                           maxDiscountMinorUnits: maxDiscountMinorUnits, validFrom: validFrom, validUntil: validUntil,
+                           usageLimit: usageLimit, perUserLimit: perUserLimit, minSpendMinorUnits: minSpendMinorUnits,
+                           campaignName: campaignName)
+        }
+    }
+
+    /// Goes through the validate_coupon() RPC (0027_coupons.sql), never a
+    /// direct table select — a client-readable coupons table would let a
+    /// code be enumerated/brute-forced (plan §E4).
+    func validate(code: String, userId: UUID, cartTotalMinorUnits: Int) async throws -> Coupon? {
+        let rows: [Row] = try await client.rpc("validate_coupon", params: [
+            "p_code": code, "p_user_id": userId.uuidString, "p_cart_total": String(cartTotalMinorUnits),
+        ]).execute().value
+        return rows.first?.toDomain()
     }
 }
 
@@ -298,6 +390,92 @@ final class SupabasePrescriptionRepository: PrescriptionRepository {
         let rows: [SupabasePrescriptionRow] = try await client
             .from("prescriptions").select().eq("pet_id", value: petId).order("issued_at", ascending: false).execute().value
         return rows.map { $0.toDomain() }
+    }
+}
+
+final class SupabasePetDocumentRepository: PetDocumentRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func list(petId: UUID) async throws -> [PetDocument] {
+        let rows: [SupabasePetDocumentRow] = try await client
+            .from("pet_documents").select().eq("pet_id", value: petId).order("uploaded_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func upload(petId: UUID, uploaderId: UUID, title: String, data: Data) async throws -> PetDocument {
+        // TODO(Storage SDK): actually upload `data` to the `documents` bucket
+        // at this path (`client.storage.from("documents").upload(path, data: data)`)
+        // before inserting the row — today only the reference row is real.
+        let path = "documents/\(petId)/\(UUID().uuidString).pdf"
+        let insert = SupabasePetDocumentInsert(petId: petId, uploaderId: uploaderId, title: title, filePath: path)
+        let rows: [SupabasePetDocumentRow] = try await client.from("pet_documents").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func delete(id: UUID) async throws {
+        try await client.from("pet_documents").delete().eq("id", value: id).execute()
+    }
+}
+
+final class SupabaseVetBlackoutRepository: VetBlackoutRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func blackouts(vetId: UUID) async throws -> [VetBlackout] {
+        let rows: [SupabaseVetBlackoutRow] = try await client
+            .from("vet_blackouts").select().eq("vet_id", value: vetId).order("start_date").execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func blackouts(vetIds: [UUID]) async throws -> [VetBlackout] {
+        guard !vetIds.isEmpty else { return [] }
+        let rows: [SupabaseVetBlackoutRow] = try await client
+            .from("vet_blackouts").select().in("vet_id", values: vetIds).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func create(_ blackout: VetBlackout) async throws -> VetBlackout {
+        let insert = SupabaseVetBlackoutInsert(blackout: blackout)
+        let rows: [SupabaseVetBlackoutRow] = try await client.from("vet_blackouts").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func delete(id: UUID) async throws {
+        try await client.from("vet_blackouts").delete().eq("id", value: id).execute()
+    }
+}
+
+/// K3: medication reminders.
+final class SupabaseMedicationReminderRepository: MedicationReminderRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func reminders(petId: UUID) async throws -> [MedicationReminder] {
+        let rows: [SupabaseMedicationReminderRow] = try await client
+            .from("medication_reminders").select().eq("pet_id", value: petId).order("medication_name").execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func create(_ reminder: MedicationReminder) async throws -> MedicationReminder {
+        let insert = SupabaseMedicationReminderInsert(reminder: reminder)
+        let rows: [SupabaseMedicationReminderRow] = try await client.from("medication_reminders").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func update(_ reminder: MedicationReminder) async throws -> MedicationReminder {
+        let insert = SupabaseMedicationReminderInsert(reminder: reminder)
+        let rows: [SupabaseMedicationReminderRow] = try await client
+            .from("medication_reminders").update(insert).eq("id", value: reminder.id).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Medication reminder") }
+        return row.toDomain()
+    }
+
+    func delete(id: UUID) async throws {
+        try await client.from("medication_reminders").delete().eq("id", value: id).execute()
     }
 }
 
@@ -554,6 +732,100 @@ final class SupabaseRefundRepository: RefundRepository {
     }
 }
 
+final class SupabasePaymentDisputeRepository: PaymentDisputeRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func disputes(visitId: UUID) async throws -> [PaymentDispute] {
+        // Plain RLS-direct select — payment_disputes' "select own visit"
+        // policy already scopes this to the signed-in customer's own visits
+        // (or an admin), so there is no trusted-endpoint indirection needed
+        // here the way a write would require.
+        let rows: [SupabasePaymentDisputeRow] = try await client.from("payment_disputes")
+            .select().eq("visit_id", value: visitId).order("opened_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+final class SupabaseSavedPaymentMethodRepository: SavedPaymentMethodRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func list(userId: UUID) async throws -> [SavedPaymentMethod] {
+        let rows: [SupabaseSavedPaymentMethodRow] = try await client.from("saved_payment_methods")
+            .select().eq("user_id", value: userId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func save(userId: UUID, gatewayTokenId: String, displayLabel: String, makeDefault: Bool) async throws -> SavedPaymentMethod {
+        // Only the gateway's token reference and a display label are ever
+        // sent here — never a PAN/CVV, which this app's client never holds.
+        struct Insert: Encodable {
+            let userId: UUID, gatewayTokenId: String, displayLabel: String, isDefault: Bool
+            enum CodingKeys: String, CodingKey {
+                case userId = "user_id", gatewayTokenId = "gateway_token_id"
+                case displayLabel = "display_label", isDefault = "is_default"
+            }
+        }
+        if makeDefault {
+            try await client.from("saved_payment_methods").update(["is_default": false])
+                .eq("user_id", value: userId).execute()
+        }
+        let rows: [SupabaseSavedPaymentMethodRow] = try await client.from("saved_payment_methods")
+            .insert(Insert(userId: userId, gatewayTokenId: gatewayTokenId, displayLabel: displayLabel, isDefault: makeDefault))
+            .select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func remove(id: UUID) async throws {
+        try await client.from("saved_payment_methods").delete().eq("id", value: id).execute()
+    }
+
+    func setDefault(id: UUID, userId: UUID) async throws {
+        try await client.from("saved_payment_methods").update(["is_default": false])
+            .eq("user_id", value: userId).execute()
+        try await client.from("saved_payment_methods").update(["is_default": true])
+            .eq("id", value: id).eq("user_id", value: userId).execute()
+    }
+}
+
+final class SupabaseSupportRefundAuditRepository: SupportRefundAuditRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func issueSupportRefund(
+        ticketId: UUID, visitId: UUID, issuedByUserId: UUID,
+        kind: SupportRefundAudit.Kind, amountMinorUnits: Int, reason: String
+    ) async throws -> SupportRefundAudit {
+        // Money creation (refund) or wallet credit, plus its audit row, all
+        // happen server-side — this never inserts into refunds,
+        // wallet_ledger, or support_refund_audit directly (RLS forbids all
+        // three for every client role); it only invokes the trusted
+        // issue-support-refund Edge Function.
+        struct Body: Encodable {
+            let ticketId: UUID
+            let visitId: UUID
+            let kind: String
+            let amountMinorUnits: Int
+            let reason: String
+            enum CodingKeys: String, CodingKey {
+                case ticketId = "ticket_id", visitId = "visit_id", kind
+                case amountMinorUnits = "amount_minor_units", reason
+            }
+        }
+        let body = Body(ticketId: ticketId, visitId: visitId, kind: kind.rawValue, amountMinorUnits: amountMinorUnits, reason: reason)
+        let row: SupabaseSupportRefundAuditRow = try await client.functions.invoke("issue-support-refund", options: .init(body: body))
+        return row.toDomain()
+    }
+
+    func auditTrail(ticketId: UUID) async throws -> [SupportRefundAudit] {
+        let rows: [SupabaseSupportRefundAuditRow] = try await client.from("support_refund_audit")
+            .select().eq("ticket_id", value: ticketId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
 final class SupabaseInvoiceRepository: InvoiceRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
@@ -572,11 +844,19 @@ private struct SupabaseUserRow: Decodable {
     let email: String?
     let createdAt: Date
     let pets: [SupabasePetRow]?
+    // A11: admin/trusted-function-set only (see 0026 migration) — decoded
+    // read-only, never sent back on any client update to this row.
+    let accountStatus: String?
 
-    enum CodingKeys: String, CodingKey { case id, phone, name, email, createdAt = "created_at", pets }
+    enum CodingKeys: String, CodingKey {
+        case id, phone, name, email, createdAt = "created_at", pets
+        case accountStatus = "account_status"
+    }
 
     func toDomain() -> User {
-        User(id: id, phone: phone, name: name, email: email, createdAt: createdAt, pets: (pets ?? []).map { $0.toDomain() })
+        User(id: id, phone: phone, name: name, email: email, createdAt: createdAt,
+             pets: (pets ?? []).map { $0.toDomain() },
+             accountStatus: User.AccountStatus(rawValue: accountStatus ?? "active") ?? .active)
     }
 }
 
@@ -742,6 +1022,132 @@ private struct SupabasePrescriptionRow: Decodable {
     }
 }
 
+/// B6: document vault. `filePath` is a `documents` Storage bucket object
+/// path, not a public URL — the app synthesizes a `mock-storage://` URL
+/// client-side until Storage SDK wiring lands (see `SupabasePetDocumentRepository`).
+private struct SupabasePetDocumentRow: Decodable {
+    let id: UUID
+    let petId: UUID
+    let uploaderId: UUID
+    let title: String
+    let filePath: String
+    let uploadedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, title
+        case petId = "pet_id", uploaderId = "uploader_id", filePath = "file_path", uploadedAt = "uploaded_at"
+    }
+
+    func toDomain() -> PetDocument {
+        let url = URL(string: "mock-storage://\(filePath)") ?? URL(string: "mock-storage://documents/unknown")!
+        return PetDocument(id: id, petId: petId, uploaderId: uploaderId, title: title, fileURL: url, uploadedAt: uploadedAt)
+    }
+}
+
+private struct SupabasePetDocumentInsert: Encodable {
+    let petId: UUID
+    let uploaderId: UUID
+    let title: String
+    let filePath: String
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case petId = "pet_id", uploaderId = "uploader_id", filePath = "file_path"
+    }
+}
+
+private struct SupabaseVetBlackoutRow: Decodable {
+    let id: UUID
+    let vetId: UUID
+    let startDate: Date
+    let endDate: Date
+    let reason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, reason
+        case vetId = "vet_id", startDate = "start_date", endDate = "end_date"
+    }
+
+    func toDomain() -> VetBlackout {
+        VetBlackout(id: id, vetId: vetId, startDate: startDate, endDate: endDate, reason: reason)
+    }
+}
+
+private struct SupabaseVetBlackoutInsert: Encodable {
+    let vetId: UUID
+    let startDate: Date
+    let endDate: Date
+    let reason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case reason
+        case vetId = "vet_id", startDate = "start_date", endDate = "end_date"
+    }
+
+    init(blackout: VetBlackout) {
+        vetId = blackout.vetId
+        startDate = blackout.startDate
+        endDate = blackout.endDate
+        reason = blackout.reason
+    }
+}
+
+private struct SupabaseTimeOfDayDTO: Codable {
+    let hour: Int
+    let minute: Int
+
+    func toDomain() -> TimeOfDay { TimeOfDay(hour: hour, minute: minute) }
+    init(_ timeOfDay: TimeOfDay) { hour = timeOfDay.hour; minute = timeOfDay.minute }
+}
+
+private struct SupabaseMedicationReminderRow: Decodable {
+    let id: UUID
+    let petId: UUID
+    let medicationName: String
+    let dosage: String
+    let times: [SupabaseTimeOfDayDTO]
+    let startDate: Date
+    let endDate: Date?
+    let isActive: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, times, dosage
+        case petId = "pet_id", medicationName = "medication_name"
+        case startDate = "start_date", endDate = "end_date", isActive = "is_active"
+    }
+
+    func toDomain() -> MedicationReminder {
+        MedicationReminder(id: id, petId: petId, medicationName: medicationName, dosage: dosage,
+                            times: times.map { $0.toDomain() }, startDate: startDate, endDate: endDate, isActive: isActive)
+    }
+}
+
+private struct SupabaseMedicationReminderInsert: Encodable {
+    let petId: UUID
+    let medicationName: String
+    let dosage: String
+    let times: [SupabaseTimeOfDayDTO]
+    let startDate: Date
+    let endDate: Date?
+    let isActive: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case times, dosage
+        case petId = "pet_id", medicationName = "medication_name"
+        case startDate = "start_date", endDate = "end_date", isActive = "is_active"
+    }
+
+    init(reminder: MedicationReminder) {
+        petId = reminder.petId
+        medicationName = reminder.medicationName
+        dosage = reminder.dosage
+        times = reminder.times.map { SupabaseTimeOfDayDTO($0) }
+        startDate = reminder.startDate
+        endDate = reminder.endDate
+        isActive = reminder.isActive
+    }
+}
+
 private struct SupabaseCircuitRow: Decodable {
     let id: UUID
     let vetId: UUID
@@ -842,6 +1248,33 @@ private struct SupabaseRefundRow: Decodable {
         Refund(id: id, visitId: visitId, paymentId: paymentId, amountMinorUnits: amountMinorUnits,
                reason: reason, status: Refund.Status(rawValue: status) ?? .pending, createdAt: createdAt,
                initiatedByOpsUserId: initiatedByOpsUserId)
+    }
+}
+
+private struct SupabasePaymentDisputeRow: Decodable {
+    let id: UUID
+    let paymentId: UUID
+    let visitId: UUID
+    let gatewayDisputeId: String
+    let reason: String
+    let amountMinorUnits: Int
+    let status: String
+    let openedAt: Date
+    let resolvedAt: Date?
+    let evidenceSubmittedAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, reason, status
+        case paymentId = "payment_id", visitId = "visit_id", gatewayDisputeId = "gateway_dispute_id"
+        case amountMinorUnits = "amount_minor_units", openedAt = "opened_at"
+        case resolvedAt = "resolved_at", evidenceSubmittedAt = "evidence_submitted_at"
+    }
+
+    func toDomain() -> PaymentDispute {
+        PaymentDispute(id: id, paymentId: paymentId, visitId: visitId, gatewayDisputeId: gatewayDisputeId,
+                        reason: reason, amountMinorUnits: amountMinorUnits,
+                        status: PaymentDispute.Status(rawValue: status) ?? .open,
+                        openedAt: openedAt, resolvedAt: resolvedAt, evidenceSubmittedAt: evidenceSubmittedAt)
     }
 }
 
@@ -1132,39 +1565,40 @@ final class SupabaseReviewRepository: ReviewRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
-    func submit(visitId: UUID, rating: Int, comment: String?) async throws -> Review {
-        struct Insert: Encodable {
-            let visitId: UUID, rating: Int, comment: String?
-            enum CodingKeys: String, CodingKey { case visitId = "visit_id", rating, comment }
+    private struct ReviewRow: Decodable {
+        let id: UUID, visitId: UUID, vetId: UUID, userId: UUID, rating: Int, comment: String?, createdAt: Date
+        let needsModeration: Bool?, moderationFlags: [String]?
+        enum CodingKeys: String, CodingKey {
+            case id, rating, comment
+            case visitId = "visit_id", vetId = "vet_id", userId = "user_id", createdAt = "created_at"
+            case needsModeration = "needs_moderation", moderationFlags = "moderation_flags"
         }
-        struct Row: Decodable {
-            let id: UUID, visitId: UUID, vetId: UUID, userId: UUID, rating: Int, comment: String?, createdAt: Date
+        func toDomain() -> Review {
+            Review(id: id, visitId: visitId, vetId: vetId, userId: userId, rating: rating, comment: comment,
+                   createdAt: createdAt, needsModeration: needsModeration ?? false, moderationFlags: moderationFlags ?? [])
+        }
+    }
+
+    func submit(visitId: UUID, rating: Int, comment: String?, needsModeration: Bool, moderationFlags: [String]) async throws -> Review {
+        struct Insert: Encodable {
+            let visitId: UUID, rating: Int, comment: String?, needsModeration: Bool, moderationFlags: [String]
             enum CodingKeys: String, CodingKey {
-                case id, rating, comment
-                case visitId = "visit_id", vetId = "vet_id", userId = "user_id", createdAt = "created_at"
+                case visitId = "visit_id", rating, comment
+                case needsModeration = "needs_moderation", moderationFlags = "moderation_flags"
             }
         }
-        let rows: [Row] = try await client.from("reviews")
-            .insert(Insert(visitId: visitId, rating: rating, comment: comment)).select().execute().value
+        let rows: [ReviewRow] = try await client.from("reviews")
+            .insert(Insert(visitId: visitId, rating: rating, comment: comment,
+                           needsModeration: needsModeration, moderationFlags: moderationFlags))
+            .select().execute().value
         guard let row = rows.first else { throw DomainError.unknown }
-        return Review(id: row.id, visitId: row.visitId, vetId: row.vetId, userId: row.userId,
-                      rating: row.rating, comment: row.comment, createdAt: row.createdAt)
+        return row.toDomain()
     }
 
     func reviews(vetId: UUID) async throws -> [Review] {
-        struct Row: Decodable {
-            let id: UUID, visitId: UUID, vetId: UUID, userId: UUID, rating: Int, comment: String?, createdAt: Date
-            enum CodingKeys: String, CodingKey {
-                case id, rating, comment
-                case visitId = "visit_id", vetId = "vet_id", userId = "user_id", createdAt = "created_at"
-            }
-        }
-        let rows: [Row] = try await client.from("reviews").select().eq("vet_id", value: vetId)
+        let rows: [ReviewRow] = try await client.from("reviews").select().eq("vet_id", value: vetId)
             .order("created_at", ascending: false).execute().value
-        return rows.map {
-            Review(id: $0.id, visitId: $0.visitId, vetId: $0.vetId, userId: $0.userId,
-                   rating: $0.rating, comment: $0.comment, createdAt: $0.createdAt)
-        }
+        return rows.map { $0.toDomain() }
     }
 }
 
@@ -1694,6 +2128,456 @@ private struct SupabaseAppNotificationRow: Decodable {
     func toDomain() -> AppNotification {
         AppNotification(id: id, userId: userId, category: AppNotification.Category(rawValue: category) ?? .promotion,
                          title: title, body: body, sentAt: sentAt, createdAt: createdAt, readAt: readAt)
+    }
+}
+
+final class SupabaseSubscriptionEntitlementRepository: SubscriptionEntitlementRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func currentEntitlement(subscriptionId: UUID) async throws -> SubscriptionEntitlement? {
+        let rows: [SupabaseEntitlementRow] = try await client.from("subscription_entitlements")
+            .select().eq("subscription_id", value: subscriptionId).execute().value
+        return rows.first?.toDomain()
+    }
+
+    /// Server-side function (0028_subscription_entitlements.sql) does the
+    /// rollover + decrement atomically so two concurrent bookings can't both
+    /// read "1 credit left" and both spend it.
+    func consumeCredit(subscriptionId: UUID) async throws -> SubscriptionEntitlement {
+        struct Params: Encodable { let p_subscription_id: UUID }
+        let row: SupabaseEntitlementRow = try await client
+            .rpc("consume_subscription_credit", params: Params(p_subscription_id: subscriptionId))
+            .execute().value
+        return row.toDomain()
+    }
+}
+
+private struct SupabaseEntitlementRow: Decodable {
+    let id: UUID
+    let subscriptionId: UUID
+    let creditsRemaining: Int
+    let resetAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case subscriptionId = "subscription_id", creditsRemaining = "credits_remaining", resetAt = "reset_at"
+    }
+
+    func toDomain() -> SubscriptionEntitlement {
+        SubscriptionEntitlement(id: id, subscriptionId: subscriptionId, creditsRemaining: creditsRemaining, resetAt: resetAt)
+    }
+}
+
+final class SupabaseIncidentReportRepository: IncidentReportRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func fileReport(_ report: IncidentReport) async throws -> IncidentReport {
+        struct Insert: Encodable {
+            let id: UUID, visitId: UUID, reporterId: UUID, reporterRole: String, type: String, description: String
+            enum CodingKeys: String, CodingKey {
+                case id, description, type
+                case visitId = "visit_id", reporterId = "reporter_id", reporterRole = "reporter_role"
+            }
+        }
+        let insert = Insert(id: report.id, visitId: report.visitId, reporterId: report.reporterId,
+                             reporterRole: report.reporterRole.rawValue, type: report.type.rawValue, description: report.description)
+        let rows: [SupabaseIncidentReportRow] = try await client.from("incident_reports")
+            .insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func myReports(reporterId: UUID) async throws -> [IncidentReport] {
+        let rows: [SupabaseIncidentReportRow] = try await client.from("incident_reports")
+            .select().eq("reporter_id", value: reporterId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+private struct SupabaseIncidentReportRow: Decodable {
+    let id: UUID
+    let visitId: UUID
+    let reporterId: UUID
+    let reporterRole: String
+    let type: String
+    let description: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, description
+        case visitId = "visit_id", reporterId = "reporter_id", reporterRole = "reporter_role"
+        case type, createdAt = "created_at"
+    }
+
+    func toDomain() -> IncidentReport {
+        IncidentReport(id: id, visitId: visitId, reporterId: reporterId,
+                        reporterRole: IncidentReport.ReporterRole(rawValue: reporterRole) ?? .customer,
+                        type: IncidentReport.IncidentType(rawValue: type) ?? .other,
+                        description: description, createdAt: createdAt)
+    }
+}
+
+final class SupabaseVetServiceOverrideRepository: VetServiceOverrideRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func overrides(vetId: UUID) async throws -> [VetServiceOverride] {
+        let rows: [SupabaseVetServiceOverrideRow] = try await client
+            .from("vet_service_overrides").select().eq("vet_id", value: vetId).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func setOverride(_ override: VetServiceOverride) async throws -> VetServiceOverride {
+        let insert = SupabaseVetServiceOverrideInsert(override: override)
+        // Upsert on (vet_id, service_id, variant_id) — matches the migration's unique constraint.
+        let rows: [SupabaseVetServiceOverrideRow] = try await client
+            .from("vet_service_overrides").upsert(insert, onConflict: "vet_id,service_id,variant_id").select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+}
+
+private struct SupabaseVetServiceOverrideRow: Decodable {
+    let id: UUID
+    let vetId: UUID
+    let serviceId: UUID
+    let variantId: UUID?
+    let priceOverrideMinorUnits: Int?
+    let isOffered: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case vetId = "vet_id", serviceId = "service_id", variantId = "variant_id"
+        case priceOverrideMinorUnits = "price_override_minor_units", isOffered = "is_offered"
+    }
+
+    func toDomain() -> VetServiceOverride {
+        VetServiceOverride(id: id, vetId: vetId, serviceId: serviceId, variantId: variantId,
+                            priceOverrideMinorUnits: priceOverrideMinorUnits, isOffered: isOffered)
+    }
+}
+
+private struct SupabaseVetServiceOverrideInsert: Encodable {
+    let id: UUID
+    let vetId: UUID
+    let serviceId: UUID
+    let variantId: UUID?
+    let priceOverrideMinorUnits: Int?
+    let isOffered: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case vetId = "vet_id", serviceId = "service_id", variantId = "variant_id"
+        case priceOverrideMinorUnits = "price_override_minor_units", isOffered = "is_offered"
+    }
+
+    init(override: VetServiceOverride) {
+        id = override.id; vetId = override.vetId; serviceId = override.serviceId
+        variantId = override.variantId; priceOverrideMinorUnits = override.priceOverrideMinorUnits
+        isOffered = override.isOffered
+    }
+}
+
+// MARK: - F5 recurring booking rules
+
+final class SupabaseRecurringBookingRuleRepository: RecurringBookingRuleRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func rules(userId: UUID) async throws -> [RecurringBookingRule] {
+        let rows: [SupabaseRecurringBookingRuleRow] = try await client
+            .from("recurring_booking_rules").select().eq("user_id", value: userId)
+            .order("next_occurrence_at", ascending: true).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func create(_ rule: RecurringBookingRule) async throws -> RecurringBookingRule {
+        let insert = SupabaseRecurringBookingRuleInsert(rule: rule)
+        let rows: [SupabaseRecurringBookingRuleRow] = try await client
+            .from("recurring_booking_rules").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func setActive(id: UUID, isActive: Bool) async throws -> RecurringBookingRule {
+        let rows: [SupabaseRecurringBookingRuleRow] = try await client
+            .from("recurring_booking_rules").update(["is_active": isActive]).eq("id", value: id).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Recurring booking rule") }
+        return row.toDomain()
+    }
+
+    func delete(id: UUID) async throws {
+        try await client.from("recurring_booking_rules").delete().eq("id", value: id).execute()
+    }
+}
+
+private struct SupabaseRecurringBookingRuleRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let petId: UUID
+    let serviceId: UUID
+    let variantId: UUID
+    let circuitId: UUID
+    let cadence: String
+    let nextOccurrenceAt: Date
+    let isActive: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, cadence
+        case userId = "user_id", petId = "pet_id", serviceId = "service_id", variantId = "variant_id"
+        case circuitId = "circuit_id", nextOccurrenceAt = "next_occurrence_at", isActive = "is_active"
+    }
+
+    func toDomain() -> RecurringBookingRule {
+        RecurringBookingRule(id: id, userId: userId, petId: petId, serviceId: serviceId, variantId: variantId,
+                              circuitId: circuitId, cadence: RecurringBookingRule.Cadence(rawValue: cadence) ?? .monthly,
+                              nextOccurrenceAt: nextOccurrenceAt, isActive: isActive)
+    }
+}
+
+private struct SupabaseRecurringBookingRuleInsert: Encodable {
+    let id: UUID
+    let userId: UUID
+    let petId: UUID
+    let serviceId: UUID
+    let variantId: UUID
+    let circuitId: UUID
+    let cadence: String
+    let nextOccurrenceAt: Date
+    let isActive: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, cadence
+        case userId = "user_id", petId = "pet_id", serviceId = "service_id", variantId = "variant_id"
+        case circuitId = "circuit_id", nextOccurrenceAt = "next_occurrence_at", isActive = "is_active"
+    }
+
+    init(rule: RecurringBookingRule) {
+        id = rule.id; userId = rule.userId; petId = rule.petId; serviceId = rule.serviceId
+        variantId = rule.variantId; circuitId = rule.circuitId; cadence = rule.cadence.rawValue
+        nextOccurrenceAt = rule.nextOccurrenceAt; isActive = rule.isActive
+    }
+}
+
+// MARK: - F6 vet-initiated reschedule proposals
+
+final class SupabaseRescheduleProposalRepository: RescheduleProposalRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func pendingProposal(visitId: UUID) async throws -> RescheduleProposal? {
+        let rows: [SupabaseRescheduleProposalRow] = try await client
+            .from("reschedule_proposals").select().eq("visit_id", value: visitId).eq("status", value: "pending")
+            .limit(1).execute().value
+        return rows.first?.toDomain()
+    }
+
+    func create(_ proposal: RescheduleProposal) async throws -> RescheduleProposal {
+        let insert = SupabaseRescheduleProposalInsert(proposal: proposal)
+        let rows: [SupabaseRescheduleProposalRow] = try await client
+            .from("reschedule_proposals").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func respond(id: UUID, accept: Bool) async throws -> RescheduleProposal {
+        let rows: [SupabaseRescheduleProposalRow] = try await client
+            .from("reschedule_proposals").update(["status": accept ? "accepted" : "declined"])
+            .eq("id", value: id).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Reschedule proposal") }
+        return row.toDomain()
+    }
+}
+
+private struct SupabaseRescheduleProposalRow: Decodable {
+    let id: UUID
+    let visitId: UUID
+    let proposedByRole: String
+    let proposedSlotId: UUID
+    let status: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, status
+        case visitId = "visit_id", proposedByRole = "proposed_by_role"
+        case proposedSlotId = "proposed_slot_id", createdAt = "created_at"
+    }
+
+    func toDomain() -> RescheduleProposal {
+        RescheduleProposal(id: id, visitId: visitId,
+                            proposedByRole: RescheduleProposal.ProposerRole(rawValue: proposedByRole) ?? .vet,
+                            proposedSlotId: proposedSlotId,
+                            status: RescheduleProposal.Status(rawValue: status) ?? .pending,
+                            createdAt: createdAt)
+    }
+}
+
+private struct SupabaseRescheduleProposalInsert: Encodable {
+    let id: UUID
+    let visitId: UUID
+    let proposedByRole: String
+    let proposedSlotId: UUID
+    let status: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, status
+        case visitId = "visit_id", proposedByRole = "proposed_by_role", proposedSlotId = "proposed_slot_id"
+    }
+
+    init(proposal: RescheduleProposal) {
+        id = proposal.id; visitId = proposal.visitId; proposedByRole = proposal.proposedByRole.rawValue
+        proposedSlotId = proposal.proposedSlotId; status = proposal.status.rawValue
+    }
+}
+
+private struct SupabaseSavedPaymentMethodRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let gatewayTokenId: String
+    let displayLabel: String
+    let isDefault: Bool
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id", gatewayTokenId = "gateway_token_id"
+        case displayLabel = "display_label", isDefault = "is_default", createdAt = "created_at"
+    }
+
+    func toDomain() -> SavedPaymentMethod {
+        SavedPaymentMethod(id: id, userId: userId, gatewayTokenId: gatewayTokenId,
+                            displayLabel: displayLabel, isDefault: isDefault, createdAt: createdAt)
+    }
+}
+
+private struct SupabaseSupportRefundAuditRow: Decodable {
+    let id: UUID
+    let ticketId: UUID
+    let visitId: UUID
+    let issuedByUserId: UUID
+    let kind: String
+    let amountMinorUnits: Int
+    let reason: String
+    let refundId: UUID?
+    let walletLedgerEntryId: UUID?
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, reason
+        case ticketId = "ticket_id", visitId = "visit_id", issuedByUserId = "issued_by_user_id"
+        case amountMinorUnits = "amount_minor_units", refundId = "refund_id"
+        case walletLedgerEntryId = "wallet_ledger_entry_id", createdAt = "created_at"
+    }
+
+    func toDomain() -> SupportRefundAudit {
+        SupportRefundAudit(id: id, ticketId: ticketId, visitId: visitId, issuedByUserId: issuedByUserId,
+                            kind: SupportRefundAudit.Kind(rawValue: kind) ?? .refund,
+                            amountMinorUnits: amountMinorUnits, reason: reason,
+                            refundId: refundId, walletLedgerEntryId: walletLedgerEntryId, createdAt: createdAt)
+    }
+}
+
+// MARK: - J8: SMS/WhatsApp fallback when push fails.
+//
+// No real gateway (Twilio/MSG91/...) is wired into this codebase — this
+// calls the `send-sms-fallback` Edge Function, whose body is a clearly
+// marked stub that logs the intent server-side (append-only
+// `sms_fallback_log`, service-role only) rather than placing a live call.
+// See NotificationDeliveryPolicy/SendTransactionalNotificationUseCase for
+// the decision this repository is invoked from.
+final class SupabaseSMSFallbackRepository: SMSFallbackRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func sendFallback(
+        userId: UUID, phone: String, category: TransactionalNotificationCategory,
+        body: String, reason: NotificationDeliveryDecision.FallbackReason
+    ) async throws -> SMSFallbackRecord {
+        struct Body: Encodable {
+            let userId: UUID
+            let phone: String
+            let category: String
+            let body: String
+            let reason: String
+            enum CodingKeys: String, CodingKey {
+                case userId = "user_id", phone, category, body, reason
+            }
+        }
+        let requestBody = Body(userId: userId, phone: phone, category: category.rawValue, body: body, reason: reason.rawValue)
+        let row: SupabaseSMSFallbackRow = try await client.functions.invoke("send-sms-fallback", options: .init(body: requestBody))
+        return row.toDomain()
+    }
+}
+
+private struct SupabaseSMSFallbackRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let phone: String
+    let category: String
+    let body: String
+    let reason: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, phone, category, body, reason
+        case userId = "user_id", createdAt = "created_at"
+    }
+
+    func toDomain() -> SMSFallbackRecord {
+        SMSFallbackRecord(
+            id: id, userId: userId, phone: phone,
+            category: TransactionalNotificationCategory(rawValue: category) ?? .visitConfirmed,
+            body: body, reason: NotificationDeliveryDecision.FallbackReason(rawValue: reason) ?? .noPushToken,
+            createdAt: createdAt
+        )
+    }
+}
+
+// MARK: - K6: lab test reports — select-only for the client; reports are
+// uploaded ops-side (see 0041_lab_test_reports.sql's RLS: no insert policy).
+final class SupabaseLabTestReportRepository: LabTestReportRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func reports(petId: UUID) async throws -> [LabTestReport] {
+        let rows: [SupabaseLabTestReportRow] = try await client
+            .from("lab_test_reports").select().eq("pet_id", value: petId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func reports(visitId: UUID) async throws -> [LabTestReport] {
+        let rows: [SupabaseLabTestReportRow] = try await client
+            .from("lab_test_reports").select().eq("visit_id", value: visitId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+private struct SupabaseLabTestReportRow: Decodable {
+    let id: UUID
+    let visitId: UUID
+    let petId: UUID
+    let testName: String
+    let status: String
+    let reportFilePath: String?
+    let resultSummary: String?
+    let availableAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, status
+        case visitId = "visit_id", petId = "pet_id", testName = "test_name"
+        case reportFilePath = "report_file_path", resultSummary = "result_summary"
+        case availableAt = "available_at"
+    }
+
+    func toDomain() -> LabTestReport {
+        LabTestReport(
+            id: id, visitId: visitId, petId: petId, testName: testName,
+            status: LabTestReport.Status(rawValue: status) ?? .pending,
+            reportFileURL: reportFilePath.flatMap { URL(string: "mock-storage://\($0)") },
+            resultSummary: resultSummary, availableAt: availableAt
+        )
     }
 }
 

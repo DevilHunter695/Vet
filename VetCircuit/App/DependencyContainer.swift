@@ -25,6 +25,8 @@ final class DependencyContainer {
     let slotHoldRepository: SlotHoldRepository
     let cartRepository: CartRepository
     let quoteRepository: QuoteRepository
+    let walletRepository: WalletRepository
+    let couponRepository: CouponRepository
     let refundRepository: RefundRepository
     let invoiceRepository: InvoiceRepository
     let visitOTPRepository: VisitOTPRepository
@@ -43,6 +45,30 @@ final class DependencyContainer {
     let emergencyClinicRepository: EmergencyClinicRepository
     let householdRepository: HouseholdRepository
     let waitlistRepository: WaitlistRepository
+    let incidentReportRepository: IncidentReportRepository
+    let subscriptionEntitlementRepository: SubscriptionEntitlementRepository
+    /// D5: per-vet service availability/pricing overrides.
+    let vetServiceOverrideRepository: VetServiceOverrideRepository
+    /// F5: recurring booking rules.
+    let recurringBookingRuleRepository: RecurringBookingRuleRepository
+    /// F6: vet-initiated reschedule proposals.
+    let rescheduleProposalRepository: RescheduleProposalRepository
+    /// B6: document vault.
+    let petDocumentRepository: PetDocumentRepository
+    /// E9: saved payment methods (gateway token reference only).
+    let savedPaymentMethodRepository: SavedPaymentMethodRepository
+    /// M4: support-issued refunds/credits, with audit trail.
+    let supportRefundAuditRepository: SupportRefundAuditRepository
+    /// F9: vet leave/holiday blackout windows.
+    let vetBlackoutRepository: VetBlackoutRepository
+    /// K3: medication reminders.
+    let medicationReminderRepository: MedicationReminderRepository
+    /// G9: gateway chargebacks/disputes, read-only on the customer side.
+    let paymentDisputeRepository: PaymentDisputeRepository
+    /// J8: SMS/WhatsApp fallback intent when push fails (no real gateway wired).
+    let smsFallbackRepository: SMSFallbackRepository
+    /// K6: lab test reports (read-only; uploaded ops-side).
+    let labTestReportRepository: LabTestReportRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -65,7 +91,9 @@ final class DependencyContainer {
         self.addressRepository = MockAddressRepository()
         self.slotHoldRepository = MockSlotHoldRepository()
         self.cartRepository = MockCartRepository()
-        self.quoteRepository = MockQuoteRepository()
+        self.walletRepository = MockWalletRepository()
+        self.couponRepository = MockCouponRepository()
+        self.quoteRepository = MockQuoteRepository(couponRepository: couponRepository, walletRepository: walletRepository)
         self.refundRepository = MockRefundRepository()
         self.invoiceRepository = MockInvoiceRepository()
         self.visitOTPRepository = MockVisitOTPRepository()
@@ -83,11 +111,26 @@ final class DependencyContainer {
         self.emergencyClinicRepository = MockEmergencyClinicRepository()
         self.householdRepository = MockHouseholdRepository()
         self.waitlistRepository = MockWaitlistRepository()
+        self.incidentReportRepository = MockIncidentReportRepository()
+        self.subscriptionEntitlementRepository = MockSubscriptionEntitlementRepository()
+        self.vetServiceOverrideRepository = MockVetServiceOverrideRepository()
+        self.recurringBookingRuleRepository = MockRecurringBookingRuleRepository()
+        self.rescheduleProposalRepository = MockRescheduleProposalRepository()
+        self.petDocumentRepository = MockPetDocumentRepository()
+        self.savedPaymentMethodRepository = MockSavedPaymentMethodRepository()
+        self.supportRefundAuditRepository = MockSupportRefundAuditRepository(refundRepository: refundRepository)
+        self.vetBlackoutRepository = MockVetBlackoutRepository()
+        self.medicationReminderRepository = MockMedicationReminderRepository()
+        self.paymentDisputeRepository = MockPaymentDisputeRepository()
+        self.smsFallbackRepository = MockSMSFallbackRepository()
+        self.labTestReportRepository = MockLabTestReportRepository()
     }
 
     // MARK: Use case factories
 
-    func getCircuitsUseCase() -> GetCircuitsUseCase { GetCircuitsUseCase(repository: circuitRepository) }
+    func getCircuitsUseCase() -> GetCircuitsUseCase { GetCircuitsUseCase(repository: circuitRepository, vetBlackoutRepository: vetBlackoutRepository) }
+    func manageVetBlackoutsUseCase() -> ManageVetBlackoutsUseCase { ManageVetBlackoutsUseCase(repository: vetBlackoutRepository) }
+    func manageMedicationRemindersUseCase() -> ManageMedicationRemindersUseCase { ManageMedicationRemindersUseCase(repository: medicationReminderRepository) }
     func bookVisitUseCase() -> BookVisitUseCase { BookVisitUseCase(visitRepository: visitRepository) }
     func cancelVisitUseCase() -> CancelVisitUseCase { CancelVisitUseCase(visitRepository: visitRepository, refundRepository: refundRepository) }
     func rescheduleVisitUseCase() -> RescheduleVisitUseCase { RescheduleVisitUseCase(visitRepository: visitRepository) }
@@ -117,7 +160,24 @@ final class DependencyContainer {
     func manageAddressesUseCase() -> ManageAddressesUseCase { ManageAddressesUseCase(addressRepository: addressRepository) }
     func holdSlotUseCase() -> HoldSlotUseCase { HoldSlotUseCase(circuitRepository: circuitRepository, slotHoldRepository: slotHoldRepository) }
     func manageCartUseCase() -> ManageCartUseCase { ManageCartUseCase(cartRepository: cartRepository) }
-    func getQuoteUseCase() -> GetQuoteUseCase { GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository) }
+    func getQuoteUseCase() -> GetQuoteUseCase {
+        GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository,
+                         circuitRepository: circuitRepository, vetServiceOverrideRepository: vetServiceOverrideRepository,
+                         subscriptionRepository: subscriptionRepository, entitlementRepository: subscriptionEntitlementRepository)
+    }
+    func getWalletBalanceUseCase() -> GetWalletBalanceUseCase { GetWalletBalanceUseCase(walletRepository: walletRepository) }
+    func applyCouponUseCase() -> ApplyCouponUseCase { ApplyCouponUseCase(couponRepository: couponRepository) }
+    func tipUseCase() -> TipUseCase { TipUseCase(paymentRepository: paymentRepository) }
+    func manageRecurringBookingUseCase() -> ManageRecurringBookingUseCase {
+        ManageRecurringBookingUseCase(recurringBookingRuleRepository: recurringBookingRuleRepository)
+    }
+    func respondToRescheduleProposalUseCase() -> RespondToRescheduleProposalUseCase {
+        RespondToRescheduleProposalUseCase(proposalRepository: rescheduleProposalRepository, visitRepository: visitRepository,
+                                            circuitRepository: circuitRepository, loyaltyRepository: loyaltyRepository)
+    }
+    func reportVetNoShowUseCase() -> ReportVetNoShowUseCase {
+        ReportVetNoShowUseCase(visitRepository: visitRepository, refundRepository: refundRepository, loyaltyRepository: loyaltyRepository)
+    }
     func browsePackagesUseCase() -> BrowsePackagesUseCase { BrowsePackagesUseCase(packageRepository: packageRepository) }
     func buyPackageUseCase() -> BuyPackageUseCase {
         BuyPackageUseCase(packageRepository: packageRepository, catalogRepository: catalogRepository, cartRepository: cartRepository)
@@ -138,4 +198,31 @@ final class DependencyContainer {
     func searchUseCase() -> SearchUseCase { SearchUseCase(circuitRepository: circuitRepository, catalogRepository: catalogRepository) }
     func rebookLastVisitUseCase() -> RebookLastVisitUseCase { RebookLastVisitUseCase(visitRepository: visitRepository, circuitRepository: circuitRepository) }
     func joinWaitlistUseCase() -> JoinWaitlistUseCase { JoinWaitlistUseCase(waitlistRepository: waitlistRepository) }
+    func fileIncidentReportUseCase() -> FileIncidentReportUseCase { FileIncidentReportUseCase(repository: incidentReportRepository) }
+    func sosUseCase() -> SOSUseCase { SOSUseCase(incidentReportRepository: incidentReportRepository) }
+    func managePetDocumentsUseCase() -> ManagePetDocumentsUseCase { ManagePetDocumentsUseCase(repository: petDocumentRepository) }
+    func generatePetHealthSummaryUseCase() -> GeneratePetHealthSummaryUseCase { GeneratePetHealthSummaryUseCase() }
+    func manageSavedPaymentMethodsUseCase() -> ManageSavedPaymentMethodsUseCase {
+        ManageSavedPaymentMethodsUseCase(repository: savedPaymentMethodRepository)
+    }
+    func issueSupportRefundUseCase() -> IssueSupportRefundUseCase {
+        IssueSupportRefundUseCase(repository: supportRefundAuditRepository)
+    }
+    /// M5: business-hours-gated support number, checked via `tel:`.
+    func contactSupportByCallUseCase() -> ContactSupportByCallUseCase {
+        ContactSupportByCallUseCase(supportPhoneNumber: "+911800123456")
+    }
+    /// J8: decides push vs SMS-fallback vs suppressed for a transactional
+    /// notification, and records the fallback intent when one is sent.
+    func sendTransactionalNotificationUseCase() -> SendTransactionalNotificationUseCase {
+        SendTransactionalNotificationUseCase(
+            pushTokenRepository: pushTokenRepository,
+            notificationPreferencesRepository: notificationPreferencesRepository,
+            smsFallbackRepository: smsFallbackRepository
+        )
+    }
+    /// K6: lab test reports attached to a visit/pet.
+    func getLabTestReportsUseCase() -> GetLabTestReportsUseCase {
+        GetLabTestReportsUseCase(repository: labTestReportRepository)
+    }
 }

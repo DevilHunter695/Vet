@@ -31,17 +31,21 @@ struct MyTicketsView: View {
                 Text("No support tickets yet.").foregroundStyle(.secondary)
             }
             ForEach(viewModel.tickets) { ticket in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(ticket.subject).font(.brandHeadline)
-                        Spacer()
-                        StatusChip(status: ticket.status)
+                NavigationLink {
+                    TicketDetailView(ticket: ticket)
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(ticket.subject).font(.brandHeadline)
+                            Spacer()
+                            StatusChip(status: ticket.status)
+                        }
+                        Text(ticket.body).font(.brandCaption).foregroundStyle(.secondary).lineLimit(2)
+                        Text(ticket.createdAt.formatted(date: .abbreviated, time: .shortened))
+                            .font(.caption2).foregroundStyle(.tertiary)
                     }
-                    Text(ticket.body).font(.brandCaption).foregroundStyle(.secondary).lineLimit(2)
-                    Text(ticket.createdAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption2).foregroundStyle(.tertiary)
+                    .padding(.vertical, 4)
                 }
-                .padding(.vertical, 4)
             }
         }
         .navigationTitle("My tickets")

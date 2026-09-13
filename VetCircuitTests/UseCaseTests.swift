@@ -410,6 +410,196 @@ struct GetCircuitsUseCaseTests {
     }
 }
 
+@Suite("SlotBufferPolicy")
+struct SlotBufferPolicyTests {
+    @Test("rejects a candidate with zero gap after a booked slot")
+    func rejectsZeroGap() {
+        let booked = Date(timeIntervalSince1970: 0)
+        // Candidate starts exactly when the booked 30-min visit ends — no travel time at all.
+        let candidate = booked.addingTimeInterval(30 * 60)
+        let offerable = SlotBufferPolicy.isOfferable(
+            candidateStart: candidate, visitDurationMinutes: 30, bookedStarts: [booked], bufferMinutes: 15
+        )
+        #expect(!offerable)
+    }
+
+    @Test("accepts a candidate that leaves the full buffer")
+    func acceptsFullBuffer() {
+        let booked = Date(timeIntervalSince1970: 0)
+        let candidate = booked.addingTimeInterval((30 + 15) * 60)
+        let offerable = SlotBufferPolicy.isOfferable(
+            candidateStart: candidate, visitDurationMinutes: 30, bookedStarts: [booked], bufferMinutes: 15
+        )
+        #expect(offerable)
+    }
+
+    @Test("accepts when there are no booked slots at all")
+    func acceptsWithNoBookings() {
+        let offerable = SlotBufferPolicy.isOfferable(
+            candidateStart: .now, visitDurationMinutes: 30, bookedStarts: [], bufferMinutes: 15
+        )
+        #expect(offerable)
+    }
+
+    @Test("filterOfferableSlots keeps booked slots and drops too-close empty ones")
+    func filterOfferableSlotsDropsTooClose() {
+        let base = Date(timeIntervalSince1970: 0)
+        let booked = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: base, endTime: base.addingTimeInterval(1800), capacity: 1, bookedCount: 1)
+        let tooClose = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: base.addingTimeInterval(1800), endTime: base.addingTimeInterval(3600), capacity: 1, bookedCount: 0)
+        let farEnough = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: base.addingTimeInterval(2700), endTime: base.addingTimeInterval(4500), capacity: 1, bookedCount: 0)
+        let filtered = SlotBufferPolicy.filterOfferableSlots([booked, tooClose, farEnough], visitDurationMinutes: 30, bufferMinutes: 15)
+        #expect(filtered.contains { $0.id == booked.id })
+        #expect(!filtered.contains { $0.id == tooClose.id })
+        #expect(filtered.contains { $0.id == farEnough.id })
+    }
+}
+
+@Suite("VetBlackout")
+struct VetBlackoutTests {
+    @Test("isActive is true within the date range, inclusive")
+    func activeWithinRange() {
+        let now = Date.now
+        let blackout = VetBlackout(id: UUID(), vetId: UUID(), startDate: now.addingTimeInterval(-86400), endDate: now.addingTimeInterval(86400), reason: "Leave")
+        #expect(blackout.isActive(on: now))
+    }
+
+    @Test("isActive is false outside the date range")
+    func inactiveOutsideRange() {
+        let now = Date.now
+        let blackout = VetBlackout(id: UUID(), vetId: UUID(), startDate: now.addingTimeInterval(86400), endDate: now.addingTimeInterval(2 * 86400), reason: nil)
+        #expect(!blackout.isActive(on: now))
+    }
+
+    @Test("isVetBlackedOut only matches the given vet")
+    func matchesOnlyGivenVet() {
+        let now = Date.now
+        let vetA = UUID(); let vetB = UUID()
+        let blackout = VetBlackout(id: UUID(), vetId: vetA, startDate: now.addingTimeInterval(-3600), endDate: now.addingTimeInterval(3600), reason: nil)
+        #expect(VetBlackout.isVetBlackedOut(vetId: vetA, blackouts: [blackout], on: now))
+        #expect(!VetBlackout.isVetBlackedOut(vetId: vetB, blackouts: [blackout], on: now))
+    }
+}
+
+@Suite("ManageVetBlackoutsUseCase")
+struct ManageVetBlackoutsUseCaseTests {
+    @Test("rejects an end date before the start date")
+    func rejectsInvertedRange() async {
+        let useCase = ManageVetBlackoutsUseCase(repository: MockVetBlackoutRepository())
+        let vetId = UUID()
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.add(vetId: vetId, startDate: .now, endDate: .now.addingTimeInterval(-3600), reason: nil)
+        }
+    }
+
+    @Test("add then list returns the created blackout")
+    func addThenList() async throws {
+        let useCase = ManageVetBlackoutsUseCase(repository: MockVetBlackoutRepository())
+        let vetId = UUID()
+        _ = try await useCase.add(vetId: vetId, startDate: .now, endDate: .now.addingTimeInterval(86400), reason: "Diwali")
+        let list = try await useCase.list(vetId: vetId)
+        #expect(list.count == 1)
+        #expect(list.first?.reason == "Diwali")
+    }
+}
+
+@Suite("GetCircuitsUseCase blackout filtering")
+struct GetCircuitsUseCaseBlackoutTests {
+    @Test("excludes a circuit whose vet is currently blacked out")
+    func excludesBlackedOutVet() async throws {
+        let circuitRepository = MockCircuitRepository()
+        let allCircuits = try await circuitRepository.listCircuits(area: nil)
+        guard let targetCircuit = allCircuits.first(where: { $0.vertical == .vet }) else {
+            Issue.record("Fixture has no vet-vertical circuit to test against")
+            return
+        }
+        let blackoutRepository = MockVetBlackoutRepository()
+        _ = try await blackoutRepository.create(
+            VetBlackout(id: UUID(), vetId: targetCircuit.vetId, startDate: .now.addingTimeInterval(-3600), endDate: .now.addingTimeInterval(3600), reason: "Leave")
+        )
+
+        let useCase = GetCircuitsUseCase(repository: circuitRepository, vetBlackoutRepository: blackoutRepository)
+        let result = try await useCase.execute(area: nil, vertical: .vet)
+        #expect(!result.contains { $0.id == targetCircuit.id })
+    }
+
+    @Test("without a blackout repository, nothing is filtered")
+    func noFilteringWithoutRepository() async throws {
+        let useCase = GetCircuitsUseCase(repository: MockCircuitRepository())
+        let result = try await useCase.execute(area: nil, vertical: .vet)
+        #expect(!result.isEmpty)
+    }
+}
+
+@Suite("MedicationReminder")
+struct MedicationReminderTests {
+    @Test("isInRange is false before the start date")
+    func falseBeforeStart() {
+        let reminder = MedicationReminder(id: UUID(), petId: UUID(), medicationName: "Amoxicillin", dosage: "1 tablet",
+                                           times: [TimeOfDay(hour: 8, minute: 0)], startDate: .now.addingTimeInterval(86400), endDate: nil)
+        #expect(!reminder.isInRange(on: .now))
+    }
+
+    @Test("isInRange is true with no end date, once started")
+    func trueOngoing() {
+        let reminder = MedicationReminder(id: UUID(), petId: UUID(), medicationName: "Fish oil", dosage: "1 capsule",
+                                           times: [TimeOfDay(hour: 8, minute: 0)], startDate: .now.addingTimeInterval(-86400), endDate: nil)
+        #expect(reminder.isInRange(on: .now))
+    }
+
+    @Test("isInRange is false after the end date")
+    func falseAfterEnd() {
+        let reminder = MedicationReminder(id: UUID(), petId: UUID(), medicationName: "Antibiotic", dosage: "1 tablet",
+                                           times: [TimeOfDay(hour: 8, minute: 0)],
+                                           startDate: .now.addingTimeInterval(-10 * 86400), endDate: .now.addingTimeInterval(-2 * 86400))
+        #expect(!reminder.isInRange(on: .now))
+    }
+}
+
+@Suite("ManageMedicationRemindersUseCase")
+struct ManageMedicationRemindersUseCaseTests {
+    @Test("rejects an empty medication name")
+    func rejectsEmptyName() async {
+        let useCase = ManageMedicationRemindersUseCase(repository: MockMedicationReminderRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.add(petId: UUID(), medicationName: "  ", dosage: "1 tablet", times: [TimeOfDay(hour: 8, minute: 0)], startDate: .now, endDate: nil)
+        }
+    }
+
+    @Test("rejects no times of day")
+    func rejectsNoTimes() async {
+        let useCase = ManageMedicationRemindersUseCase(repository: MockMedicationReminderRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.add(petId: UUID(), medicationName: "Fish oil", dosage: "1 capsule", times: [], startDate: .now, endDate: nil)
+        }
+    }
+
+    @Test("add then list, then setActive toggles the flag")
+    func addListSetActive() async throws {
+        let useCase = ManageMedicationRemindersUseCase(repository: MockMedicationReminderRepository())
+        let petId = UUID()
+        let created = try await useCase.add(petId: petId, medicationName: "Fish oil", dosage: "1 capsule",
+                                             times: [TimeOfDay(hour: 8, minute: 0)], startDate: .now, endDate: nil)
+        var list = try await useCase.list(petId: petId)
+        #expect(list.count == 1)
+
+        let deactivated = try await useCase.setActive(created, isActive: false)
+        #expect(!deactivated.isActive)
+        list = try await useCase.list(petId: petId)
+        #expect(list.first?.isActive == false)
+    }
+
+    @Test("remove deletes the reminder")
+    func removeDeletes() async throws {
+        let useCase = ManageMedicationRemindersUseCase(repository: MockMedicationReminderRepository())
+        let petId = UUID()
+        let created = try await useCase.add(petId: petId, medicationName: "Fish oil", dosage: "1 capsule",
+                                             times: [TimeOfDay(hour: 8, minute: 0)], startDate: .now, endDate: nil)
+        try await useCase.remove(id: created.id)
+        let list = try await useCase.list(petId: petId)
+        #expect(list.isEmpty)
+    }
+}
+
 @Suite("GetLoyaltyAccountUseCase")
 struct GetLoyaltyAccountUseCaseTests {
     @Test("starts at zero points and bronze tier")
@@ -555,7 +745,10 @@ struct CartAndQuoteUseCaseTests {
 
     @Test("rejects a quote for an empty cart")
     func rejectsEmptyCartQuote() async {
-        let quoteUseCase = GetQuoteUseCase(quoteRepository: MockQuoteRepository(), catalogRepository: MockCatalogRepository())
+        let quoteUseCase = GetQuoteUseCase(
+            quoteRepository: MockQuoteRepository(couponRepository: MockCouponRepository(), walletRepository: MockWalletRepository()),
+            catalogRepository: MockCatalogRepository(), circuitRepository: MockCircuitRepository(),
+            vetServiceOverrideRepository: MockVetServiceOverrideRepository())
         let emptyCart = Cart(id: UUID(), userId: UUID())
 
         await #expect(throws: DomainError.self) {
@@ -567,7 +760,10 @@ struct CartAndQuoteUseCaseTests {
     func producesRealQuote() async throws {
         let cartRepo = MockCartRepository()
         let cartUseCase = ManageCartUseCase(cartRepository: cartRepo)
-        let quoteUseCase = GetQuoteUseCase(quoteRepository: MockQuoteRepository(), catalogRepository: MockCatalogRepository())
+        let quoteUseCase = GetQuoteUseCase(
+            quoteRepository: MockQuoteRepository(couponRepository: MockCouponRepository(), walletRepository: MockWalletRepository()),
+            catalogRepository: MockCatalogRepository(), circuitRepository: MockCircuitRepository(),
+            vetServiceOverrideRepository: MockVetServiceOverrideRepository())
 
         let service = MockData.services[0]
         let userId = UUID()
@@ -579,6 +775,105 @@ struct CartAndQuoteUseCaseTests {
         #expect(!quote.signature.isEmpty)
         #expect(!quote.isExpired)
         #expect(quote.breakdown.totalMinorUnits > 0)
+    }
+
+    @Test("an active subscriber with a credit gets the base price zeroed")
+    func appliesEntitlementCreditWhenAvailable() async throws {
+        let cartRepo = MockCartRepository()
+        let cartUseCase = ManageCartUseCase(cartRepository: cartRepo)
+        let subscriptionRepo = MockSubscriptionRepository()
+        let entitlementRepo = MockSubscriptionEntitlementRepository()
+        let quoteUseCase = GetQuoteUseCase(
+            quoteRepository: MockQuoteRepository(couponRepository: MockCouponRepository(), walletRepository: MockWalletRepository()),
+            catalogRepository: MockCatalogRepository(), circuitRepository: MockCircuitRepository(),
+            vetServiceOverrideRepository: MockVetServiceOverrideRepository(),
+            subscriptionRepository: subscriptionRepo, entitlementRepository: entitlementRepo)
+
+        let service = MockData.services[0]
+        let userId = UUID()
+        let subscription = try await subscriptionRepo.subscribe(userId: userId, plan: .monthly)
+        var cart = try await cartUseCase.current(userId: userId)
+        let item = CartItem(id: UUID(), serviceId: service.id, variantId: service.variants[0].id, petIds: [UUID()])
+        cart = try await cartUseCase.addItem(item, to: cart)
+
+        // A fresh subscription's entitlement is lazily seeded with 1 credit
+        // (mirrors a signup edge function granting one server-side) — the
+        // quote flow should find and apply it without the caller ever
+        // touching consumeCredit directly.
+        let creditedQuote = try await quoteUseCase.execute(cart: cart)
+        #expect(creditedQuote.breakdown.lineItems.contains { $0.amountMinorUnits == 0 && $0.label.contains(service.variants[0].name) })
+
+        // Once the credit is actually spent, the next quote is priced normally.
+        _ = try await entitlementRepo.consumeCredit(subscriptionId: subscription.id)
+        let noCreditQuote = try await quoteUseCase.execute(cart: cart)
+        #expect(noCreditQuote.breakdown.lineItems.first?.label == service.variants[0].name)
+
+        // Without a subscription/entitlement wired at all, no credit applies either.
+        let plainQuoteUseCase = GetQuoteUseCase(
+            quoteRepository: MockQuoteRepository(couponRepository: MockCouponRepository(), walletRepository: MockWalletRepository()),
+            catalogRepository: MockCatalogRepository(), circuitRepository: MockCircuitRepository(),
+            vetServiceOverrideRepository: MockVetServiceOverrideRepository())
+        let plainQuote = try await plainQuoteUseCase.execute(cart: cart)
+        #expect(plainQuote.breakdown.lineItems.first?.label == service.variants[0].name)
+    }
+}
+
+@Suite("EntitlementPolicy")
+struct EntitlementPolicyTests {
+    @Test("monthly/quarterly/annual each grant one credit per month")
+    func individualPlansGrantOneCreditPerMonth() {
+        #expect(EntitlementPolicy.creditsGrantedPerPeriod(plan: .monthly, seatCount: 1) == 1)
+        #expect(EntitlementPolicy.creditsGrantedPerPeriod(plan: .quarterly, seatCount: 1) == 1)
+        #expect(EntitlementPolicy.creditsGrantedPerPeriod(plan: .annual, seatCount: 1) == 1)
+    }
+
+    @Test("corporate grants one credit per seat")
+    func corporateGrantsOneCreditPerSeat() {
+        #expect(EntitlementPolicy.creditsGrantedPerPeriod(plan: .corporate, seatCount: 12) == 12)
+    }
+
+    @Test("a paused/cancelled subscription never gets a credit applied")
+    func inactiveSubscriptionNeverGetsCredit() {
+        var subscription = Subscription(id: UUID(), userId: UUID(), planType: .monthly, status: .paused, renewalDate: .now)
+        let entitlement = SubscriptionEntitlement(id: UUID(), subscriptionId: subscription.id, creditsRemaining: 5, resetAt: .now.addingTimeInterval(86_400))
+        #expect(EntitlementPolicy.canApplyCredit(subscription: subscription, entitlement: entitlement, now: .now) == false)
+
+        subscription.status = .active
+        #expect(EntitlementPolicy.canApplyCredit(subscription: subscription, entitlement: entitlement, now: .now) == true)
+    }
+
+    @Test("zero credits remaining and no reset due means no credit applies")
+    func zeroCreditsNoResetDueMeansNoCredit() {
+        let subscription = Subscription(id: UUID(), userId: UUID(), planType: .monthly, status: .active, renewalDate: .now)
+        let entitlement = SubscriptionEntitlement(id: UUID(), subscriptionId: subscription.id, creditsRemaining: 0, resetAt: .now.addingTimeInterval(86_400))
+        #expect(EntitlementPolicy.canApplyCredit(subscription: subscription, entitlement: entitlement, now: .now) == false)
+    }
+
+    @Test("a due reset rolls credits forward before the eligibility check")
+    func dueResetRollsForwardBeforeCheck() {
+        let subscription = Subscription(id: UUID(), userId: UUID(), planType: .monthly, status: .active, renewalDate: .now)
+        let pastDue = SubscriptionEntitlement(id: UUID(), subscriptionId: subscription.id, creditsRemaining: 0, resetAt: .now.addingTimeInterval(-3600))
+        #expect(EntitlementPolicy.canApplyCredit(subscription: subscription, entitlement: pastDue, now: .now) == true)
+
+        let rolled = EntitlementPolicy.rolledForward(entitlement: pastDue, plan: subscription.planType, seatCount: subscription.seatCount, now: .now)
+        #expect(rolled.creditsRemaining == 1)
+        #expect(rolled.resetAt > .now)
+    }
+}
+
+@Suite("PricingEngine entitlement credit")
+struct PricingEngineEntitlementTests {
+    @Test("an applied credit zeroes the base price but not add-ons")
+    func creditZeroesBaseOnly() {
+        let variant = MockData.services[0].variants[0]
+        let addon = MockData.services[0].addons.first
+        let input = PricingEngine.Input(variant: variant, addons: addon.map { [$0] } ?? [], additionalPetCount: 0,
+                                        travelFeeMinorUnits: 0, entitlementCreditApplied: true)
+        let breakdown = PricingEngine.quote(input)
+        #expect(breakdown.lineItems.contains { $0.amountMinorUnits == 0 && $0.label.contains(variant.name) })
+        if let addon {
+            #expect(breakdown.lineItems.contains { $0.label == addon.name && $0.amountMinorUnits == addon.priceMinorUnits })
+        }
     }
 }
 
@@ -1449,5 +1744,42 @@ struct ListEmergencyClinicsUseCaseTests {
         let near = MockData.emergencyClinics[0]
         let clinics = try await useCase.execute(fromLatitude: near.latitude, longitude: near.longitude)
         #expect(clinics.first?.id == near.id)
+    }
+}
+
+@Suite("FileIncidentReportUseCase / SOSUseCase")
+struct IncidentReportUseCaseTests {
+    @Test("rejects an empty description for a non-SOS report")
+    func rejectsEmptyDescriptionForSafetyConcern() async {
+        let useCase = FileIncidentReportUseCase(repository: MockIncidentReportRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(visitId: UUID(), reporterId: UUID(), reporterRole: .customer,
+                                           type: .safetyConcern, description: "   ")
+        }
+    }
+
+    @Test("allows an empty description for an SOS report")
+    func allowsEmptyDescriptionForSOS() async throws {
+        let useCase = FileIncidentReportUseCase(repository: MockIncidentReportRepository())
+        let report = try await useCase.execute(visitId: UUID(), reporterId: UUID(), reporterRole: .customer,
+                                                type: .sos, description: "")
+        #expect(report.type == .sos)
+    }
+
+    @Test("SOS use case files a report and returns a matching share link")
+    func sosProducesReportAndShareLink() async throws {
+        let visitId = UUID()
+        let useCase = SOSUseCase(incidentReportRepository: MockIncidentReportRepository())
+        let result = try await useCase.execute(visitId: visitId, reporterId: UUID(), reporterRole: .customer)
+        #expect(result.report.type == .sos)
+        #expect(result.report.visitId == visitId)
+        #expect(result.shareLink.absoluteString == "vetcircuit://visit/\(visitId.uuidString)")
+    }
+
+    @Test("share link round-trips through the existing deep link parser")
+    func shareLinkParsesBackToTheSameVisit() {
+        let visitId = UUID()
+        let link = ShareVisitLinkUseCase.link(visitId: visitId)
+        #expect(DeepLinkParser.parse(link) == .visit(visitId))
     }
 }

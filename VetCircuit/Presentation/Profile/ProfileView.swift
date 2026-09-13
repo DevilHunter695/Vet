@@ -63,6 +63,10 @@ struct ProfileView: View {
     @State private var checkoutURL: URL?
     @AppStorage("vc.selected_vertical") private var selectedVerticalRaw: String = Vertical.vet.rawValue
     @AppStorage("vc.appearance") private var appearanceRaw: String = AppearanceOption.system.rawValue
+    // A10: UserDefaults-backed directly (not routed through the view model) —
+    // this is a local device preference, not server state; RootView reads
+    // the same key via `BiometricLockSetting`.
+    @AppStorage("vc.biometric_lock_enabled") private var biometricLockEnabled: Bool = false
 
     private var appearance: Binding<AppearanceOption> {
         Binding(
@@ -165,8 +169,14 @@ struct ProfileView: View {
                 .animation(Theme.crossFade, value: viewModel.subscription?.id)
 
                 Section {
+                    NavigationLink("Wallet") {
+                        WalletBalanceView()
+                    }
                     NavigationLink("Addresses") {
                         AddressListView()
+                    }
+                    NavigationLink("Payment methods") {
+                        PaymentMethodsView()
                     }
                     NavigationLink("Household") {
                         HouseholdView()
@@ -177,8 +187,14 @@ struct ProfileView: View {
                     NavigationLink("Privacy & consent") {
                         PrivacyConsentView()
                     }
+                    Toggle("Require Face ID to open app", isOn: $biometricLockEnabled)
+                        .onChange(of: biometricLockEnabled) { _, _ in Haptics.selection() }
                     NavigationLink("Notifications centre") {
                         NotificationCenterView()
+                    }
+                    // F5: recurring bookings management (view/pause/cancel).
+                    NavigationLink("Your recurring bookings") {
+                        RecurringBookingsView()
                     }
                 }
 

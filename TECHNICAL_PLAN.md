@@ -130,8 +130,8 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | A7 | Export my data (JSON + PDF of records) | P1 | 🔨 | DPDP data-principal right — JSON export done, no PDF |
 | A8 | Multiple addresses (home/office/parents), default, geofence check | **P0** | ✅ | A circuit is *address-scoped* — this is core inventory logic, not a nicety |
 | A9 | Household: invite spouse/family to same pets & bookings | P1 | 🔨 | Roles: owner/member. `Household`/`HouseholdMember` + `HouseholdRepository`, `HouseholdView` linked from Profile. Pets keep `owner_id`; visibility only, via an additional RLS policy (see 0020_households.sql) — no pet-ownership model change |
-| A10 | Biometric lock on app (Face ID) | P1 | ⛔ | Medical records = sensitive |
-| A11 | Blocked/deactivated account handling | P1 | ⛔ | Graceful screen, support path |
+| A10 | Biometric lock on app (Face ID) | P1 | ✅ | `BiometricLockSetting`/`BiometricLockGateModel` (App/BiometricLock.swift), local UserDefaults toggle in Profile, gate above `MainTabView` in `RootView`. Falls back to unlocked (no lock) when biometrics aren't enrolled — never strands the user |
+| A11 | Blocked/deactivated account handling | P1 | ✅ | `User.accountStatus` (active/blocked/deactivated), admin-only column via trigger (0026_account_status.sql, mirrors `vets.verification_status`'s ownership split). `AccountBlockedView` shown from `RootView`, links to `ContactSupportView` |
 
 ### B. Pets, records & documents
 
@@ -142,8 +142,8 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | B3 | Weight & vitals history (chart) | P1 | 🔨 | `pet_weights` table + `PetWeightRepository` + Swift Charts line chart in `PetDetailView`; vitals beyond weight (temp, HR) not modeled |
 | B4 | Vaccination record + **next-due reminders** | **P0** | 🔨 | Extends 0019's `vaccinations` table (batch number, visit link); `VaccinationPolicy` auto-computes next-due (+12mo) on record; history view color-codes overdue/due-soon with 1-tap "book vaccination visit" |
 | B5 | Prescription history | P1 | 🔨 | Same feature as K2 — see that row. Must be vet-issued only (see §8.7) |
-| B6 | Document vault (upload prior reports, insurance) | P1 | ⛔ | Private bucket, signed URLs, virus scan |
-| B7 | Shareable pet health summary (PDF) | P2 | ⛔ | For boarding/travel/clinic referral |
+| B6 | Document vault (upload prior reports, insurance) | P1 | ✅ | Private bucket, signed URLs, virus scan |
+| B7 | Shareable pet health summary (PDF) | P2 | ✅ | For boarding/travel/clinic referral |
 | B8 | Deceased/rehomed pet handling | P1 | 🔨 | Soft-delete via `Pet.archivedAt`/`archiveReason`; excluded from `ManagePetsUseCase.list` (booking picker, vaccination nagging) by default; confirmation dialog uses calm copy, never "delete" |
 
 ### C. Discovery, detail & "multiple options"
@@ -180,7 +180,7 @@ Service (Home consultation)
 | D2 | Variants per service (duration/tier/package) | **P0** | 🔨 |
 | D3 | Add-ons attachable to a booking | P1 | ✅ | ServiceDetailView now toggles add-ons into `CartItem.addonIds`; PricingEngine/create_quote already priced them |
 | D4 | Packages/bundles ("Puppy first-year: 4 visits + 3 vaccines") | P1 | 🔨 | `Package`/`PackageRepository` + `PackagesView` + `0015_packages.sql` ship; buying one is a stub that expands into individual cart lines — no redemption/entitlement tracking ("3 of 4 visits used") yet |
-| D5 | Per-vet service availability & per-vet pricing overrides | P1 | ⛔ |
+| D5 | Per-vet service availability & per-vet pricing overrides | P1 | 🔨 | `VetServiceOverride`/`VetServiceOverrideRepository` (Mock+Supabase) + `0026_vet_service_overrides.sql`; wired into `PricingEngine`/`GetQuoteUseCase` client-side — the `create-quote` edge function itself still needs updating to read the same table server-side |
 | D6 | Multi-pet in one visit (2nd pet at reduced fee) | **P0** | ✅ | ServiceDetailView's pet multi-select feeds `CartItem.petIds`, which already drove `PricingEngine.additionalPetCount` — that wiring was the only missing piece |
 | D7 | Catalog managed from ops console, not hardcoded | P0 | 🔨 | iOS `SupabaseCatalogRepository`/`SupabasePackageRepository` read services/packages from Postgres (Mock repos stay hardcoded for local dev, by design); the ops console side is a separate workstream |
 
@@ -191,14 +191,14 @@ Service (Home consultation)
 | E1 | **Cart**: multiple services/pets/add-ons in one booking | **P0** | 🔨 | Add / **remove** / change quantity / clear |
 | E2 | Cart persistence across devices + restore on relaunch | P0 | ✅ | Server-side cart, not local only |
 | E3 | **Transparent price breakdown**: subtotal · per-pet · travel fee · peak · discount · GST · total | **P0** | ✅ | Non-negotiable for trust |
-| E4 | Coupon / promo code entry + validation + stacking rules | P1 | ⛔ | |
+| E4 | Coupon / promo code entry + validation + stacking rules | P1 | 🔨 | `validate_coupon()` RPC + CartView promo field wired into the quote; PricingEngine already had the discount term |
 | E5 | Wallet credits & loyalty point redemption at checkout | P1 | 🔨 | Loyalty exists; redemption doesn't |
 | E6 | **Server-authoritative quote**: `POST /quotes` returns a signed, TTL'd quote; order must reference a valid quote | **P0** | 🔨 | Prevents client price tampering entirely |
 | E7 | Slot **hold** (10 min) during checkout, auto-release | **P0** | 🔨 | Prevents the "slot taken while I was paying" disaster |
 | E8 | Payment method choice: UPI intent, cards, netbanking, wallets, **pay-after-visit (cash/UPI to vet)** | P0 | 🔨 | Cash-on-visit is table stakes in India |
-| E9 | Saved payment methods (gateway-tokenized, never stored by you) | P1 | ⛔ | |
+| E9 | Saved payment methods (gateway-tokenized, never stored by you) | P1 | ✅ | |
 | E10 | Order confirmation screen + receipt email/SMS | P0 | 🔨 | |
-| E11 | Tip the vet after visit | P2 | ⛔ | |
+| E11 | Tip the vet after visit | P2 | 🔨 | Preset/custom tip UI + `TipUseCase`; credited 100% to the vet via a new trigger on `payments.kind = 'tip'` (0028_tips.sql) |
 
 ### F. Scheduling & booking lifecycle
 
@@ -208,11 +208,11 @@ Service (Home consultation)
 | F2 | Capacity per slot (N stops per block), not boolean availability | **P0** | ✅ |
 | F3 | **Reschedule** (with policy window) | **P0** | ✅ |
 | F4 | **Cancel** with policy: free >4h, 50% <4h, 100% no-show | **P0** | 🔨 (policy + refund now wired; no-show detection still manual) |
-| F5 | Recurring bookings (monthly deworming, weekly physio) | P1 | ⛔ |
-| F6 | Vet-initiated reschedule + customer accept/decline + auto-compensation credit | P1 | ⛔ |
-| F7 | Customer no-show & vet no-show handling, both directions | P1 | ⛔ |
-| F8 | Buffer/travel-time aware slot generation | P1 | ⛔ |
-| F9 | Blackouts/leave/holiday handling for vets | P1 | ⛔ |
+| F5 | Recurring bookings (monthly deworming, weekly physio) | P1 | 🔨 (rule model/repo/UI + `RecurrenceScheduler` ship; a scheduled job to actually spawn each cycle's visit is out of scope for the client app — known gap) |
+| F6 | Vet-initiated reschedule + customer accept/decline + auto-compensation credit | P1 | 🔨 (proposal model/repo + accept/decline banner in `VisitDetailView` ship; the vet-side "propose a new slot" screen is a separate (vet-app) workstream) |
+| F7 | Customer no-show & vet no-show handling, both directions | P1 | 🔨 (`NoShowPolicy` + `assigned`/`en_route` → `no_show_vet` transition + customer-facing "Vet didn't show up" report ship; customer no-show is reported vet-side, out of scope here) |
+| F8 | Buffer/travel-time aware slot generation | P1 | ✅ `SlotBufferPolicy` (pure, unit-tested) filters a circuit's schedule in `GetCircuitsUseCase` so an empty slot within travel-buffer distance of an already-booked one on the same day isn't offered |
+| F9 | Blackouts/leave/holiday handling for vets | P1 | ✅ `VetBlackout` model + `VetBlackoutRepository` (Mock/Supabase, `vet_blackouts` table) + `ManageVetBlackoutsUseCase`; `GetCircuitsUseCase` excludes a circuit whose vet is currently blacked out. No vet-facing management UI exists anywhere in this app yet (there's no "vet mode" surface at all), so a vet-side screen to create blackouts is a known gap — the domain/data layer and the customer-facing filtering effect are complete |
 
 ### G. Payments, billing & refunds
 
@@ -223,10 +223,10 @@ Service (Home consultation)
 | G3 | Payment retry on failure + clear failure states | P0 | 🔨 | |
 | G4 | **Refunds** (full/partial), initiated by ops, tracked to gateway | **P0** | 🔨 | You cannot launch without a refund path |
 | G5 | GST-compliant invoice PDF per order | **P0** | 🔨 | Legal requirement once registered |
-| G6 | Wallet + double-entry ledger | P1 | ⛔ | Credits, compensation, refund-to-wallet |
+| G6 | Wallet + double-entry ledger | P1 | 🔨 | `wallet_ledger` (append-only, mirrors `vet_ledger`) + balance view + CartView "use wallet balance" toggle; nothing yet writes the debit when a wallet-funded booking completes — checkout/payment-capture is still open |
 | G7 | **Vet payouts**: earnings view, weekly payout run, reconciliation | **P0 (partner)** | 🔨 | Vets quit over late/unclear pay faster than over anything else |
-| G8 | Daily reconciliation job: gateway settlements vs your ledger | P1 | ⛔ | |
-| G9 | Chargeback/dispute handling from gateway | P2 | ⛔ | |
+| G8 | Daily reconciliation job: gateway settlements vs your ledger | P1 | 🔨 | `daily-reconciliation` Edge Function (cron-invoked, service-role key) diffs the `payments` ledger against a POSTed gateway settlement report and writes `reconciliation_mismatches` rows (0041_reconciliation_mismatches.sql, admin-read-only RLS, no client write policy at all). Marked 🔨 not ✅: reconciliation is inherently an ops/back-office job — there is no gateway integration to poll live (checkout is still the mocked hosted-checkout URL flow) and no customer-facing use for this data, so no domain/UI layer was added on the app side; wiring a real cron schedule and an ops dashboard to review mismatches is admin-web/infra work outside this app's scope. |
+| G9 | Chargeback/dispute handling from gateway | P2 | 🔨 | `PaymentDispute` model + `PaymentDisputeRepository` (Mock/Supabase, `payment_disputes` 0042_payment_disputes.sql — customer can read disputes on their own visits, no client write policy) plus a `dispute-webhook` Edge Function stub that upserts dispute status from a signed gateway payload, mirroring `payment-webhook`. Customer-facing half is done: `PaymentDisputeStatusView` banner on `VisitDetailView` tells the customer a dispute is under review instead of leaving a payment hold unexplained. Marked 🔨 not ✅: evidence submission, gateway-side response deadlines, and the actual chargeback-fighting workflow are inherently an ops/admin-web concern (no gateway is wired into this codebase to submit evidence to), so no such flow was built here — only the read-only customer visibility this app can genuinely own. |
 
 ### H. Subscriptions & plans
 
@@ -237,7 +237,7 @@ Service (Home consultation)
 | H3 | Manage: upgrade, downgrade, **pause**, **cancel**, view next renewal | **P0** | 🔨 |
 | H4 | Renewal reminders (T-7, T-1) + receipt | P0 | 🔨 |
 | H5 | Dunning: failed renewal → retry ladder → grace → downgrade | P1 | 🔨 |
-| H6 | Subscription credits consumed by bookings (entitlement engine) | P1 | ⛔ |
+| H6 | Subscription credits consumed by bookings (entitlement engine) | P1 | ✅ | `SubscriptionEntitlement` + pure `EntitlementPolicy` (monthly/quarterly/annual = 1 credit/month, corporate = 1/seat/month), wired into `PricingEngine.Input.entitlementCreditApplied` (Appendix C's "entitlement" line) via `GetQuoteUseCase`. Client only proposes; 0028_subscription_entitlements.sql's `consume_subscription_credit()` is the real, atomic authority |
 | H7 | Corporate/RWA seat-based plan + seat assignment | P2 | 🔨 |
 
 ### I. The live visit (your trust moment)
@@ -264,7 +264,7 @@ Service (Home consultation)
 | J5 | Chat auto-closes 48h post-visit, with escalation to support | P1 | ✅ | `ChatPolicy.isOpen` (domain, tested) gates `ChatView`'s input bar and shows a "chat has closed — contact support" banner |
 | J6 | Video consult | P2 | 🔨 (stub) | |
 | J7 | Notification centre in-app + per-channel preferences | P1 | ✅ | Per-channel toggles were already ✅ (`NotificationPreferencesView`); this adds `NotificationCenterView`, reading the `notifications` table (extended with `read_at` in 0020) via a new `AppNotificationRepository` |
-| J8 | Transactional SMS/WhatsApp fallback when push fails | P1 | ⛔ | Android-less households, push disabled |
+| J8 | Transactional SMS/WhatsApp fallback when push fails | P1 | 🔨 | `NotificationDeliveryPolicy` (pure, tested) decides push vs SMS-fallback vs suppressed from push-token presence + a push-delivery-failed signal + `NotificationPreferences`; `SendTransactionalNotificationUseCase` drives it and logs the decision via `SMSFallbackRepository` (Mock/Supabase) → `send-sms-fallback` Edge Function → append-only `sms_fallback_log` (0041, service-role only). Honest gap: no Twilio/MSG91/gateway account or API key exists in this project, so the function is a clearly-marked stub that records fallback *intent* rather than placing a real SMS/WhatsApp send — see its TODO comment for exactly where that call goes. Also consistent with today's reality that push itself is only modeled client-side (`PushTokenRepository.registerDeviceToken`); there is no server-side push-send job yet for this to hook a live failure signal from |
 
 ### K. Post-visit care
 
@@ -272,10 +272,10 @@ Service (Home consultation)
 |---|---|---|---|
 | K1 | Visit record: diagnosis notes, procedures done, meds given | P0 | 🔨 |
 | K2 | Prescription (structured, vet-signed, PDF) | P1 | 🔨 | `prescriptions` table + read-only `PrescriptionRepository`, shown in `PetDetailView`; structured data + vet-signed only via server-side RLS (no client insert policy) — PDF generation not built (known gap, same shape as A7's export-PDF gap) |
-| K3 | Medication reminders | P2 | ⛔ |
+| K3 | Medication reminders | P2 | ✅ `MedicationReminder` model + `MedicationReminderRepository` (Mock/Supabase, `medication_reminders` table, household-manageable per `pet_id`) + `ManageMedicationRemindersUseCase`; `MedicationRemindersView` (list + add form) reachable from `PetDetailView` next to Prescriptions; `PushNotificationManager` schedules a repeating local `UNCalendarNotificationTrigger` per time-of-day |
 | K4 | Vaccination certificate PDF + next-due auto-scheduling | P1 | 🔨 | Next-due date auto-populates (+12mo) when a vaccination is recorded — the "auto-scheduling" plan means; certificate PDF is a known gap |
 | K5 | Follow-up booking in 1 tap (free follow-up window) | P1 | 🔨 | `FollowUpBookingPolicy` (14-day window) gates a "Book free follow-up" button on `VisitDetailView`, pre-filling the same pet + the existing free follow-up variant via `ServiceDetailView`; that screen adds to cart rather than booking a specific circuit slot directly, so "same vet/circuit" isn't yet enforced end-to-end — known gap |
-| K6 | Lab test ordering + report delivery | P2 | ⛔ |
+| K6 | Lab test ordering + report delivery | P2 | ✅ | Ordering reuses the existing catalog/cart/checkout/booking flow rather than a parallel system — a new `ServiceCategory.labTest` ("Lab tests": complete blood panel, urinalysis) books like any other service. `LabTestReport` (id/visitId/petId/testName/status/reportFileURL/resultSummary/availableAt) + read-only `LabTestReportRepository` (Mock/Supabase, `lab_test_reports` table 0042, household-read RLS mirroring `pet_documents`, no client insert/update — reports are uploaded ops-side, out of this app's scope) + `LabTestReportsView` reachable from both `VisitDetailView` and `PetDetailView`, showing pending/ready status and a share-sheet (same `ShareSheet`/`UIActivityViewController` pattern as B7) once a report is ready |
 | K7 | Rate & review (stars + tags + optional photo) | P0 | ✅ |
 | K8 | Report a problem with this visit → dispute ticket | **P0** | ✅ | Uses the same `SupportTicket` model as M2, with `visitId` set — "Report a problem with this visit" button on completed visits in `VisitDetailView` opens `ContactSupportView` pre-filled |
 
@@ -286,8 +286,8 @@ Service (Home consultation)
 | L1 | Manual VCI registration verification before a vet goes live | P0 | 🔨 | Do this by hand, every time, forever |
 | L2 | Document-backed onboarding: degree, VCI cert, ID, police verification, photo | P0 | ⛔ | |
 | L3 | "Verified" badge + credentials visible on vet profile | P0 | ✅ | `VerifiedBadge` on `VetDetailView`, the booking-flow vet card, and the circuit list row. Also closed a real gap: `CircuitRepository.listCircuits` previously surfaced unverified vets in the booking flow at all — it now filters to `verificationStatus == .verified` server-query-side (Supabase) / actor-side (mock), per L1's "verified before going live". |
-| L4 | **SOS button + share-my-visit link** during an in-home visit | P1 | ⛔ | A stranger is inside a home. Take this seriously. |
-| L5 | Incident reporting (both directions) + vet suspension flow | P1 | ⛔ | |
+| L4 | **SOS button + share-my-visit link** during an in-home visit | P1 | ✅ | `SOSUseCase`/`ShareVisitLinkUseCase`, prominent (but confirm-gated) button in `LiveTrackingView`; reuses N7's `DeepLinkParser`/`vetcircuit://visit/<id>` link, shares via system share sheet |
+| L5 | Incident reporting (both directions) + vet suspension flow | P1 | 🔨 | `IncidentReport`/`IncidentReportRepository` + `FileIncidentReportUseCase`, customer-side "Report an incident" in `VisitDetailView` (0027_incident_reports.sql: reporter reads/writes own only). Vet-side entry point and the ops-console vet suspension action itself are out of scope for this app — known gap |
 | L6 | Review moderation (profanity, PII, defamation) | P1 | ⛔ | |
 | L7 | Professional indemnity / liability insurance requirement for vets | P1 | ⛔ | Commercial, not code — but blocks launch legally |
 | L8 | Clear "not an emergency service" disclaimer + escalation routing | **P0** | ✅ | Full disclaimer on `EmergencyView`; a brief caption version under `CircuitsListView`'s "Not sure?"/emergency entry points too, so it's not only reachable via the emergency path. |
@@ -299,19 +299,19 @@ Service (Home consultation)
 | M1 | Help centre / FAQ (remote content, not app-updated) | P0 | ✅ | `HelpCenterView` (grouped by category, searchable) + `HelpRepository`, backed by public-read `help_articles` (migration 0020); Mock repo ships ~10 FAQ entries |
 | M2 | In-app "Contact support" → ticket with visit context attached | P0 | ✅ | `ContactSupportView`/`MyTicketsView` + `SupportRepository` against `support_tickets` (0020) — owner read/insert, no client update, mirroring `refunds` |
 | M3 | Ops ticket queue + SLA + canned responses | P0 | 🔨 |
-| M4 | Refund/credit issuance from a ticket, with audit trail | P0 | ⛔ |
-| M5 | Call support (business hours) | P1 | ⛔ |
+| M4 | Refund/credit issuance from a ticket, with audit trail | P0 | ✅ |
+| M5 | Call support (business hours) | P1 | ✅ |
 
 ### N. Growth & retention
 
 | # | Capability | Pri | Status |
 |---|---|---|---|
 | N1 | Referral code + share sheet + attribution + fraud guard | P1 | 🔨 |
-| N2 | Coupon campaigns (first-visit, win-back, cluster-launch) | P1 | ⛔ |
+| N2 | Coupon campaigns (first-visit, win-back, cluster-launch) | P1 | 🔨 | Seed campaigns (FIRSTVISIT, WINBACK100) in 0027_coupons.sql, validated via the same E4 RPC |
 | N3 | Lifecycle pushes: vaccination due, renewal, dormant 60d, abandoned cart | P1 | 🔨 | Detection + queueing done (`lifecycle-notifications` Edge Function, `notifications` table); actual push-send job to drain the queue is a separate, still-missing piece |
 | N4 | Loyalty points & tiers | P2 | ✅ |
 | N5 | In-app rating prompt (SKStoreReviewController, after a 5★ visit only) | P1 | ✅ | `ReviewView` calls `SKStoreReviewController.requestReview` only on a 5★ submit, gated to once per app version via `UserDefaults` (StoreKit's own throttling is a separate, opaque layer on top) |
-| N6 | Home Screen widget: next visit / vaccination due | P2 | ⛔ |
+| N6 | Home Screen widget: next visit / vaccination due | P2 | 🔨 | Real `VetCircuitWidgetExtension` WidgetKit target added (`project.yml`) with an App Group (`group.com.vetcircuit.app`) entitlement on both targets. `VetCircuitWidget/` has a genuine end-to-end `TimelineProvider` + `TimelineEntry` + SwiftUI widget view (systemSmall/systemMedium) reading a `SharedVisitSummary` written by `VisitHistoryView` on every load (`WidgetDataBridge`), with `WidgetCenter.reloadTimelines` called from the app. Marked 🔨 not ✅ because: (1) the widget target can't be built/run/screenshotted from this environment (no Xcode/macOS toolchain here, only `xcodegen`'s YAML), so it's unverified against a real widget host; (2) the shared struct is duplicated by hand between the two targets (no shared framework target) — a documented, deliberate simplification, not a bug; (3) refresh is timeline-scheduled (30 min) + app-foreground reload, not a live push |
 | N7 | Deep links + universal links for every campaign target | P1 | 🔨 | `DeepLinkParser` (pure) + `.onOpenURL`; `vetcircuit://visit`, `/book`, `/household` parsed and routed to the right tab. **Known gap** (plan §6.1): no shared Router/typed-Route `NavigationStack(path:)` exists — each tab still runs its own stack, so a deep link only jumps to the right tab and (for `/book`) resolves a specific circuit; it can't yet push arbitrary nested screens (e.g. a specific visit's chat) from outside |
 
 ### O. Settings, privacy & platform UX
@@ -319,7 +319,7 @@ Service (Home consultation)
 | # | Capability | Pri | Status |
 |---|---|---|---|
 | O1 | Notification preferences per channel/category | P1 | ✅ |
-| O2 | Language: English + Hindi (+1 regional at launch cluster) | P1 | ⛔ |
+| O2 | Language: English + Hindi (+1 regional at launch cluster) | P1 | 🔨 | Real `Localizable.xcstrings` string catalog (iOS 17/Xcode 15+ format, correct choice over legacy `.strings`) with English + Hindi, declared via `CFBundleLocalizations` in `project.yml`. **Full Hindi coverage**: Circuits list + filter sheet + empty/error states (`CircuitsListView`), Cart (`CartView`), Booking incl. confirmation sheet (`BookingView`) — 36 keys, real Hindi a Hindi speaker would recognize, not machine-garbled. **English-only, known follow-up**: (a) within those same 3 screens, string-interpolated labels (wallet balance amount, slot capacity count, pet name/species) — `Text` interpolation needs per-call-site catalog entries, not just literal keys; (b) every other screen (Chat, History, Wallet, Support, Profile, Legal, etc.) — untouched, as expected for a phased "+1 regional at launch cluster" rollout, not a full-app translation |
 | O3 | Appearance light/dark/system | P0 | ✅ |
 | O4 | Accessibility: Dynamic Type to AX5, VoiceOver, Reduce Motion | P0 | 🔨 |
 | O5 | **Consent dashboard**: what you collect, why, withdraw consent | P0 (DPDP) | ✅ |

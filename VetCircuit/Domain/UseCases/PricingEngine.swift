@@ -16,13 +16,28 @@ enum PricingEngine {
         var couponDiscountMinorUnits: Int = 0
         var walletBalanceMinorUnits: Int = 0
         var gstRate: Double = 0.18
+        // H6: "entitlement = subscription credit applied (may zero the
+        // base)" per Appendix C's pricing formula — this is the hook that
+        // line was written against. Only the base variant price is zeroed
+        // (a credit pays for the visit itself, not add-ons/extra pets/travel),
+        // and it's applied at most once per quote by the caller (see
+        // `EntitlementPolicy`/`GetQuoteUseCase`), never per line item.
+        var entitlementCreditApplied: Bool = false
+        /// D5: a vet's per-service price override, when one exists for this
+        /// vet+service/variant — takes precedence over the catalog default.
+        /// Ignored when `entitlementCreditApplied` zeroes the base instead.
+        var vetOverridePriceMinorUnits: Int? = nil
     }
 
     static func quote(_ input: Input) -> PriceBreakdown {
         var lineItems: [PriceLineItem] = []
 
-        let base = input.variant.priceMinorUnits
-        lineItems.append(PriceLineItem(label: input.variant.name, amountMinorUnits: base))
+        if input.entitlementCreditApplied {
+            lineItems.append(PriceLineItem(label: "\(input.variant.name) (subscription credit)", amountMinorUnits: 0))
+        } else {
+            let base = input.vetOverridePriceMinorUnits ?? input.variant.priceMinorUnits
+            lineItems.append(PriceLineItem(label: input.variant.name, amountMinorUnits: base))
+        }
 
         let multiPet = input.additionalPetCount * input.variant.additionalPetPriceMinorUnits
         if multiPet > 0 {

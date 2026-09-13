@@ -130,10 +130,28 @@ actor MockCartRepository: CartRepository {
 }
 
 actor MockQuoteRepository: QuoteRepository {
-    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote {
-        var lineItems: [PriceLineItem] = []
-        var total = 0
-        for item in cart.items {
+    private let couponRepository: CouponRepository
+    private let walletRepository: WalletRepository
+
+    init(couponRepository: CouponRepository, walletRepository: WalletRepository) {
+        self.couponRepository = couponRepository
+        self.walletRepository = walletRepository
+    }
+
+    func createQuote(for cart: Cart, catalog: [Service], overrides: [VetServiceOverride], useWalletBalance: Bool, applyEntitlementCredit: Bool) async throws -> Quote {
+        // D5: a variant-specific override wins over a whole-service one, and
+        // only an offered override counts as a price override at all — an
+        // unoffered service shouldn't reach checkout in the first place, but
+        // pricing here stays defensive regardless.
+        func override(for item: CartItem) -> VetServiceOverride? {
+            overrides.first { $0.isOffered && $0.serviceId == item.serviceId && $0.variantId == item.variantId }
+                ?? overrides.first { $0.isOffered && $0.serviceId == item.serviceId && $0.variantId == nil }
+        }
+
+        // Pre-discount/pre-wallet subtotal, computed first because coupon
+        // validation (min-spend) and the wallet cap both need it.
+        var preSubtotal = 0
+        for (index, item) in cart.items.enumerated() {
             guard let service = catalog.first(where: { $0.id == item.serviceId }),
                   let variant = service.variants.first(where: { $0.id == item.variantId }) else {
                 throw DomainError.notFound("Service variant")
@@ -142,7 +160,47 @@ actor MockQuoteRepository: QuoteRepository {
             let input = PricingEngine.Input(
                 variant: variant, addons: addons,
                 additionalPetCount: max(0, item.petIds.count - 1),
-                travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500
+                travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500,
+                // H6: a credit pays for one visit — applied to the first
+                // line item only, never every line in a multi-item cart.
+                entitlementCreditApplied: applyEntitlementCredit && index == 0,
+                vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits
+            )
+            preSubtotal += PricingEngine.quote(input).totalMinorUnits
+        }
+
+        var couponDiscount = 0
+        if let code = cart.couponCode, !code.isEmpty,
+           let coupon = try await couponRepository.validate(code: code, userId: cart.userId, cartTotalMinorUnits: preSubtotal) {
+            couponDiscount = Self.discountMinorUnits(for: coupon, subtotal: preSubtotal)
+        }
+
+        var walletBalance = 0
+        if useWalletBalance {
+            walletBalance = try await walletRepository.balanceMinorUnits(userId: cart.userId)
+        }
+
+        var lineItems: [PriceLineItem] = []
+        var total = 0
+        for (index, item) in cart.items.enumerated() {
+            guard let service = catalog.first(where: { $0.id == item.serviceId }),
+                  let variant = service.variants.first(where: { $0.id == item.variantId }) else {
+                throw DomainError.notFound("Service variant")
+            }
+            let addons = service.addons.filter { item.addonIds.contains($0.id) }
+            // Coupon/wallet/entitlement all apply once, against the *first*
+            // line item's computation, so a multi-item cart doesn't
+            // double-apply any of them — mirrors the single-total shape a
+            // real server-side quote returns.
+            let isFirst = index == 0
+            let input = PricingEngine.Input(
+                variant: variant, addons: addons,
+                additionalPetCount: max(0, item.petIds.count - 1),
+                travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500,
+                couponDiscountMinorUnits: isFirst ? couponDiscount : 0,
+                walletBalanceMinorUnits: isFirst ? walletBalance : 0,
+                entitlementCreditApplied: applyEntitlementCredit && isFirst,
+                vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits
             )
             let breakdown = PricingEngine.quote(input)
             lineItems.append(contentsOf: breakdown.lineItems)
@@ -155,6 +213,63 @@ actor MockQuoteRepository: QuoteRepository {
         let signature = "mock-signed-\(cart.id.uuidString)-\(total)"
         return Quote(id: UUID(), cartId: cart.id, breakdown: breakdown, signature: signature,
                      expiresAt: Date().addingTimeInterval(Quote.ttl))
+    }
+
+    private static func discountMinorUnits(for coupon: Coupon, subtotal: Int) -> Int {
+        let raw: Int
+        switch coupon.discountType {
+        case .percentageOff: raw = subtotal * coupon.discountValue / 100
+        case .fixedAmountOff: raw = coupon.discountValue
+        }
+        if let cap = coupon.maxDiscountMinorUnits { return min(raw, cap) }
+        return raw
+    }
+}
+
+actor MockWalletRepository: WalletRepository {
+    // A little starting credit so the CartView toggle has something to show
+    // without needing a seeded backend.
+    private var entriesByUser: [UUID: [WalletLedgerEntry]] = [:]
+    private let seedAmount = 25_000 // ₹250
+
+    private func seededEntries(userId: UUID) -> [WalletLedgerEntry] {
+        if let existing = entriesByUser[userId] { return existing }
+        let seed = [WalletLedgerEntry(id: UUID(), userId: userId, amountMinorUnits: seedAmount,
+                                       reason: "Welcome credit", relatedVisitId: nil, relatedRefundId: nil, createdAt: .now)]
+        entriesByUser[userId] = seed
+        return seed
+    }
+
+    func balanceMinorUnits(userId: UUID) async throws -> Int {
+        seededEntries(userId: userId).reduce(0) { $0 + $1.amountMinorUnits }
+    }
+
+    func entries(userId: UUID) async throws -> [WalletLedgerEntry] {
+        seededEntries(userId: userId).sorted { $0.createdAt > $1.createdAt }
+    }
+}
+
+actor MockCouponRepository: CouponRepository {
+    // N2 example campaigns — mirrors what validate_coupon() would enforce.
+    private let coupons: [Coupon] = [
+        Coupon(id: UUID(), code: "FIRSTVISIT", discountType: .percentageOff, discountValue: 20,
+               maxDiscountMinorUnits: 30_000, validFrom: .distantPast, validUntil: .distantFuture,
+               usageLimit: nil, perUserLimit: 1, minSpendMinorUnits: nil, campaignName: "First-visit welcome"),
+        Coupon(id: UUID(), code: "WINBACK100", discountType: .fixedAmountOff, discountValue: 10_000,
+               maxDiscountMinorUnits: nil, validFrom: .distantPast, validUntil: .distantFuture,
+               usageLimit: nil, perUserLimit: 1, minSpendMinorUnits: 20_000, campaignName: "Win-back"),
+        Coupon(id: UUID(), code: "EXPIRED10", discountType: .percentageOff, discountValue: 10,
+               maxDiscountMinorUnits: nil, validFrom: .distantPast,
+               validUntil: Date().addingTimeInterval(-86_400), usageLimit: nil, perUserLimit: nil,
+               minSpendMinorUnits: nil, campaignName: "Expired example"),
+    ]
+
+    func validate(code: String, userId: UUID, cartTotalMinorUnits: Int) async throws -> Coupon? {
+        guard let coupon = coupons.first(where: { $0.code.caseInsensitiveCompare(code) == .orderedSame }) else { return nil }
+        let now = Date()
+        guard coupon.validFrom <= now, now <= coupon.validUntil else { return nil }
+        if let minSpend = coupon.minSpendMinorUnits, cartTotalMinorUnits < minSpend { return nil }
+        return coupon
     }
 }
 
@@ -343,6 +458,17 @@ actor MockRefundRepository: RefundRepository {
     }
 }
 
+actor MockPaymentDisputeRepository: PaymentDisputeRepository {
+    // No mock visit has a real gateway dispute against it — mirrors
+    // MockInvoiceRepository's "nothing yet" stance. A future test can seed
+    // this array directly if a screen needs to preview the banner.
+    var seededDisputes: [PaymentDispute] = []
+
+    func disputes(visitId: UUID) async throws -> [PaymentDispute] {
+        seededDisputes.filter { $0.visitId == visitId }
+    }
+}
+
 actor MockInvoiceRepository: InvoiceRepository {
     func invoice(visitId: UUID) async throws -> Invoice? { nil }
 }
@@ -404,6 +530,83 @@ actor MockPaymentRepository: PaymentRepository {
     }
 
     func paymentStatus(paymentId: UUID) async throws -> Payment.Status { .succeeded }
+
+    func createTipCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL {
+        URL(string: "https://checkout.example.com/tip/\(visitId)?amount=\(amountMinorUnits)")!
+    }
+}
+
+actor MockSavedPaymentMethodRepository: SavedPaymentMethodRepository {
+    private var methods: [SavedPaymentMethod] = [
+        SavedPaymentMethod(id: UUID(), userId: MockData.user.id, gatewayTokenId: "tok_mock_visa4242",
+                            displayLabel: "Visa •••• 4242", isDefault: true, createdAt: .now.addingTimeInterval(-86400 * 30)),
+    ]
+
+    func list(userId: UUID) async throws -> [SavedPaymentMethod] {
+        methods.filter { $0.userId == userId }.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func save(userId: UUID, gatewayTokenId: String, displayLabel: String, makeDefault: Bool) async throws -> SavedPaymentMethod {
+        if makeDefault {
+            for i in methods.indices where methods[i].userId == userId { methods[i].isDefault = false }
+        }
+        let isFirst = !methods.contains { $0.userId == userId }
+        let method = SavedPaymentMethod(id: UUID(), userId: userId, gatewayTokenId: gatewayTokenId,
+                                         displayLabel: displayLabel, isDefault: makeDefault || isFirst, createdAt: .now)
+        methods.append(method)
+        return method
+    }
+
+    func remove(id: UUID) async throws {
+        methods.removeAll { $0.id == id }
+    }
+
+    func setDefault(id: UUID, userId: UUID) async throws {
+        for i in methods.indices where methods[i].userId == userId {
+            methods[i].isDefault = (methods[i].id == id)
+        }
+    }
+}
+
+actor MockSupportRefundAuditRepository: SupportRefundAuditRepository {
+    private var audits: [SupportRefundAudit] = []
+    private let refundRepository: RefundRepository
+
+    init(refundRepository: RefundRepository) {
+        self.refundRepository = refundRepository
+    }
+
+    func issueSupportRefund(
+        ticketId: UUID, visitId: UUID, issuedByUserId: UUID,
+        kind: SupportRefundAudit.Kind, amountMinorUnits: Int, reason: String
+    ) async throws -> SupportRefundAudit {
+        var refundId: UUID?
+        var walletLedgerEntryId: UUID?
+        switch kind {
+        case .refund:
+            // Mirrors the real flow: even in the mock world this goes
+            // through the same refund-issuing path a cancellation refund
+            // would use, never a bespoke direct write.
+            let refund = try await refundRepository.issueRefund(
+                visitId: visitId, paymentId: UUID(), amountMinorUnits: amountMinorUnits,
+                reason: reason, initiatedByOpsUserId: issuedByUserId
+            )
+            refundId = refund.id
+        case .walletCredit:
+            walletLedgerEntryId = UUID()
+        }
+        let audit = SupportRefundAudit(
+            id: UUID(), ticketId: ticketId, visitId: visitId, issuedByUserId: issuedByUserId,
+            kind: kind, amountMinorUnits: amountMinorUnits, reason: reason,
+            refundId: refundId, walletLedgerEntryId: walletLedgerEntryId, createdAt: .now
+        )
+        audits.append(audit)
+        return audit
+    }
+
+    func auditTrail(ticketId: UUID) async throws -> [SupportRefundAudit] {
+        audits.filter { $0.ticketId == ticketId }.sorted { $0.createdAt > $1.createdAt }
+    }
 }
 
 actor MockChatRepository: ChatRepository {
@@ -435,9 +638,10 @@ actor MockChatRepository: ChatRepository {
 actor MockReviewRepository: ReviewRepository {
     private var submitted: [Review] = []
 
-    func submit(visitId: UUID, rating: Int, comment: String?) async throws -> Review {
+    func submit(visitId: UUID, rating: Int, comment: String?, needsModeration: Bool, moderationFlags: [String]) async throws -> Review {
         let review = Review(id: UUID(), visitId: visitId, vetId: MockData.circuits[0].vetId, userId: MockData.user.id,
-                             rating: rating, comment: comment, createdAt: .now)
+                             rating: rating, comment: comment, createdAt: .now,
+                             needsModeration: needsModeration, moderationFlags: moderationFlags)
         submitted.append(review)
         return review
     }
@@ -508,6 +712,52 @@ actor MockVaccinationRepository: VaccinationRepository {
     }
 }
 
+/// B6: document vault — no real storage backend wired up yet, so "upload"
+/// just fabricates a placeholder `mock-storage://` URL from a UUID-based
+/// filename and keeps the row in memory.
+/// K6: reports are uploaded ops-side (out of this app's scope), so this mock
+/// starts pre-seeded with a couple of demo rows for `MockData.user`'s pet
+/// rather than exposing any way to add one from the client, mirroring the
+/// real repository's read-only contract.
+actor MockLabTestReportRepository: LabTestReportRepository {
+    private var reportsById: [UUID: LabTestReport]
+
+    init(seed: [LabTestReport] = MockData.labTestReports) {
+        reportsById = Dictionary(uniqueKeysWithValues: seed.map { ($0.id, $0) })
+    }
+
+    func reports(petId: UUID) async throws -> [LabTestReport] {
+        reportsById.values.filter { $0.petId == petId }
+    }
+
+    func reports(visitId: UUID) async throws -> [LabTestReport] {
+        reportsById.values.filter { $0.visitId == visitId }
+    }
+}
+
+actor MockPetDocumentRepository: PetDocumentRepository {
+    private var documents: [PetDocument] = []
+
+    func list(petId: UUID) async throws -> [PetDocument] {
+        documents.filter { $0.petId == petId }
+    }
+
+    func upload(petId: UUID, uploaderId: UUID, title: String, data: Data) async throws -> PetDocument {
+        // Simulate an upload: a real backend would push `data` to a Storage
+        // bucket and store its path; here we just mint a UUID filename.
+        let filename = "\(UUID().uuidString).pdf"
+        let placeholderURL = URL(string: "mock-storage://documents/\(petId)/\(filename)")!
+        let document = PetDocument(id: UUID(), petId: petId, uploaderId: uploaderId, title: title,
+                                    fileURL: placeholderURL, uploadedAt: .now)
+        documents.append(document)
+        return document
+    }
+
+    func delete(id: UUID) async throws {
+        documents.removeAll { $0.id == id }
+    }
+}
+
 actor MockPrescriptionRepository: PrescriptionRepository {
     private var prescriptions: [Prescription] = []
 
@@ -517,7 +767,81 @@ actor MockPrescriptionRepository: PrescriptionRepository {
 }
 
 actor MockPushTokenRepository: PushTokenRepository {
-    func registerDeviceToken(_ token: String, userId: UUID) async throws {}
+    private var tokensByUser: [UUID: String] = [:]
+
+    func registerDeviceToken(_ token: String, userId: UUID) async throws {
+        tokensByUser[userId] = token
+    }
+
+    func hasDeviceToken(userId: UUID) async throws -> Bool {
+        tokensByUser[userId] != nil
+    }
+}
+
+/// J8: no real SMS/WhatsApp gateway is wired in — this mock just records
+/// what would have been sent, for previews and tests to inspect.
+actor MockSMSFallbackRepository: SMSFallbackRepository {
+    private(set) var sentRecords: [SMSFallbackRecord] = []
+
+    func sendFallback(
+        userId: UUID, phone: String, category: TransactionalNotificationCategory,
+        body: String, reason: NotificationDeliveryDecision.FallbackReason
+    ) async throws -> SMSFallbackRecord {
+        let record = SMSFallbackRecord(
+            id: UUID(), userId: userId, phone: phone, category: category,
+            body: body, reason: reason, createdAt: .now
+        )
+        sentRecords.append(record)
+        return record
+    }
+}
+
+/// F9: no vet is on leave by default in the mock — seed a blackout in tests
+/// or via `add`/`create` to exercise the filtering effect.
+actor MockVetBlackoutRepository: VetBlackoutRepository {
+    private var blackoutsById: [UUID: VetBlackout] = [:]
+
+    func blackouts(vetId: UUID) async throws -> [VetBlackout] {
+        blackoutsById.values.filter { $0.vetId == vetId }
+    }
+
+    func blackouts(vetIds: [UUID]) async throws -> [VetBlackout] {
+        let set = Set(vetIds)
+        return blackoutsById.values.filter { set.contains($0.vetId) }
+    }
+
+    func create(_ blackout: VetBlackout) async throws -> VetBlackout {
+        blackoutsById[blackout.id] = blackout
+        return blackout
+    }
+
+    func delete(id: UUID) async throws {
+        blackoutsById.removeValue(forKey: id)
+    }
+}
+
+/// K3: medication reminders, keyed by pet.
+actor MockMedicationReminderRepository: MedicationReminderRepository {
+    private var remindersById: [UUID: MedicationReminder] = [:]
+
+    func reminders(petId: UUID) async throws -> [MedicationReminder] {
+        remindersById.values.filter { $0.petId == petId }
+    }
+
+    func create(_ reminder: MedicationReminder) async throws -> MedicationReminder {
+        remindersById[reminder.id] = reminder
+        return reminder
+    }
+
+    func update(_ reminder: MedicationReminder) async throws -> MedicationReminder {
+        guard remindersById[reminder.id] != nil else { throw DomainError.notFound("Medication reminder") }
+        remindersById[reminder.id] = reminder
+        return reminder
+    }
+
+    func delete(id: UUID) async throws {
+        remindersById.removeValue(forKey: id)
+    }
 }
 
 actor MockLiveTrackingRepository: LiveTrackingRepository {
@@ -663,6 +987,26 @@ enum MockData {
 
     static let visits: [Visit] = []
 
+    /// K6: a demo visit id a seeded `LabTestReport` attaches to — `visits` is
+    /// empty in the mock, so there's no real booked visit to key off; a
+    /// preview only needs *a* stable UUID to demonstrate the report flow.
+    static let demoLabTestVisitId = UUID(uuidString: "00000000-0000-0000-0000-0000000000aa")!
+
+    static let labTestReports: [LabTestReport] = [
+        LabTestReport(
+            id: UUID(), visitId: demoLabTestVisitId, petId: user.pets[0].id,
+            testName: "Complete blood panel", status: .ready,
+            reportFileURL: URL(string: "mock-storage://lab_test_reports/\(demoLabTestVisitId)/cbc.pdf"),
+            resultSummary: "All values within normal range.",
+            availableAt: Calendar.current.date(byAdding: .day, value: -1, to: .now)
+        ),
+        LabTestReport(
+            id: UUID(), visitId: demoLabTestVisitId, petId: user.pets[0].id,
+            testName: "Urinalysis", status: .pending,
+            reportFileURL: nil, resultSummary: nil, availableAt: nil
+        ),
+    ]
+
     /// The full catalog (plan §D): categories, variants, and add-ons with real
     /// prices — the "multiple options for each thing" the v1 model had no
     /// concept of at all.
@@ -735,6 +1079,22 @@ enum MockData {
                 ServiceVariant(id: UUID(), serviceId: UUID(), name: "Scale & polish", durationMinutes: 40, priceMinorUnits: 149_900),
             ],
             eligibility: ServiceEligibility(requiresPrescriberVet: true)
+        ),
+        // K6: standalone/add-on bookable lab tests, reusing the same
+        // catalog/cart/checkout flow as every other service — the resulting
+        // visit is what a `LabTestReport` later attaches to.
+        Service(
+            id: UUID(), category: .labTest, name: "Lab tests",
+            summary: "Blood panel or urinalysis, sample collected at home and processed by a partner lab.",
+            whatToPrepare: "Fasting may be required for a blood panel — you'll get instructions after booking.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Complete blood panel", durationMinutes: 15, priceMinorUnits: 149_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Urinalysis", durationMinutes: 10, priceMinorUnits: 79_900),
+            ],
+            faqs: [
+                FAQ(id: UUID(), question: "When will my report be ready?",
+                    answer: "Most reports are ready within 24-48 hours; you'll be able to view and share it from the visit's detail page."),
+            ]
         ),
         Service(
             id: UUID(), category: .elderCareVisit, name: "Elder care check-in",
@@ -973,5 +1333,125 @@ actor MockWaitlistRepository: WaitlistRepository {
 
     func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool {
         entries.contains { $0.userId == userId && $0.addressId == addressId }
+    }
+}
+
+actor MockSubscriptionEntitlementRepository: SubscriptionEntitlementRepository {
+    private var entitlements: [UUID: SubscriptionEntitlement] = [:]
+
+    /// Mock stands in for what a real deployment seeds at subscribe time
+    /// (a signup edge function creating the row with the plan's monthly
+    /// grant) — lazily seeded here on first read so `GetQuoteUseCase` sees a
+    /// real credit balance without every test having to call `consumeCredit`
+    /// first just to make one exist.
+    func currentEntitlement(subscriptionId: UUID) async throws -> SubscriptionEntitlement? {
+        seededEntitlement(for: subscriptionId)
+    }
+
+    /// Decrements, checking eligibility the same way
+    /// `EntitlementPolicy.canApplyCredit` does — the mock is not exempt from
+    /// the "server enforces, client only hints" rule its own protocol doc
+    /// comment states.
+    func consumeCredit(subscriptionId: UUID) async throws -> SubscriptionEntitlement {
+        var entitlement = seededEntitlement(for: subscriptionId)
+        if EntitlementPolicy.needsReset(entitlement: entitlement, now: .now) {
+            entitlement = EntitlementPolicy.rolledForward(entitlement: entitlement, plan: .monthly, seatCount: 1, now: .now)
+        }
+        guard entitlement.creditsRemaining > 0 else { throw DomainError.validation("No subscription credits remaining this period.") }
+        entitlement.creditsRemaining -= 1
+        entitlements[subscriptionId] = entitlement
+        return entitlement
+    }
+
+    private func seededEntitlement(for subscriptionId: UUID) -> SubscriptionEntitlement {
+        if let existing = entitlements[subscriptionId] { return existing }
+        let fresh = SubscriptionEntitlement(
+            id: UUID(), subscriptionId: subscriptionId, creditsRemaining: 1,
+            resetAt: Calendar.current.date(byAdding: .month, value: 1, to: .now) ?? .now.addingTimeInterval(30 * 86_400)
+        )
+        entitlements[subscriptionId] = fresh
+        return fresh
+    }
+}
+
+actor MockIncidentReportRepository: IncidentReportRepository {
+    private var reports: [IncidentReport] = []
+
+    func fileReport(_ report: IncidentReport) async throws -> IncidentReport {
+        reports.append(report)
+        return report
+    }
+
+    func myReports(reporterId: UUID) async throws -> [IncidentReport] {
+        reports.filter { $0.reporterId == reporterId }
+    }
+}
+
+// MARK: - D5 per-vet service overrides
+
+actor MockVetServiceOverrideRepository: VetServiceOverrideRepository {
+    private var overridesByVet: [UUID: [VetServiceOverride]] = [:]
+
+    func overrides(vetId: UUID) async throws -> [VetServiceOverride] {
+        overridesByVet[vetId] ?? []
+    }
+
+    func setOverride(_ override: VetServiceOverride) async throws -> VetServiceOverride {
+        var list = overridesByVet[override.vetId] ?? []
+        if let idx = list.firstIndex(where: { $0.serviceId == override.serviceId && $0.variantId == override.variantId }) {
+            list[idx] = override
+        } else {
+            list.append(override)
+        }
+        overridesByVet[override.vetId] = list
+        return override
+    }
+}
+
+// MARK: - F5 recurring booking rules
+
+actor MockRecurringBookingRuleRepository: RecurringBookingRuleRepository {
+    private var rulesById: [UUID: RecurringBookingRule] = [:]
+
+    func rules(userId: UUID) async throws -> [RecurringBookingRule] {
+        rulesById.values.filter { $0.userId == userId }.sorted { $0.nextOccurrenceAt < $1.nextOccurrenceAt }
+    }
+
+    func create(_ rule: RecurringBookingRule) async throws -> RecurringBookingRule {
+        rulesById[rule.id] = rule
+        return rule
+    }
+
+    func setActive(id: UUID, isActive: Bool) async throws -> RecurringBookingRule {
+        guard var rule = rulesById[id] else { throw DomainError.notFound("Recurring booking rule") }
+        rule.isActive = isActive
+        rulesById[id] = rule
+        return rule
+    }
+
+    func delete(id: UUID) async throws {
+        rulesById[id] = nil
+    }
+}
+
+// MARK: - F6 vet-initiated reschedule proposals
+
+actor MockRescheduleProposalRepository: RescheduleProposalRepository {
+    private var proposalsById: [UUID: RescheduleProposal] = [:]
+
+    func pendingProposal(visitId: UUID) async throws -> RescheduleProposal? {
+        proposalsById.values.first { $0.visitId == visitId && $0.status == .pending }
+    }
+
+    func create(_ proposal: RescheduleProposal) async throws -> RescheduleProposal {
+        proposalsById[proposal.id] = proposal
+        return proposal
+    }
+
+    func respond(id: UUID, accept: Bool) async throws -> RescheduleProposal {
+        guard var proposal = proposalsById[id] else { throw DomainError.notFound("Reschedule proposal") }
+        proposal.status = accept ? .accepted : .declined
+        proposalsById[id] = proposal
+        return proposal
     }
 }

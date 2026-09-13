@@ -65,6 +65,13 @@ protocol RefundRepository: Sendable {
     func refunds(visitId: UUID) async throws -> [Refund]
 }
 
+protocol PaymentDisputeRepository: Sendable {
+    /// G9: disputes tied to a single visit, newest first — a visit almost
+    /// never has more than one, but this stays a list for the same reason
+    /// `RefundRepository.refunds` does.
+    func disputes(visitId: UUID) async throws -> [PaymentDispute]
+}
+
 protocol InvoiceRepository: Sendable {
     /// G5: GST-compliant invoice per order, generated once a visit completes.
     func invoice(visitId: UUID) async throws -> Invoice?
@@ -92,6 +99,22 @@ protocol PaymentRepository: Sendable {
     func createCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL
     func createCheckout(forSubscription plan: Subscription.PlanType) async throws -> URL
     func paymentStatus(paymentId: UUID) async throws -> Payment.Status
+    /// E11: tagged distinctly from a regular visit charge (payments.kind =
+    /// 'tip') so the server can credit the vet 100% of it instead of the
+    /// ~70% split a completed visit earns (0028_tips.sql).
+    func createTipCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL
+}
+
+// MARK: - E9: saved payment methods — only a gateway token reference is
+// ever stored; a card/UPI's raw details never reach this app or its backend.
+protocol SavedPaymentMethodRepository: Sendable {
+    func list(userId: UUID) async throws -> [SavedPaymentMethod]
+    /// `gatewayTokenId` and `displayLabel` come back from the (not-yet-wired)
+    /// gateway SDK's tokenization step — this call only persists the
+    /// reference, it never sees a PAN/CVV.
+    func save(userId: UUID, gatewayTokenId: String, displayLabel: String, makeDefault: Bool) async throws -> SavedPaymentMethod
+    func remove(id: UUID) async throws
+    func setDefault(id: UUID, userId: UUID) async throws
 }
 
 protocol ChatRepository: Sendable {
@@ -104,7 +127,10 @@ protocol ChatRepository: Sendable {
 }
 
 protocol ReviewRepository: Sendable {
-    func submit(visitId: UUID, rating: Int, comment: String?) async throws -> Review
+    /// `comment` is the already-moderated text (PII redacted where needed)
+    /// and `needsModeration`/`flags` are `ReviewModerationPolicy`'s verdict —
+    /// `SubmitReviewUseCase` runs the policy before ever calling this.
+    func submit(visitId: UUID, rating: Int, comment: String?, needsModeration: Bool, moderationFlags: [String]) async throws -> Review
     /// C5: reviews for a vet's profile — the ratings histogram and review
     /// list are both computed client-side from this.
     func reviews(vetId: UUID) async throws -> [Review]
@@ -141,8 +167,43 @@ protocol PrescriptionRepository: Sendable {
     func history(petId: UUID) async throws -> [Prescription]
 }
 
+/// F9: vet-declared leave/holiday windows.
+protocol VetBlackoutRepository: Sendable {
+    func blackouts(vetId: UUID) async throws -> [VetBlackout]
+    /// Batch fetch for filtering a whole discovery page's worth of circuits
+    /// without one round trip per vet.
+    func blackouts(vetIds: [UUID]) async throws -> [VetBlackout]
+    func create(_ blackout: VetBlackout) async throws -> VetBlackout
+    func delete(id: UUID) async throws
+}
+
+/// K3: medication reminders. Household members of the pet (see
+/// `HouseholdRepository`) can manage a pet's reminders, matching the pets
+/// household-visibility grant (0020_households.sql) rather than inventing a
+/// separate sharing model.
+protocol MedicationReminderRepository: Sendable {
+    func reminders(petId: UUID) async throws -> [MedicationReminder]
+    func create(_ reminder: MedicationReminder) async throws -> MedicationReminder
+    func update(_ reminder: MedicationReminder) async throws -> MedicationReminder
+    func delete(id: UUID) async throws
+}
+
 protocol PushTokenRepository: Sendable {
     func registerDeviceToken(_ token: String, userId: UUID) async throws
+    /// J8: whether this user currently has any registered device token —
+    /// the delivery policy's first signal for "can push even reach them".
+    func hasDeviceToken(userId: UUID) async throws -> Bool
+}
+
+/// J8: records the intent to send an SMS/WhatsApp fallback when push isn't
+/// viable. No real gateway (Twilio/MSG91/...) is wired into this codebase —
+/// see the type comment on `TransactionalNotificationCategory` and the
+/// `send-sms-fallback` Edge Function for exactly where that call would go.
+protocol SMSFallbackRepository: Sendable {
+    func sendFallback(
+        userId: UUID, phone: String, category: TransactionalNotificationCategory,
+        body: String, reason: NotificationDeliveryDecision.FallbackReason
+    ) async throws -> SMSFallbackRecord
 }
 
 // MARK: - V2: live tracking, calling, referrals
@@ -177,7 +238,43 @@ protocol CartRepository: Sendable {
 protocol QuoteRepository: Sendable {
     /// E6: the only source of a rupee amount the app is ever allowed to
     /// display or reference in an order. Pricing happens entirely server-side.
-    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote
+    /// `useWalletBalance` is the customer's toggle intent — the server (or
+    /// the mock, standing in for it) looks up the *real* balance and applies
+    /// at most that, never trusting a client-supplied amount.
+    /// `applyEntitlementCredit` (H6) tells the server the first line item's
+    /// base price should be zeroed against the caller's subscription credit
+    /// — the server still re-derives and re-checks eligibility itself
+    /// (`GetQuoteUseCase` only decides "is it worth asking", never "is it
+    /// allowed": the client is never the source of truth for money).
+    /// `overrides` (D5) are the booking vet's per-service price overrides, if
+    /// any — resolved by the caller from the cart's circuit before quoting.
+    func createQuote(for cart: Cart, catalog: [Service], overrides: [VetServiceOverride], useWalletBalance: Bool, applyEntitlementCredit: Bool) async throws -> Quote
+}
+
+protocol WalletRepository: Sendable {
+    /// G6: balance is always derived from the ledger, never stored — see
+    /// wallet_ledger's append-only discipline (0026_wallet_ledger.sql).
+    func balanceMinorUnits(userId: UUID) async throws -> Int
+    func entries(userId: UUID) async throws -> [WalletLedgerEntry]
+}
+
+protocol CouponRepository: Sendable {
+    /// E4/N2: validated server-side via an RPC (never a direct table
+    /// select) so codes aren't enumerable and stacking/usage limits are
+    /// enforced in one place. Returns nil if the code doesn't apply.
+    func validate(code: String, userId: UUID, cartTotalMinorUnits: Int) async throws -> Coupon?
+}
+
+/// H6: subscription credit balance, separate from `SubscriptionRepository`
+/// because it resets on a period boundary, not a billing-status transition.
+protocol SubscriptionEntitlementRepository: Sendable {
+    func currentEntitlement(subscriptionId: UUID) async throws -> SubscriptionEntitlement?
+    /// Persists a credit decrement (and any due rollover) atomically —
+    /// returns the entitlement after the consumption, or throws if there was
+    /// nothing left to consume (server-enforced, mirrors slot-hold capacity
+    /// checks: the client's own `EntitlementPolicy.canApplyCredit` call is
+    /// only a UI hint, not the authority).
+    func consumeCredit(subscriptionId: UUID) async throws -> SubscriptionEntitlement
 }
 
 protocol SlotHoldRepository: Sendable {
@@ -220,6 +317,28 @@ protocol LoyaltyRepository: Sendable {
     func awardPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount
 }
 
+// MARK: - D5: per-vet service overrides — public read (customers need to see
+// the effective price before booking), vet-write-own.
+protocol VetServiceOverrideRepository: Sendable {
+    func overrides(vetId: UUID) async throws -> [VetServiceOverride]
+    func setOverride(_ override: VetServiceOverride) async throws -> VetServiceOverride
+}
+
+// MARK: - F5: recurring booking rules — owner-only.
+protocol RecurringBookingRuleRepository: Sendable {
+    func rules(userId: UUID) async throws -> [RecurringBookingRule]
+    func create(_ rule: RecurringBookingRule) async throws -> RecurringBookingRule
+    func setActive(id: UUID, isActive: Bool) async throws -> RecurringBookingRule
+    func delete(id: UUID) async throws
+}
+
+// MARK: - F6: vet-initiated reschedule proposals.
+protocol RescheduleProposalRepository: Sendable {
+    func pendingProposal(visitId: UUID) async throws -> RescheduleProposal?
+    func create(_ proposal: RescheduleProposal) async throws -> RescheduleProposal
+    func respond(id: UUID, accept: Bool) async throws -> RescheduleProposal
+}
+
 protocol NotificationPreferencesRepository: Sendable {
     /// Returns the default (all-on except promotions) preferences if the user
     /// has never saved any — there is always a value to render toggles from.
@@ -247,6 +366,19 @@ protocol SupportRepository: Sendable {
     /// client reads state, never writes it after creation).
     func createTicket(userId: UUID, visitId: UUID?, subject: String, body: String) async throws -> SupportTicket
     func myTickets(userId: UUID) async throws -> [SupportTicket]
+}
+
+// MARK: - M4: support-issued refunds/credits, with an append-only audit
+// trail. The actual money movement (refund row / wallet ledger entry)
+// happens inside the `issue-support-refund` Edge Function, service-role
+// only — this repository never inserts into `refunds` or `wallet_ledger`
+// directly, mirroring `RefundRepository.issueRefund`'s trusted-boundary.
+protocol SupportRefundAuditRepository: Sendable {
+    func issueSupportRefund(
+        ticketId: UUID, visitId: UUID, issuedByUserId: UUID,
+        kind: SupportRefundAudit.Kind, amountMinorUnits: Int, reason: String
+    ) async throws -> SupportRefundAudit
+    func auditTrail(ticketId: UUID) async throws -> [SupportRefundAudit]
 }
 
 protocol AppNotificationRepository: Sendable {
@@ -310,4 +442,34 @@ protocol WaitlistRepository: Sendable {
     /// never exposes who they are (see `waitlist_count_near` RPC).
     func countNear(latitude: Double, longitude: Double, radiusKm: Double) async throws -> Int
     func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool
+}
+
+// MARK: - B6 document vault — prior vet reports / insurance docs against a
+// pet. No Storage SDK wiring exists yet: the Supabase conformer inserts a
+// real `pet_documents` row referencing a `documents` bucket path, but the
+// actual file bytes upload is a TODO (see `SupabasePetDocumentRepository`).
+protocol PetDocumentRepository: Sendable {
+    func list(petId: UUID) async throws -> [PetDocument]
+    /// `data` is the raw file bytes to upload; the Supabase conformer will
+    /// eventually push these to Storage under a UUID-based filename — for
+    /// now the mock just fabricates a placeholder URL from that filename.
+    func upload(petId: UUID, uploaderId: UUID, title: String, data: Data) async throws -> PetDocument
+    func delete(id: UUID) async throws
+}
+
+/// K6: lab test reports attached to a visit. No client insert/update method
+/// on purpose — reports are uploaded ops-side once results are back, matching
+/// `SupportRepository`'s "the client reads state, never writes it after
+/// creation" pattern.
+protocol LabTestReportRepository: Sendable {
+    func reports(petId: UUID) async throws -> [LabTestReport]
+    func reports(visitId: UUID) async throws -> [LabTestReport]
+}
+
+/// L4/L5: a reporter can create and read only their own reports — ops-side
+/// listing (all reports, vet suspension) is an ops-console concern, out of
+/// scope here (see 0027_incident_reports.sql).
+protocol IncidentReportRepository: Sendable {
+    func fileReport(_ report: IncidentReport) async throws -> IncidentReport
+    func myReports(reporterId: UUID) async throws -> [IncidentReport]
 }

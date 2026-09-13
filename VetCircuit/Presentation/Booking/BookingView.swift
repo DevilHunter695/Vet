@@ -5,8 +5,17 @@ import UIKit
 @MainActor
 final class BookingViewModel {
     let circuit: Circuit
+    /// F5: the category/service/variant being booked, when known from the
+    /// catalog flow — the "make this recurring" toggle only makes sense for
+    /// deworming/physio (plan §F5) and needs a service+variant to recur.
+    let serviceCategory: ServiceCategory?
+    let serviceId: UUID?
+    let variantId: UUID?
     var pets: [Pet] = []
     var selectedPet: Pet?
+    /// F5: user's choice to also create a recurring rule alongside this booking.
+    var makeRecurring = false
+    var recurringCadence: RecurringBookingRule.Cadence = .monthly
     var selectedSlot: ScheduleSlot? {
         didSet {
             if selectedSlot?.id != oldValue?.id {
@@ -34,8 +43,22 @@ final class BookingViewModel {
     private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
     private let holdSlotUseCase = DependencyContainer.shared.holdSlotUseCase()
     private let slotHoldRepository = DependencyContainer.shared.slotHoldRepository
+    private let manageRecurringBookingUseCase = DependencyContainer.shared.manageRecurringBookingUseCase()
 
-    init(circuit: Circuit) { self.circuit = circuit }
+    /// F5's toggle is offered only for the categories the plan calls out —
+    /// deworming (monthly) and physio (weekly) — everything else defaults
+    /// the toggle away rather than showing a control that doesn't apply.
+    var offersRecurring: Bool {
+        (serviceCategory == .deworming || serviceCategory == .physioSession) && serviceId != nil && variantId != nil
+    }
+
+    init(circuit: Circuit, serviceCategory: ServiceCategory? = nil, serviceId: UUID? = nil, variantId: UUID? = nil) {
+        self.circuit = circuit
+        self.serviceCategory = serviceCategory
+        self.serviceId = serviceId
+        self.variantId = variantId
+        self.recurringCadence = serviceCategory == .physioSession ? .weekly : .monthly
+    }
 
     private func refreshHold() async {
         holdTimer?.cancel()
@@ -96,6 +119,16 @@ final class BookingViewModel {
             )
             // The hold's job ends where the confirmed booking begins.
             if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
+
+            // F5: best-effort — a failure here shouldn't undo an otherwise
+            // successful booking, just leave the customer without the rule.
+            if makeRecurring, offersRecurring, let serviceId, let variantId, let visit = bookedVisit {
+                let next = RecurrenceScheduler.nextOccurrence(after: visit.scheduledAt, cadence: recurringCadence)
+                _ = try? await manageRecurringBookingUseCase.execute(
+                    userId: visit.userId, petId: pet.id, serviceId: serviceId, variantId: variantId,
+                    circuitId: circuit.id, cadence: recurringCadence, firstOccurrenceAt: next
+                )
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -109,8 +142,8 @@ struct BookingView: View {
     @State private var hasAcceptedWaiver = false
     private let manageConsentUseCase = DependencyContainer.shared.manageConsentUseCase()
 
-    init(circuit: Circuit) {
-        _viewModel = State(initialValue: BookingViewModel(circuit: circuit))
+    init(circuit: Circuit, serviceCategory: ServiceCategory? = nil, serviceId: UUID? = nil, variantId: UUID? = nil) {
+        _viewModel = State(initialValue: BookingViewModel(circuit: circuit, serviceCategory: serviceCategory, serviceId: serviceId, variantId: variantId))
     }
 
     private func confirmBookingTapped() {
@@ -179,6 +212,26 @@ struct BookingView: View {
                             viewModel.selectedSlot = slot
                         }
                         .appearAnimation(delay: Theme.staggerDelay(index))
+                    }
+                }
+
+                if viewModel.offersRecurring {
+                    Card {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Make this recurring", isOn: $viewModel.makeRecurring.animation(Theme.springQuick))
+                                .font(.brandBody.bold())
+                            if viewModel.makeRecurring {
+                                Picker("Repeats", selection: $viewModel.recurringCadence) {
+                                    ForEach(RecurringBookingRule.Cadence.allCases, id: \.self) { cadence in
+                                        Text(cadence.displayName).tag(cadence)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                Text("We'll set up a \(viewModel.recurringCadence.displayName.lowercased()) reminder — booking the next visit each cycle still needs confirming.")
+                                    .font(.brandCaption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
 

@@ -27,9 +27,19 @@ interface LineItem {
   amountMinorUnits: number;
 }
 
-function computeLineItemsForItem(variant: any, addons: any[], additionalPetCount: number, travelFeeMinorUnits: number): LineItem[] {
+function computeLineItemsForItem(
+  variant: any,
+  addons: any[],
+  additionalPetCount: number,
+  travelFeeMinorUnits: number,
+  entitlementCreditApplied = false,
+): LineItem[] {
   const lineItems: LineItem[] = [];
-  lineItems.push({ label: variant.name, amountMinorUnits: variant.price_minor_units });
+  if (entitlementCreditApplied) {
+    lineItems.push({ label: `${variant.name} (subscription credit)`, amountMinorUnits: 0 });
+  } else {
+    lineItems.push({ label: variant.name, amountMinorUnits: variant.price_minor_units });
+  }
 
   const multiPet = additionalPetCount * variant.additional_pet_price_minor_units;
   if (multiPet > 0) lineItems.push({ label: `Additional pet(s) ×${additionalPetCount}`, amountMinorUnits: multiPet });
@@ -47,7 +57,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return new Response(JSON.stringify({ code: "UNAUTHENTICATED", message: "Sign in required." }), { status: 401 });
 
-  const { cart_id } = await req.json();
+  const { cart_id, use_wallet_balance, apply_entitlement_credit } = await req.json();
   if (!cart_id) return new Response(JSON.stringify({ code: "VALIDATION", message: "cart_id is required." }), { status: 400 });
 
   const { data: cart, error: cartError } = await supabase.from("carts").select("*").eq("id", cart_id).single();
@@ -62,20 +72,79 @@ Deno.serve(async (req) => {
   let total = 0;
   const travelFeeMinorUnits = cart.circuit_id ? 0 : 4500; // 0 if slot is on an existing circuit run (density dividend)
 
-  for (const item of items) {
+  // H6: the client's `apply_entitlement_credit` is only a hint — eligibility
+  // is re-derived here from the caller's own active subscription and its
+  // real credit balance, never trusted from the request body. Actual credit
+  // consumption happens at order creation, not at quote time, so a quote
+  // that expires unused never burns a credit.
+  let entitlementEligible = false;
+  if (apply_entitlement_credit && cart.user_id) {
+    const { data: subscription } = await supabase
+      .from("subscriptions")
+      .select("id, status")
+      .eq("user_id", cart.user_id)
+      .eq("status", "active")
+      .maybeSingle();
+    if (subscription) {
+      const { data: entitlement } = await supabase
+        .from("subscription_entitlements")
+        .select("credits_remaining")
+        .eq("subscription_id", subscription.id)
+        .maybeSingle();
+      entitlementEligible = (entitlement?.credits_remaining ?? 0) > 0;
+    }
+  }
+
+  for (const [index, item] of items.entries()) {
     const { data: variant } = await supabase.from("service_variants").select("*").eq("id", item.variant_id).single();
     if (!variant) return new Response(JSON.stringify({ code: "NOT_FOUND", message: "Service variant not found." }), { status: 404 });
     const { data: addons } = await supabase.from("addons").select("*").in("id", item.addon_ids ?? []);
     const additionalPetCount = Math.max(0, (item.pet_ids?.length ?? 1) - 1);
 
-    const itemLines = computeLineItemsForItem(variant, addons ?? [], additionalPetCount, travelFeeMinorUnits);
+    const itemLines = computeLineItemsForItem(
+      variant, addons ?? [], additionalPetCount, travelFeeMinorUnits,
+      entitlementEligible && index === 0,
+    );
     lineItems = lineItems.concat(itemLines);
     total += itemLines.reduce((sum, li) => sum + li.amountMinorUnits, 0);
   }
 
-  const gst = Math.round(total * GST_RATE);
+  // E4/N2: coupon discount, validated (never trusted from the client) via
+  // validate_coupon() against this cart's real pre-discount subtotal —
+  // capped at that subtotal, same rule PricingEngine.swift enforces.
+  let discount = 0;
+  if (cart.coupon_code) {
+    const { data: coupons } = await supabase.rpc("validate_coupon", {
+      p_code: cart.coupon_code,
+      p_user_id: cart.user_id,
+      p_cart_total: total,
+    });
+    const coupon = coupons?.[0];
+    if (coupon) {
+      const raw = coupon.discount_type === "percentage_off"
+        ? Math.floor((total * coupon.discount_value) / 100)
+        : coupon.discount_value;
+      discount = Math.min(raw, total, coupon.max_discount_minor_units ?? raw);
+      if (discount > 0) lineItems.push({ label: "Discount", amountMinorUnits: -discount });
+    }
+  }
+  const taxable = Math.max(0, total - discount);
+
+  const gst = Math.round(taxable * GST_RATE);
   if (gst > 0) lineItems.push({ label: `GST (${Math.round(GST_RATE * 100)}%)`, amountMinorUnits: gst });
-  total += gst;
+  total = taxable + gst;
+
+  // G6: wallet credit applied last, after tax, capped at what's owed — the
+  // real balance is looked up server-side, never trusted from the client.
+  if (use_wallet_balance && cart.user_id) {
+    const { data: ledger } = await supabase.from("wallet_ledger").select("amount_minor_units").eq("user_id", cart.user_id);
+    const balance = (ledger ?? []).reduce((sum: number, row: any) => sum + row.amount_minor_units, 0);
+    const walletApplied = Math.min(Math.max(0, balance), total);
+    if (walletApplied > 0) {
+      lineItems.push({ label: "Wallet credit", amountMinorUnits: -walletApplied });
+      total -= walletApplied;
+    }
+  }
 
   const expiresAt = new Date(Date.now() + QUOTE_TTL_SECONDS * 1000).toISOString();
   const payload = JSON.stringify({ cart_id, total, expiresAt });

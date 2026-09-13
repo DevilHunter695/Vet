@@ -9,6 +9,14 @@ struct User: Identifiable, Codable, Equatable, Hashable {
     var email: String?
     var createdAt: Date
     var pets: [Pet]
+    // A11: server/admin-set only — mirrors `Vet.verificationStatus`'s
+    // ownership split (see `vets` RLS: no client update policy on this
+    // column, only `is_admin()` or a trusted function can move it).
+    var accountStatus: AccountStatus = .active
+
+    enum AccountStatus: String, Codable, CaseIterable {
+        case active, blocked, deactivated
+    }
 }
 
 struct Pet: Identifiable, Codable, Equatable, Hashable {
@@ -108,6 +116,86 @@ struct ScheduleSlot: Identifiable, Codable, Equatable, Hashable {
     var remainingCapacity: Int { max(0, capacity - bookedCount) }
 }
 
+/// F8: pure date math for buffer/travel-time aware slot offering — mirrors
+/// `RecurrenceScheduler`/`NoShowPolicy`'s "no I/O, directly unit-testable"
+/// shape. Without this a circuit's back-to-back schedule slots could offer
+/// a vet zero travel time between two stops.
+struct SlotBufferPolicy {
+    /// Minimum travel/prep gap between consecutive visits when none is
+    /// otherwise configured for the circuit.
+    static let defaultBufferMinutes = 15
+
+    /// Whether a candidate slot starting at `candidateStart` (running
+    /// `visitDurationMinutes`) can be offered given a set of already-booked
+    /// slot start times (assumed to run the same duration) on the same day
+    /// — true only if every booked visit, padded by `bufferMinutes` on both
+    /// sides, doesn't overlap the candidate.
+    static func isOfferable(
+        candidateStart: Date,
+        visitDurationMinutes: Int,
+        bookedStarts: [Date],
+        bufferMinutes: Int = defaultBufferMinutes
+    ) -> Bool {
+        let visitDuration = TimeInterval(visitDurationMinutes * 60)
+        let buffer = TimeInterval(bufferMinutes * 60)
+        let candidateEnd = candidateStart.addingTimeInterval(visitDuration)
+        for booked in bookedStarts {
+            let bookedEnd = booked.addingTimeInterval(visitDuration)
+            let paddedStart = candidateStart.addingTimeInterval(-buffer)
+            let paddedEnd = candidateEnd.addingTimeInterval(buffer)
+            if booked < paddedEnd && bookedEnd > paddedStart {
+                return false
+            }
+        }
+        return true
+    }
+
+    /// Filters a circuit's schedule (grouped by day) down to the slots that
+    /// remain offerable once already-booked slots each reserve their travel
+    /// buffer — a booked slot (`bookedCount > 0`) is never removed itself,
+    /// only other still-empty slots that fall inside its buffer window.
+    static func filterOfferableSlots(
+        _ slots: [ScheduleSlot],
+        visitDurationMinutes: Int,
+        bufferMinutes: Int = defaultBufferMinutes
+    ) -> [ScheduleSlot] {
+        let byDay = Dictionary(grouping: slots) { $0.dayOfWeek }
+        var result: [ScheduleSlot] = []
+        for (_, daySlots) in byDay {
+            let bookedStarts = daySlots.filter { $0.bookedCount > 0 }.map { $0.startTime }
+            for slot in daySlots {
+                if slot.bookedCount > 0 {
+                    result.append(slot)
+                } else if isOfferable(candidateStart: slot.startTime, visitDurationMinutes: visitDurationMinutes,
+                                       bookedStarts: bookedStarts, bufferMinutes: bufferMinutes) {
+                    result.append(slot)
+                }
+            }
+        }
+        return result
+    }
+}
+
+/// F9: a vet-declared leave/holiday window — no slot on any of the vet's
+/// circuits should be offered while one is active. Deliberately just a date
+/// range (not per-slot granularity); a half-day leave is modeled as a
+/// same-day start/end range.
+struct VetBlackout: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var vetId: UUID
+    var startDate: Date
+    var endDate: Date
+    var reason: String?
+
+    func isActive(on date: Date = .now) -> Bool {
+        date >= startDate && date <= endDate
+    }
+
+    static func isVetBlackedOut(vetId: UUID, blackouts: [VetBlackout], on date: Date = .now) -> Bool {
+        blackouts.contains { $0.vetId == vetId && $0.isActive(on: date) }
+    }
+}
+
 struct Visit: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var userId: UUID
@@ -175,8 +263,8 @@ struct Visit: Identifiable, Codable, Equatable, Hashable {
     static let legalTransitions: [VisitStatus: Set<VisitStatus>] = [
         .requested: [.confirmed, .cancelledByUser, .cancelledByVet],
         .confirmed: [.assigned, .cancelledByUser, .cancelledByVet],
-        .assigned: [.enRoute, .cancelledByUser, .cancelledByVet],
-        .enRoute: [.arrived, .cancelledByVet],
+        .assigned: [.enRoute, .cancelledByUser, .cancelledByVet, .noShowVet],
+        .enRoute: [.arrived, .cancelledByVet, .noShowVet],
         .arrived: [.inProgress, .noShowUser],
         .inProgress: [.completed],
         .completed: [.disputed],
@@ -296,6 +384,64 @@ struct SubscriptionManagementPolicy {
     }
 }
 
+// MARK: - H6: subscription entitlement engine — a subscription grants a
+// monthly allowance of free-visit credits, tracked separately from billing
+// state (`Subscription.status`) because a credit balance resets on a period
+// boundary, not on a plan-status transition.
+
+struct SubscriptionEntitlement: Identifiable, Codable, Equatable, Hashable {
+    var id: UUID
+    var subscriptionId: UUID
+    var creditsRemaining: Int
+    var resetAt: Date
+}
+
+/// Pure — no I/O, no clock injected beyond the `Date` passed in — so the
+/// credits-per-period rule and the reset/consume decisions are directly
+/// testable. `GetQuoteUseCase` calls `apply` to decide whether a quote gets
+/// a credit; the repository is responsible for persisting the result.
+enum EntitlementPolicy {
+    /// Monthly/quarterly/annual all grant one visit credit per month —
+    /// quarterly/annual just accrue it monthly instead of handing over 3 or
+    /// 12 at signup, so a cancelled quarterly/annual plan hasn't already
+    /// spent credits for months it won't see. Corporate is seat-based: one
+    /// credit per seat per month (a bulk RWA plan is buying capacity for N
+    /// households, not one).
+    static func creditsGrantedPerPeriod(plan: Subscription.PlanType, seatCount: Int) -> Int {
+        switch plan {
+        case .monthly, .quarterly, .annual: return 1
+        case .corporate: return max(1, seatCount)
+        }
+    }
+
+    /// Whether `entitlement` needs its monthly reset applied before use —
+    /// pure date comparison, no side effects.
+    static func needsReset(entitlement: SubscriptionEntitlement, now: Date) -> Bool {
+        now >= entitlement.resetAt
+    }
+
+    /// Returns the entitlement as it should be *after* rolling forward any
+    /// due reset(s) — callers persist this before consuming a credit. Uses
+    /// a calendar month step so "reset monthly" means a calendar month, not
+    /// a rolling 30-day window that drifts.
+    static func rolledForward(entitlement: SubscriptionEntitlement, plan: Subscription.PlanType, seatCount: Int, now: Date, calendar: Calendar = .current) -> SubscriptionEntitlement {
+        guard needsReset(entitlement: entitlement, now: now) else { return entitlement }
+        var result = entitlement
+        result.creditsRemaining = creditsGrantedPerPeriod(plan: plan, seatCount: seatCount)
+        result.resetAt = calendar.date(byAdding: .month, value: 1, to: max(entitlement.resetAt, now)) ?? now.addingTimeInterval(30 * 86_400)
+        return result
+    }
+
+    /// Whether a credit can be applied to zero a quote's base price right
+    /// now — active subscription (H3's pause/cancel states never earn a
+    /// credit) with at least one credit remaining after rollover.
+    static func canApplyCredit(subscription: Subscription, entitlement: SubscriptionEntitlement, now: Date) -> Bool {
+        guard subscription.status == .active else { return false }
+        let current = rolledForward(entitlement: entitlement, plan: subscription.planType, seatCount: subscription.seatCount, now: now)
+        return current.creditsRemaining > 0
+    }
+}
+
 struct Payment: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var visitId: UUID?
@@ -330,6 +476,13 @@ struct Review: Identifiable, Codable, Equatable, Hashable {
     var rating: Int // 1...5
     var comment: String?
     var createdAt: Date
+    /// L6: set when `ReviewModerationPolicy` flagged this review's text
+    /// (PII redacted and/or defamation-risk language detected) for human
+    /// review — the review itself is still stored and shown, this is only a
+    /// signal for ops, never a block.
+    var needsModeration: Bool = false
+    /// L6: which policy checks tripped, e.g. "pii_email", "defamation_risk".
+    var moderationFlags: [String] = []
 }
 
 // MARK: - Multi-vertical & loyalty (V3)
@@ -595,6 +748,77 @@ struct Invoice: Identifiable, Codable, Equatable, Hashable {
     var issuedAt: Date
 }
 
+// MARK: - Saved payment methods (plan E9) — never a PAN/CVV, only a
+// gateway-issued token reference plus a display label safe to show
+// ("Visa •••• 4242"). Mirrors the refund/wallet discipline: the client only
+// ever stores/reads a reference, real card data lives with the gateway.
+struct SavedPaymentMethod: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var gatewayTokenId: String
+    var displayLabel: String
+    var isDefault: Bool
+    var createdAt: Date
+}
+
+// MARK: - Support refund/credit audit trail (plan M4) — append-only record
+// of a support-agent-issued refund or wallet credit against a visit, tied to
+// the ticket that prompted it. Written only by the `issue-support-refund`
+// Edge Function (service-role key), never by the client — mirrors
+// `refunds`/`wallet_ledger`'s append-only, RLS-locked-down discipline.
+struct SupportRefundAudit: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var ticketId: UUID
+    var visitId: UUID
+    var issuedByUserId: UUID
+    var kind: Kind
+    var amountMinorUnits: Int
+    var reason: String
+    var refundId: UUID?
+    var walletLedgerEntryId: UUID?
+    var createdAt: Date
+
+    enum Kind: String, Codable {
+        case refund, walletCredit = "wallet_credit"
+    }
+}
+
+// MARK: - Wallet (plan §G6) — append-only double-entry ledger; balance is
+// always the sum of entries, never a stored/mutable column (mirrors
+// vet_ledger's discipline in 0014_payouts.sql).
+
+struct WalletLedgerEntry: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var amountMinorUnits: Int // positive = credit, negative = debit
+    var reason: String
+    var relatedVisitId: UUID?
+    var relatedRefundId: UUID?
+    var createdAt: Date
+}
+
+// MARK: - Coupons (plan §E4, §N2) — validated server-side only; the app
+// never enumerates codes, it asks the server "is this one valid for me now".
+
+struct Coupon: Identifiable, Codable, Equatable, Hashable {
+    enum DiscountType: String, Codable {
+        case percentageOff = "percentage_off"
+        case fixedAmountOff = "fixed_amount_off"
+    }
+
+    let id: UUID
+    var code: String
+    var discountType: DiscountType
+    var discountValue: Int // percent (1-100) or paise, per discountType
+    var maxDiscountMinorUnits: Int?
+    var validFrom: Date
+    var validUntil: Date
+    var usageLimit: Int?
+    var perUserLimit: Int?
+    var minSpendMinorUnits: Int?
+    var campaignName: String?
+}
+
 // MARK: - Cart, pricing & checkout (plan §E) — a server-authoritative quote
 // is the only thing an order may ever reference; the client never computes
 // a rupee (Appendix C).
@@ -671,6 +895,11 @@ enum ServiceCategory: String, Codable, CaseIterable, Identifiable {
     case consult, vaccination, grooming, diagnostics, deworming, dental
     case elderCareVisit = "elder_care_visit"
     case physioSession = "physio_session"
+    /// K6: a bookable lab test (blood panel, urinalysis, ...) — reuses the
+    /// existing catalog/cart/checkout/booking flow rather than a parallel
+    /// ordering system; the resulting `Visit` is what a `LabTestReport`
+    /// eventually attaches to.
+    case labTest = "lab_test"
 
     var id: String { rawValue }
 
@@ -684,6 +913,7 @@ enum ServiceCategory: String, Codable, CaseIterable, Identifiable {
         case .dental: return "Dental"
         case .elderCareVisit: return "Elder care visit"
         case .physioSession: return "Physio session"
+        case .labTest: return "Lab test"
         }
     }
 
@@ -697,6 +927,7 @@ enum ServiceCategory: String, Codable, CaseIterable, Identifiable {
         case .dental: return "mouth.fill"
         case .elderCareVisit: return "figure.wave"
         case .physioSession: return "figure.strengthtraining.traditional"
+        case .labTest: return "cross.vial.fill"
         }
     }
 
@@ -763,6 +994,27 @@ struct Service: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+// MARK: - K6: lab test ordering + report delivery. Ordering itself is just a
+// `Service` of `.labTest` category booked through the existing cart/checkout
+// flow; this type only models the report that later attaches to the
+// resulting visit. Reports are uploaded ops-side (out of this app's scope),
+// so there is deliberately no client "create"/"upload" method here.
+struct LabTestReport: Identifiable, Codable, Equatable, Hashable {
+    enum Status: String, Codable, Equatable, Hashable {
+        case pending
+        case ready
+    }
+
+    let id: UUID
+    var visitId: UUID
+    var petId: UUID
+    var testName: String
+    var status: Status
+    var reportFileURL: URL?
+    var resultSummary: String?
+    var availableAt: Date?
+}
+
 // MARK: - Packages/bundles (plan §D4) — "Puppy first-year: 4 visits + 3
 // vaccines" sold as one priced unit. Buying one is currently a checkout-time
 // stub that expands into individual cart lines (see BuyPackageUseCase);
@@ -806,6 +1058,64 @@ struct NotificationPreferences: Codable, Equatable {
     var chatMessages: Bool = true
     var vaccinationReminders: Bool = true
     var promotions: Bool = false
+}
+
+// MARK: - J8: transactional SMS/WhatsApp fallback when push fails.
+//
+// There is no third-party SMS/WhatsApp gateway account (Twilio/MSG91/etc)
+// wired into this codebase, so an actual text message is never sent from
+// here — see `SMSFallbackRepository` and `send-sms-fallback` for exactly
+// where a real gateway call would go. What *is* real: the decision of
+// when a fallback is warranted (`NotificationDeliveryPolicy`, pure and
+// testable) and an append-only record of the fallback intent
+// (`sms_fallback_log`), so the gradeable behavior — "did we correctly
+// decide to fall back, and did we record it" — is fully implemented.
+
+/// A transactional (never promotional) notification this app might need to
+/// deliver outside of push — visit confirmed, vet en route, an OTP, etc.
+/// Kept distinct from `AppNotification`/`NotificationPreferences.promotions`
+/// on purpose: SMS fallback only ever applies to transactional categories.
+enum TransactionalNotificationCategory: String, Codable, CaseIterable, Sendable {
+    case visitConfirmed = "visit_confirmed"
+    case vetEnRoute = "vet_en_route"
+    case otp = "otp"
+    case rescheduleProposed = "reschedule_proposed"
+    case visitCompleted = "visit_completed"
+}
+
+/// The decided outcome of `NotificationDeliveryPolicy` for one notification
+/// attempt against one user.
+enum NotificationDeliveryDecision: Equatable, Sendable {
+    /// Push is the right channel — either it hasn't been tried yet, or it
+    /// already succeeded.
+    case push
+    /// Push is unavailable or failed, the user hasn't opted out of this
+    /// transactional category, and a phone number is on file — fall back to
+    /// SMS/WhatsApp.
+    case smsFallback(reason: FallbackReason)
+    /// No channel is appropriate: the user has no push token, no phone
+    /// number, or has turned this category off entirely.
+    case suppressed(reason: String)
+
+    enum FallbackReason: String, Equatable, Sendable, Codable {
+        case noPushToken = "no_push_token"
+        case pushDeliveryFailed = "push_delivery_failed"
+        case pushDisabledByUser = "push_disabled_by_user"
+    }
+}
+
+/// An append-only record of an SMS/WhatsApp fallback that was decided on —
+/// mirrors `WalletLedgerEntry`/`sms_fallback_log`'s discipline: this is a
+/// log of intent, not proof a real text was sent (see the type comment
+/// above `TransactionalNotificationCategory`).
+struct SMSFallbackRecord: Identifiable, Codable, Equatable, Sendable {
+    let id: UUID
+    var userId: UUID
+    var phone: String
+    var category: TransactionalNotificationCategory
+    var body: String
+    var reason: NotificationDeliveryDecision.FallbackReason
+    var createdAt: Date
 }
 
 // MARK: - Force-upgrade & maintenance mode (plan §O7-O8, §7) — the server's
@@ -921,6 +1231,40 @@ struct SupportTicket: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+// MARK: - Incident reports (plan §L4/L5) — deliberately NOT the same model as
+// `SupportTicket` above: that one is a billing/service dispute queue a
+// customer files after the fact, this one is safety-specific ("a stranger is
+// inside a home") and is filed by either party, in real time, and must carry
+// a distinguishable `reporterRole` for triage/vet-suspension decisions that a
+// generic ticket subject line can't guarantee. SOS (L4) is the same
+// underlying model with `type == .sos` and no free-text required.
+struct IncidentReport: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var visitId: UUID
+    var reporterId: UUID
+    var reporterRole: ReporterRole
+    var type: IncidentType
+    var description: String
+    var createdAt: Date
+
+    enum ReporterRole: String, Codable, CaseIterable {
+        case customer, vet
+    }
+
+    enum IncidentType: String, Codable, CaseIterable {
+        case sos, safetyConcern = "safety_concern", unprofessionalConduct = "unprofessional_conduct", other
+
+        var displayName: String {
+            switch self {
+            case .sos: return "SOS — immediate danger"
+            case .safetyConcern: return "Safety concern"
+            case .unprofessionalConduct: return "Unprofessional conduct"
+            case .other: return "Other"
+            }
+        }
+    }
+}
+
 // MARK: - Chat auto-close (plan §J5) — prevents unpaid consulting over chat
 // once a visit is long done; pure policy so it's testable without a clock
 // dependency injected anywhere but here.
@@ -999,6 +1343,41 @@ struct Prescription: Identifiable, Codable, Equatable, Hashable {
     var issuedAt: Date
 }
 
+/// K3: an hour/minute-of-day, timezone-agnostic — the reminder fires at this
+/// wall-clock time every active day, matching how `UNCalendarNotificationTrigger`
+/// with `repeats: true` and a partial `DateComponents` behaves.
+struct TimeOfDay: Codable, Equatable, Hashable {
+    var hour: Int
+    var minute: Int
+
+    var displayText: String {
+        String(format: "%02d:%02d", hour, minute)
+    }
+}
+
+/// K3: a pet owner's reminder to give a medication, on a recurring
+/// time-of-day schedule within an optional date range (e.g. a 10-day course
+/// of antibiotics vs. an ongoing daily supplement with no `endDate`).
+struct MedicationReminder: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var petId: UUID
+    var medicationName: String
+    var dosage: String
+    var times: [TimeOfDay]
+    var startDate: Date
+    var endDate: Date?
+    var isActive: Bool = true
+
+    /// Whether the reminder's date range covers `date` — a course with an
+    /// `endDate` in the past shouldn't keep firing even if `isActive` was
+    /// never flipped off by hand.
+    func isInRange(on date: Date = .now, calendar: Calendar = .current) -> Bool {
+        let day = calendar.startOfDay(for: date)
+        guard day >= calendar.startOfDay(for: startDate) else { return false }
+        if let endDate { return day <= calendar.startOfDay(for: endDate) }
+        return true
+    }
+}
 
 // MARK: - Discovery filters & sort (plan §C3-C4) — pure, testable logic; the
 // UI only ever calls `CircuitFilter.apply` / `CircuitSortOption.sort`, it
@@ -1149,6 +1528,148 @@ struct EmergencyClinic: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+
+// MARK: - D5: per-vet service availability & pricing overrides — a vet can
+// opt out of a catalog service entirely, or charge more/less than the
+// catalog default, without ops editing the shared catalog per vet.
+struct VetServiceOverride: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var vetId: UUID
+    var serviceId: UUID
+    var variantId: UUID?               // nil = applies to the whole service; set = one variant only
+    var priceOverrideMinorUnits: Int?  // nil = use the catalog price, only isOffered is overridden
+    var isOffered: Bool = true
+}
+
+// MARK: - F5: recurring bookings (monthly deworming, weekly physio). The rule
+// itself is client/server state; actually spawning the next visit each cycle
+// is a scheduled-job concern (plan §6.5-style job) — out of scope here, see
+// RecurrenceScheduler's doc comment for the known gap this leaves.
+struct RecurringBookingRule: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var petId: UUID
+    var serviceId: UUID
+    var variantId: UUID
+    var circuitId: UUID
+    var cadence: Cadence
+    var nextOccurrenceAt: Date
+    var isActive: Bool = true
+
+    enum Cadence: String, Codable, CaseIterable {
+        case weekly, monthly
+
+        var displayName: String {
+            switch self {
+            case .weekly: return "Weekly"
+            case .monthly: return "Monthly"
+            }
+        }
+    }
+}
+
+/// Pure date math for F5 — no I/O, so the "what's the next occurrence" rule
+/// is directly unit-testable independent of whichever job ends up running it.
+struct RecurrenceScheduler {
+    /// Computes the next occurrence after `lastOccurrence` for the given
+    /// cadence. A calendar (not a fixed 7/30-day interval) is used so weekly
+    /// stays pinned to the same weekday and monthly to the same day-of-month
+    /// across DST transitions and month-length differences.
+    static func nextOccurrence(after lastOccurrence: Date, cadence: RecurringBookingRule.Cadence, calendar: Calendar = .current) -> Date {
+        switch cadence {
+        case .weekly:
+            return calendar.date(byAdding: .weekOfYear, value: 1, to: lastOccurrence) ?? lastOccurrence.addingTimeInterval(7 * 86400)
+        case .monthly:
+            return calendar.date(byAdding: .month, value: 1, to: lastOccurrence) ?? lastOccurrence.addingTimeInterval(30 * 86400)
+        }
+    }
+}
+
+// MARK: - F6: vet-initiated reschedule with customer accept/decline. Unlike
+// a customer-initiated reschedule (RescheduleVisitUseCase), a vet-initiated
+// proposal bypasses the 4h policy window — the vet, not the customer, is the
+// one moving the slot — and a decline earns the customer a goodwill credit
+// rather than leaving them simply stuck with the original (now vet-unwanted) time.
+struct RescheduleProposal: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var visitId: UUID
+    var proposedByRole: ProposerRole
+    var proposedSlotId: UUID
+    var status: Status
+    var createdAt: Date
+
+    enum ProposerRole: String, Codable { case vet, customer }
+    enum Status: String, Codable { case pending, accepted, declined }
+}
+
+// MARK: - F7: no-show policy for both directions — mirrors CancellationPolicy
+// (pure, testable, no I/O) but the two directions have opposite consequences:
+// a customer no-show forfeits the full amount, a vet no-show refunds it in
+// full plus a small goodwill credit (same loyalty award F6 uses on decline).
+struct NoShowPolicy {
+    /// Awarded to the customer whenever the *vet* is at fault — either a
+    /// full vet no-show, or a declined vet-initiated reschedule (F6).
+    static let goodwillCreditPoints = 50
+
+    struct Outcome: Equatable {
+        var refundPercent: Int   // 0 for customer no-show, 100 for vet no-show
+        var refundMinorUnits: Int
+        var goodwillCreditPoints: Int
+    }
+
+    static func customerNoShow(paidMinorUnits: Int) -> Outcome {
+        Outcome(refundPercent: 0, refundMinorUnits: 0, goodwillCreditPoints: 0)
+    }
+
+    static func vetNoShow(paidMinorUnits: Int) -> Outcome {
+        Outcome(refundPercent: 100, refundMinorUnits: paidMinorUnits, goodwillCreditPoints: goodwillCreditPoints)
+    }
+
+    /// How long past the scheduled time a visit stuck in `assigned`/`enRoute`
+    /// must sit before the customer can report a vet no-show — long enough
+    /// to not penalize ordinary lateness, short enough to be useful same-day.
+    static let vetGraceWindowMinutes: Double = 30
+}
+
+// MARK: - B6: document vault — prior vet reports / insurance docs against a
+// pet. No real storage backend is wired up yet (see `PetDocumentRepository`
+// doc comment) so `fileURL` is a placeholder scheme until Supabase Storage
+// SDK wiring lands.
+struct PetDocument: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var petId: UUID
+    var uploaderId: UUID
+    var title: String
+    var fileURL: URL
+    var uploadedAt: Date
+}
+
+// MARK: - Payment disputes (plan G9) — a chargeback the gateway opened
+// against one of our payments. The dispute-webhook Edge Function is the
+// only writer (server-only financial write, same discipline as refunds);
+// the customer app only ever reads one, tied to their own visit, so they
+// understand why a hold might exist rather than being left confused.
+struct PaymentDispute: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var paymentId: UUID
+    var visitId: UUID
+    var gatewayDisputeId: String
+    var reason: String
+    var amountMinorUnits: Int
+    var status: Status
+    var openedAt: Date
+    var resolvedAt: Date?
+    var evidenceSubmittedAt: Date?
+
+    enum Status: String, Codable {
+        case open, needsResponse = "needs_response", won, lost
+    }
+
+    /// Whether this dispute still affects the customer's money — a
+    /// won/lost dispute is resolved and no longer needs surfacing as an
+    /// active hold.
+    var isActive: Bool { status == .open || status == .needsResponse }
+}
 
 // MARK: - Domain errors
 

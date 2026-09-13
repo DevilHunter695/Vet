@@ -1,23 +1,55 @@
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Use cases: pure business logic, unit-testable without UI or network
 
 struct GetCircuitsUseCase {
     let repository: CircuitRepository
+    /// F9: optional so existing call sites/tests that don't care about
+    /// blackouts keep working unchanged — when present, circuits whose vet
+    /// is currently on a blackout are excluded entirely.
+    var vetBlackoutRepository: VetBlackoutRepository? = nil
 
     /// C3/C4: `filter` narrows the fetched list, `sort` orders what's left —
     /// both client-side over the already-fetched circuits (simpler than a
     /// server round trip per filter change, and still correct since a
     /// customer's whole area is a small list). `previouslyBookedVetIds`
     /// backs the "previously booked" sort without this use case needing its
-    /// own visit-history dependency.
+    /// own visit-history dependency. `estimatedVisitDurationMinutes` +
+    /// `slotBufferMinutes` back F8: each circuit's schedule is filtered so a
+    /// still-empty slot within travel-buffer distance of an already-booked
+    /// one on the same day isn't offered.
     func execute(
         area: String?, vertical: Vertical = .vet,
         filter: CircuitFilter = CircuitFilter(), sort: CircuitSortOption? = nil,
-        catalog: [Service] = [], previouslyBookedVetIds: Set<UUID> = []
+        catalog: [Service] = [], previouslyBookedVetIds: Set<UUID> = [],
+        estimatedVisitDurationMinutes: Int = 30, slotBufferMinutes: Int = SlotBufferPolicy.defaultBufferMinutes,
+        now: Date = .now
     ) async throws -> [Circuit] {
         let circuits = try await repository.listCircuits(area: area)
-        let scoped = circuits.filter { $0.vertical == vertical }
+        var scoped = circuits.filter { $0.vertical == vertical }
+
+        // F9: drop circuits whose vet is currently on a blackout window.
+        if let vetBlackoutRepository {
+            let vetIds = Array(Set(scoped.map { $0.vetId }))
+            let blackouts = try await vetBlackoutRepository.blackouts(vetIds: vetIds)
+            if !blackouts.isEmpty {
+                scoped = scoped.filter { !VetBlackout.isVetBlackedOut(vetId: $0.vetId, blackouts: blackouts, on: now) }
+            }
+        }
+
+        // F8: within each remaining circuit, don't offer a still-empty slot
+        // that leaves the vet zero travel time after/before a booked one.
+        scoped = scoped.map { circuit in
+            var circuit = circuit
+            circuit.schedule = SlotBufferPolicy.filterOfferableSlots(
+                circuit.schedule, visitDurationMinutes: estimatedVisitDurationMinutes, bufferMinutes: slotBufferMinutes
+            )
+            return circuit
+        }
+
         let filtered = CircuitFilter.apply(filter, to: scoped, catalog: catalog)
         if let sort {
             return CircuitSortOption.sort(filtered, by: sort, previouslyBookedVetIds: previouslyBookedVetIds)
@@ -90,6 +122,73 @@ struct RescheduleVisitUseCase {
             throw DomainError.slotUnavailable
         }
         return try await visitRepository.rescheduleVisit(visitId: visitId, newSlot: newSlot)
+    }
+}
+
+/// F6: vet-initiated reschedule — the customer accepts or declines a
+/// vet-proposed slot. Accepting bypasses `RescheduleVisitUseCase`'s 4h
+/// policy window entirely (the vet moved the slot, not the customer), and
+/// declining awards a goodwill loyalty credit since the customer is now
+/// inconvenienced through no fault of their own.
+struct RespondToRescheduleProposalUseCase {
+    let proposalRepository: RescheduleProposalRepository
+    let visitRepository: VisitRepository
+    let circuitRepository: CircuitRepository
+    let loyaltyRepository: LoyaltyRepository
+
+    @discardableResult
+    func execute(proposal: RescheduleProposal, visit: Visit, accept: Bool) async throws -> RescheduleProposal {
+        guard proposal.status == .pending, proposal.proposedByRole == .vet else {
+            throw DomainError.validation("This proposal has already been responded to.")
+        }
+        let updated = try await proposalRepository.respond(id: proposal.id, accept: accept)
+        if accept {
+            let circuit = try await circuitRepository.circuit(id: visit.circuitId)
+            guard let slot = circuit.schedule.first(where: { $0.id == proposal.proposedSlotId }) else {
+                throw DomainError.notFound("Proposed slot")
+            }
+            // Vet-initiated, so the customer-side 4h policy window doesn't
+            // apply here — go straight to the repository, not through
+            // RescheduleVisitUseCase.execute's guard.
+            _ = try await visitRepository.rescheduleVisit(visitId: visit.id, newSlot: slot)
+        } else {
+            _ = try await loyaltyRepository.awardPoints(userId: visit.userId, points: NoShowPolicy.goodwillCreditPoints)
+        }
+        return updated
+    }
+}
+
+/// F7: no-show handling for both directions (Appendix B). Customer no-show
+/// is reported vet-side (out of scope for this customer app); a *vet*
+/// no-show is what the customer app itself needs to let a customer report
+/// once the grace window has passed.
+struct ReportVetNoShowUseCase {
+    let visitRepository: VisitRepository
+    let refundRepository: RefundRepository
+    let loyaltyRepository: LoyaltyRepository
+
+    @discardableResult
+    func execute(visit: Visit, now: Date = .now) async throws -> NoShowPolicy.Outcome {
+        guard visit.status == .assigned || visit.status == .enRoute else {
+            throw DomainError.validation("This visit isn't in a state where a vet no-show can be reported.")
+        }
+        let minutesLate = now.timeIntervalSince(visit.scheduledAt) / 60
+        guard minutesLate >= NoShowPolicy.vetGraceWindowMinutes else {
+            throw DomainError.validation("Please wait a little longer before reporting a no-show.")
+        }
+        let paidMinorUnits = try await visitRepository.paidAmountMinorUnits(visitId: visit.id)
+        let outcome = NoShowPolicy.vetNoShow(paidMinorUnits: paidMinorUnits)
+        _ = try await visitRepository.updateStatus(visitId: visit.id, status: .noShowVet)
+        if outcome.refundMinorUnits > 0, let paymentId = visit.paymentId {
+            _ = try await refundRepository.issueRefund(
+                visitId: visit.id, paymentId: paymentId, amountMinorUnits: outcome.refundMinorUnits,
+                reason: "Vet no-show", initiatedByOpsUserId: nil
+            )
+        }
+        if outcome.goodwillCreditPoints > 0 {
+            _ = try await loyaltyRepository.awardPoints(userId: visit.userId, points: outcome.goodwillCreditPoints)
+        }
+        return outcome
     }
 }
 
@@ -192,11 +291,35 @@ struct SendChatMessageUseCase {
 struct SubmitReviewUseCase {
     let reviewRepository: ReviewRepository
 
+    /// L6: runs `comment` through `ReviewModerationPolicy` before it ever
+    /// reaches the repository. Profanity rejects the submission outright;
+    /// PII is auto-redacted in place; defamation-risk language is flagged
+    /// (`needsModeration`) but never blocks — a false positive there must
+    /// not silently eat a legitimate review.
     func execute(visitId: UUID, rating: Int, comment: String?) async throws -> Review {
         guard (1...5).contains(rating) else {
             throw DomainError.validation("Rating must be between 1 and 5.")
         }
-        return try await reviewRepository.submit(visitId: visitId, rating: rating, comment: comment)
+
+        var moderatedComment = comment
+        var needsModeration = false
+        var flags: [String] = []
+
+        if let comment, !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            do {
+                let result = try ReviewModerationPolicy.moderate(comment)
+                moderatedComment = result.text
+                needsModeration = result.needsModeration
+                flags = result.moderationFlags
+            } catch ReviewModerationPolicy.Violation.profanity {
+                throw DomainError.validation("Your review contains language we can't publish — please rephrase and try again.")
+            }
+        }
+
+        return try await reviewRepository.submit(
+            visitId: visitId, rating: rating, comment: moderatedComment,
+            needsModeration: needsModeration, moderationFlags: flags
+        )
     }
 }
 
@@ -301,11 +424,197 @@ struct FollowUpBookingPolicy {
     }
 }
 
+// MARK: - B6: document vault use case
+
+struct ManagePetDocumentsUseCase {
+    let repository: PetDocumentRepository
+
+    func list(petId: UUID) async throws -> [PetDocument] {
+        try await repository.list(petId: petId).sorted { $0.uploadedAt > $1.uploadedAt }
+    }
+
+    func upload(petId: UUID, uploaderId: UUID, title: String, data: Data) async throws -> PetDocument {
+        let trimmed = title.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            throw DomainError.validation("Give this document a title.")
+        }
+        guard !data.isEmpty else {
+            throw DomainError.validation("That file looks empty.")
+        }
+        return try await repository.upload(petId: petId, uploaderId: uploaderId, title: trimmed, data: data)
+    }
+
+    func delete(id: UUID) async throws {
+        try await repository.delete(id: id)
+    }
+}
+
+// MARK: - B7: shareable pet health summary (PDF)
+
+/// Renders a one-page PDF summary of a pet's health record — name, species,
+/// breed, DOB, latest weight (plus trend context), vaccination status, and
+/// chronic conditions/allergies — for boarding/travel/clinic referral (plan
+/// §B7). Framework-native `UIGraphicsPDFRenderer`, no third-party dependency.
+/// Pure rendering: the caller supplies the pet's already-fetched weight and
+/// vaccination history rather than this use case reaching into repositories
+/// itself, which keeps the layout logic directly testable (byte count/PDF
+/// magic header) without spinning up mock repositories.
+struct GeneratePetHealthSummaryUseCase {
+    /// A4-sized page, matching the paper size boarding/travel/clinic staff
+    /// are most likely to print this on.
+    private let pageWidth: CGFloat = 595.2
+    private let pageHeight: CGFloat = 841.8
+
+    func execute(pet: Pet, weightHistory: [PetWeightEntry], vaccinations: [Vaccination], generatedAt: Date = .now) -> Data {
+        #if canImport(UIKit)
+        let pageRect = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+        return renderer.pdfData { context in
+            context.beginPage()
+            draw(pet: pet, weightHistory: weightHistory, vaccinations: vaccinations, generatedAt: generatedAt, in: pageRect)
+        }
+        #else
+        return Data()
+        #endif
+    }
+
+    #if canImport(UIKit)
+    private func draw(pet: Pet, weightHistory: [PetWeightEntry], vaccinations: [Vaccination], generatedAt: Date, in pageRect: CGRect) {
+        let margin: CGFloat = 40
+        var y: CGFloat = margin
+        let contentWidth = pageRect.width - margin * 2
+
+        let titleAttrs: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 22)]
+        let headingAttrs: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 14)]
+        let bodyAttrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 12)]
+        let captionAttrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 10), .foregroundColor: UIColor.darkGray]
+
+        func drawText(_ text: String, attrs: [NSAttributedString.Key: Any], spacingAfter: CGFloat = 6) {
+            let bounds = (text as NSString).boundingRect(
+                with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                options: .usesLineFragmentOrigin, attributes: attrs, context: nil)
+            (text as NSString).draw(in: CGRect(x: margin, y: y, width: contentWidth, height: bounds.height), withAttributes: attrs)
+            y += bounds.height + spacingAfter
+        }
+
+        drawText("\(pet.name) — Health Summary", attrs: titleAttrs, spacingAfter: 4)
+        drawText("Generated \(generatedAt.formatted(date: .abbreviated, time: .shortened)) · VetCircuit", attrs: captionAttrs, spacingAfter: 16)
+
+        drawText("Pet details", attrs: headingAttrs, spacingAfter: 4)
+        drawText("Species: \(pet.species.rawValue.capitalized)", attrs: bodyAttrs, spacingAfter: 2)
+        if let breed = pet.breed, !breed.isEmpty {
+            drawText("Breed: \(breed)", attrs: bodyAttrs, spacingAfter: 2)
+        }
+        if let dob = pet.dateOfBirth {
+            drawText("Date of birth: \(dob.formatted(date: .abbreviated, time: .omitted))", attrs: bodyAttrs, spacingAfter: 2)
+        }
+        if let sex = pet.sex {
+            drawText("Sex: \(sex.rawValue.capitalized)\(pet.isNeutered == true ? " (neutered/spayed)" : "")", attrs: bodyAttrs, spacingAfter: 2)
+        }
+        y += 8
+
+        drawText("Weight", attrs: headingAttrs, spacingAfter: 4)
+        if let latest = weightHistory.sorted(by: { $0.recordedAt < $1.recordedAt }).last {
+            drawText("Latest: \(String(format: "%.1f", latest.weightKg)) kg (\(latest.recordedAt.formatted(date: .abbreviated, time: .omitted)))",
+                      attrs: bodyAttrs, spacingAfter: 2)
+        } else {
+            drawText("No weight readings recorded.", attrs: bodyAttrs, spacingAfter: 2)
+        }
+        y += 8
+
+        drawText("Vaccination status", attrs: headingAttrs, spacingAfter: 4)
+        if vaccinations.isEmpty {
+            drawText("No vaccination records.", attrs: bodyAttrs, spacingAfter: 2)
+        } else {
+            for vaccination in vaccinations.sorted(by: { $0.nextDueAt < $1.nextDueAt }) {
+                let status: String
+                switch vaccination.dueStatus(now: generatedAt) {
+                case .upToDate: status = "up to date"
+                case .dueSoon: status = "due soon"
+                case .overdue: status = "overdue"
+                }
+                let given = vaccination.givenAt.map { "given \($0.formatted(date: .abbreviated, time: .omitted)), " } ?? ""
+                drawText("\(vaccination.vaccineName) — \(given)next due \(vaccination.nextDueAt.formatted(date: .abbreviated, time: .omitted)) (\(status))",
+                          attrs: bodyAttrs, spacingAfter: 2)
+            }
+        }
+        y += 8
+
+        drawText("Chronic conditions & allergies", attrs: headingAttrs, spacingAfter: 4)
+        drawText("Chronic conditions: \(pet.chronicConditions?.isEmpty == false ? pet.chronicConditions! : "None recorded")", attrs: bodyAttrs, spacingAfter: 2)
+        drawText("Allergies: \(pet.allergies?.isEmpty == false ? pet.allergies! : "None recorded")", attrs: bodyAttrs, spacingAfter: 2)
+    }
+    #endif
+}
+
 struct ManagePrescriptionsUseCase {
     let repository: PrescriptionRepository
 
     func history(petId: UUID) async throws -> [Prescription] {
         try await repository.history(petId: petId).sorted { $0.issuedAt > $1.issuedAt }
+    }
+}
+
+/// F9: a vet's own leave/holiday windows. There's no vet-facing UI surface
+/// in this app today (known gap — see TECHNICAL_PLAN.md's F9 row), so this
+/// use case is exercised directly by tests/a future vet-side screen; its
+/// *effect* on customer-facing availability is enforced in `GetCircuitsUseCase`.
+struct ManageVetBlackoutsUseCase {
+    let repository: VetBlackoutRepository
+
+    func list(vetId: UUID) async throws -> [VetBlackout] {
+        try await repository.blackouts(vetId: vetId).sorted { $0.startDate < $1.startDate }
+    }
+
+    func add(vetId: UUID, startDate: Date, endDate: Date, reason: String?) async throws -> VetBlackout {
+        guard startDate <= endDate else {
+            throw DomainError.validation("A blackout's end date must be on or after its start date.")
+        }
+        let blackout = VetBlackout(id: UUID(), vetId: vetId, startDate: startDate, endDate: endDate, reason: reason)
+        return try await repository.create(blackout)
+    }
+
+    func remove(id: UUID) async throws {
+        try await repository.delete(id: id)
+    }
+}
+
+/// K3: medication reminders. Scheduling the actual local notifications is an
+/// App-layer concern (`PushNotificationManager`, which already owns local
+/// scheduling for renewal reminders) — this use case only owns the
+/// CRUD + validation half so it stays framework-free and testable.
+struct ManageMedicationRemindersUseCase {
+    let repository: MedicationReminderRepository
+
+    func list(petId: UUID) async throws -> [MedicationReminder] {
+        try await repository.reminders(petId: petId).sorted { $0.medicationName < $1.medicationName }
+    }
+
+    func add(petId: UUID, medicationName: String, dosage: String, times: [TimeOfDay], startDate: Date, endDate: Date?) async throws -> MedicationReminder {
+        guard !medicationName.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw DomainError.validation("Enter the medication name.")
+        }
+        guard !times.isEmpty else {
+            throw DomainError.validation("Add at least one time of day.")
+        }
+        if let endDate { guard endDate >= startDate else { throw DomainError.validation("End date must be on or after the start date.") } }
+        let reminder = MedicationReminder(id: UUID(), petId: petId, medicationName: medicationName, dosage: dosage,
+                                           times: times, startDate: startDate, endDate: endDate, isActive: true)
+        return try await repository.create(reminder)
+    }
+
+    func update(_ reminder: MedicationReminder) async throws -> MedicationReminder {
+        try await repository.update(reminder)
+    }
+
+    func setActive(_ reminder: MedicationReminder, isActive: Bool) async throws -> MedicationReminder {
+        var reminder = reminder
+        reminder.isActive = isActive
+        return try await repository.update(reminder)
+    }
+
+    func remove(id: UUID) async throws {
+        try await repository.delete(id: id)
     }
 }
 
@@ -441,15 +750,126 @@ struct ManageCartUseCase {
 struct GetQuoteUseCase {
     let quoteRepository: QuoteRepository
     let catalogRepository: CatalogRepository
+    let circuitRepository: CircuitRepository
+    let vetServiceOverrideRepository: VetServiceOverrideRepository
+    // H6: optional so existing call sites/tests that don't care about
+    // entitlements keep working — without these, a quote is priced with no
+    // credit applied, same as before this feature existed.
+    var subscriptionRepository: SubscriptionRepository? = nil
+    var entitlementRepository: SubscriptionEntitlementRepository? = nil
 
     /// E6: the app hands over its selections and gets back a signed,
     /// itemized, TTL'd quote — it never assembles a rupee amount itself.
-    func execute(cart: Cart) async throws -> Quote {
+    /// D5: the booking vet's price overrides (if the cart is on a circuit)
+    /// are fetched and threaded through so the quote reflects the vet's own
+    /// pricing rather than always the catalog default.
+    /// `cart.couponCode` and `useWalletBalance` are the customer's *intent*;
+    /// the repository (server-side in the Supabase path) is what actually
+    /// re-validates the coupon and looks up the real wallet balance before
+    /// folding either into the signed total (Appendix C). H6: if the user
+    /// separately has an active subscription with a credit left this period,
+    /// the quote also comes back with the base price zeroed — this only
+    /// *asks* for that (see `QuoteRepository.createQuote`'s doc comment);
+    /// the server independently re-checks and is the one that actually
+    /// spends the credit.
+    func execute(cart: Cart, useWalletBalance: Bool = false) async throws -> Quote {
         guard !cart.items.isEmpty else {
             throw DomainError.validation("Your cart is empty.")
         }
         let catalog = try await catalogRepository.listServices(vertical: nil)
-        return try await quoteRepository.createQuote(for: cart, catalog: catalog)
+        var overrides: [VetServiceOverride] = []
+        if let circuitId = cart.circuitId {
+            let circuit = try await circuitRepository.circuit(id: circuitId)
+            overrides = try await vetServiceOverrideRepository.overrides(vetId: circuit.vetId)
+        }
+        let applyCredit = await entitlementEligible(userId: cart.userId)
+        return try await quoteRepository.createQuote(for: cart, catalog: catalog, overrides: overrides, useWalletBalance: useWalletBalance, applyEntitlementCredit: applyCredit)
+    }
+
+    private func entitlementEligible(userId: UUID) async -> Bool {
+        guard let subscriptionRepository, let entitlementRepository else { return false }
+        guard let subscription = try? await subscriptionRepository.currentSubscription(userId: userId),
+              subscription.status == .active,
+              let entitlement = try? await entitlementRepository.currentEntitlement(subscriptionId: subscription.id)
+        else { return false }
+        return EntitlementPolicy.canApplyCredit(subscription: subscription, entitlement: entitlement, now: .now)
+    }
+}
+
+struct GetWalletBalanceUseCase {
+    let walletRepository: WalletRepository
+
+    func balance(userId: UUID) async throws -> Int {
+        try await walletRepository.balanceMinorUnits(userId: userId)
+    }
+
+    func entries(userId: UUID) async throws -> [WalletLedgerEntry] {
+        try await walletRepository.entries(userId: userId)
+    }
+}
+
+struct ApplyCouponUseCase {
+    let couponRepository: CouponRepository
+
+    /// E4: validation happens against the real cart total, not a
+    /// client-guessed one — a coupon that would out-discount the cart (or
+    /// has expired/hit its usage limit) simply comes back nil rather than
+    /// letting the client decide it "should" apply (plan §N2 stacking rules
+    /// live entirely server-side in validate_coupon()).
+    func execute(code: String, userId: UUID, cartTotalMinorUnits: Int) async throws -> Coupon {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw DomainError.validation("Enter a promo code.")
+        }
+        guard let coupon = try await couponRepository.validate(code: trimmed, userId: userId, cartTotalMinorUnits: cartTotalMinorUnits) else {
+            throw DomainError.validation("That code isn't valid for this order.")
+        }
+        return coupon
+    }
+}
+
+struct TipUseCase {
+    let paymentRepository: PaymentRepository
+
+    static let presetAmountsMinorUnits = [5_000, 10_000, 15_000] // ₹50/₹100/₹150
+
+    /// E11: a tip is 100% the vet's — no platform cut, unlike a regular
+    /// visit's ~70% split (0014_payouts.sql credit_vet_on_visit_completed).
+    /// The credit itself happens server-side (a trigger on this payment
+    /// row, see 0028_tips.sql) once the tip payment succeeds.
+    func execute(visitId: UUID, amountMinorUnits: Int) async throws -> URL {
+        guard amountMinorUnits > 0, amountMinorUnits <= 50_000_00 else {
+            throw DomainError.validation("Enter a tip amount between ₹1 and ₹50,000.")
+        }
+        return try await paymentRepository.createTipCheckout(forVisit: visitId, amountMinorUnits: amountMinorUnits)
+    }
+}
+
+/// F5: create/manage a recurring booking rule. Spawning the actual next
+/// visit each cycle is a scheduled-job concern (plan §6.5-style), not
+/// something a client app can run itself while backgrounded — known gap,
+/// tracked in TECHNICAL_PLAN.md's F5 row.
+struct ManageRecurringBookingUseCase {
+    let recurringBookingRuleRepository: RecurringBookingRuleRepository
+
+    func execute(userId: UUID, petId: UUID, serviceId: UUID, variantId: UUID, circuitId: UUID, cadence: RecurringBookingRule.Cadence, firstOccurrenceAt: Date) async throws -> RecurringBookingRule {
+        let rule = RecurringBookingRule(
+            id: UUID(), userId: userId, petId: petId, serviceId: serviceId, variantId: variantId,
+            circuitId: circuitId, cadence: cadence, nextOccurrenceAt: firstOccurrenceAt, isActive: true
+        )
+        return try await recurringBookingRuleRepository.create(rule)
+    }
+
+    func list(userId: UUID) async throws -> [RecurringBookingRule] {
+        try await recurringBookingRuleRepository.rules(userId: userId)
+    }
+
+    func setActive(id: UUID, isActive: Bool) async throws -> RecurringBookingRule {
+        try await recurringBookingRuleRepository.setActive(id: id, isActive: isActive)
+    }
+
+    func cancel(id: UUID) async throws {
+        try await recurringBookingRuleRepository.delete(id: id)
     }
 }
 
@@ -815,6 +1235,265 @@ struct JoinWaitlistUseCase {
 
     func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool {
         try await waitlistRepository.hasJoined(userId: userId, addressId: addressId)
+    }
+}
+
+// MARK: - L4/L5: incident reporting + SOS
+//
+// SOS is not a separate model — pressing it files the same `IncidentReport`
+// with `type == .sos`, so it shows up in the exact same reporter-facing and
+// (eventually) ops-facing queue as a filed-after-the-fact safety concern,
+// rather than a disconnected alert nobody reviews after the moment passes.
+
+struct FileIncidentReportUseCase {
+    let repository: IncidentReportRepository
+
+    /// SOS carries no free-text requirement (someone in danger doesn't stop
+    /// to type first) — every other type does.
+    func execute(visitId: UUID, reporterId: UUID, reporterRole: IncidentReport.ReporterRole,
+                 type: IncidentReport.IncidentType, description: String) async throws -> IncidentReport {
+        let description = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        if type != .sos {
+            guard !description.isEmpty else { throw DomainError.validation("Please describe what happened.") }
+        }
+        let report = IncidentReport(id: UUID(), visitId: visitId, reporterId: reporterId, reporterRole: reporterRole,
+                                     type: type, description: description, createdAt: .now)
+        return try await repository.fileReport(report)
+    }
+
+    func myReports(reporterId: UUID) async throws -> [IncidentReport] {
+        try await repository.myReports(reporterId: reporterId)
+    }
+}
+
+/// L4: pressing SOS both logs the incident and hands back a link a trusted
+/// contact can open to see the visit's live status — two outcomes from one
+/// tap, since the plan is explicit that a stranger being in a home is not a
+/// moment to make someone fill out a form before help is on the way.
+struct SOSUseCase {
+    let incidentReportRepository: IncidentReportRepository
+
+    struct Result {
+        var report: IncidentReport
+        var shareLink: URL
+    }
+
+    func execute(visitId: UUID, reporterId: UUID, reporterRole: IncidentReport.ReporterRole) async throws -> Result {
+        let report = try await FileIncidentReportUseCase(repository: incidentReportRepository)
+            .execute(visitId: visitId, reporterId: reporterId, reporterRole: reporterRole, type: .sos, description: "")
+        let link = ShareVisitLinkUseCase.link(visitId: visitId)
+        return Result(report: report, shareLink: link)
+    }
+}
+
+/// L4: builds the `vetcircuit://visit/<id>` deep link `DeepLinkParser`
+/// already understands (N7) — reused here rather than inventing a second
+/// link format, so a trusted contact who opens it lands exactly where the
+/// existing deep-link routing sends anyone else.
+enum ShareVisitLinkUseCase {
+    static func link(visitId: UUID) -> URL {
+        URL(string: "vetcircuit://visit/\(visitId.uuidString)")!
+    }
+
+    static func shareMessage(visitId: UUID) -> String {
+        "I'm on a VetCircuit home visit right now — track it live: \(link(visitId: visitId).absoluteString)"
+    }
+}
+
+// MARK: - E9: saved payment methods
+
+struct ManageSavedPaymentMethodsUseCase {
+    let repository: SavedPaymentMethodRepository
+
+    func list(userId: UUID) async throws -> [SavedPaymentMethod] {
+        try await repository.list(userId: userId)
+    }
+
+    /// `gatewayTokenId`/`displayLabel` are handed back by the gateway SDK's
+    /// tokenization step (not yet wired into this codebase) — this use case
+    /// never sees, and never accepts, raw card/UPI details.
+    @discardableResult
+    func save(userId: UUID, gatewayTokenId: String, displayLabel: String, makeDefault: Bool = false) async throws -> SavedPaymentMethod {
+        guard !gatewayTokenId.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw DomainError.validation("Missing payment token from gateway.")
+        }
+        return try await repository.save(userId: userId, gatewayTokenId: gatewayTokenId, displayLabel: displayLabel, makeDefault: makeDefault)
+    }
+
+    func remove(id: UUID) async throws {
+        try await repository.remove(id: id)
+    }
+
+    func setDefault(id: UUID, userId: UUID) async throws {
+        try await repository.setDefault(id: id, userId: userId)
+    }
+}
+
+// MARK: - M4: support-issued refund/credit, with audit trail
+
+struct IssueSupportRefundUseCase {
+    let repository: SupportRefundAuditRepository
+
+    @discardableResult
+    func execute(
+        ticketId: UUID, visitId: UUID, issuedByUserId: UUID,
+        kind: SupportRefundAudit.Kind, amountMinorUnits: Int, reason: String
+    ) async throws -> SupportRefundAudit {
+        guard amountMinorUnits > 0 else {
+            throw DomainError.validation("Enter an amount greater than zero.")
+        }
+        guard !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw DomainError.validation("A reason is required for the audit trail.")
+        }
+        return try await repository.issueSupportRefund(
+            ticketId: ticketId, visitId: visitId, issuedByUserId: issuedByUserId,
+            kind: kind, amountMinorUnits: amountMinorUnits, reason: reason
+        )
+    }
+
+    func auditTrail(ticketId: UUID) async throws -> [SupportRefundAudit] {
+        try await repository.auditTrail(ticketId: ticketId)
+    }
+}
+
+// MARK: - M5: call support, gated by business hours
+
+/// Pure domain policy — no dependency on `Date()` at the call site, so it's
+/// trivially unit-testable against fixed dates/time zones.
+enum BusinessHoursPolicy {
+    /// 9am–9pm IST (plan M5), inclusive of 9:00, exclusive of 21:00.
+    static let openHour = 9
+    static let closeHour = 21
+    static let timeZone = TimeZone(identifier: "Asia/Kolkata")!
+
+    static func isReachableByPhone(at date: Date = .now, calendar: Calendar = .current) -> Bool {
+        var cal = calendar
+        cal.timeZone = timeZone
+        let hour = cal.component(.hour, from: date)
+        return hour >= openHour && hour < closeHour
+    }
+}
+
+struct ContactSupportByCallUseCase {
+    let supportPhoneNumber: String
+
+    enum Outcome: Equatable {
+        case callURL(URL)
+        /// Outside business hours — no `tel:` URL is produced; the UI should
+        /// fall back to chat/email instead of dialing.
+        case outsideBusinessHours
+    }
+
+    func execute(at date: Date = .now) -> Outcome {
+        guard BusinessHoursPolicy.isReachableByPhone(at: date) else {
+            return .outsideBusinessHours
+        }
+        let digits = supportPhoneNumber.filter { $0.isNumber || $0 == "+" }
+        guard let url = URL(string: "tel:\(digits)") else {
+            return .outsideBusinessHours
+        }
+        return .callURL(url)
+    }
+}
+
+// MARK: - J8: transactional SMS/WhatsApp fallback when push fails.
+
+/// Pure decision logic — no I/O, fully unit-testable — for whether a
+/// transactional notification should go out over push, fall back to
+/// SMS/WhatsApp, or be suppressed entirely. Kept separate from
+/// `SendTransactionalNotificationUseCase` (which does the actual dispatch)
+/// so the *decision* can be tested exhaustively without a repository double.
+enum NotificationDeliveryPolicy {
+    /// - Parameters:
+    ///   - hasPushToken: does this user have any registered device token at all.
+    ///   - pushDeliveryFailed: did a push send just fail (APNs error, uninstalled app, etc).
+    ///   - preferences: the user's per-category opt-in/out, or nil if unknown.
+    ///   - category: the transactional category being sent — promotions never fall back to SMS.
+    ///   - hasPhoneNumber: is there a phone number on file to fall back to.
+    static func decide(
+        hasPushToken: Bool,
+        pushDeliveryFailed: Bool,
+        preferences: NotificationPreferences?,
+        category: TransactionalNotificationCategory,
+        hasPhoneNumber: Bool
+    ) -> NotificationDeliveryDecision {
+        // Booking-update-shaped categories respect the user's toggle; OTPs
+        // are never optional (plan §7: OTP delivery is a hard requirement of
+        // starting a visit, not a preference).
+        let categoryEnabled = category == .otp || (preferences?.bookingUpdates ?? true)
+
+        if !categoryEnabled {
+            guard hasPhoneNumber else {
+                return .suppressed(reason: "Push disabled by user and no phone number on file.")
+            }
+            return .smsFallback(reason: .pushDisabledByUser)
+        }
+
+        if !hasPushToken {
+            guard hasPhoneNumber else {
+                return .suppressed(reason: "No push token and no phone number on file.")
+            }
+            return .smsFallback(reason: .noPushToken)
+        }
+
+        if pushDeliveryFailed {
+            guard hasPhoneNumber else {
+                return .suppressed(reason: "Push delivery failed and no phone number on file.")
+            }
+            return .smsFallback(reason: .pushDeliveryFailed)
+        }
+
+        return .push
+    }
+}
+
+/// Drives `NotificationDeliveryPolicy` against real repository state and
+/// records the SMS fallback intent when the policy calls for one. There is
+/// no server-side push-sending Edge Function in this codebase yet (push is
+/// currently modeled client-side only via `PushTokenRepository.registerDeviceToken`),
+/// so this use case is the integration point a future push-send job would
+/// call into on a delivery failure — see plan note on J8 for the honest
+/// scope boundary (no live SMS/WhatsApp send without gateway credentials).
+struct SendTransactionalNotificationUseCase {
+    let pushTokenRepository: PushTokenRepository
+    let notificationPreferencesRepository: NotificationPreferencesRepository
+    let smsFallbackRepository: SMSFallbackRepository
+
+    @discardableResult
+    func execute(
+        user: User, category: TransactionalNotificationCategory, body: String,
+        pushDeliveryFailed: Bool = false
+    ) async throws -> NotificationDeliveryDecision {
+        async let hasToken = pushTokenRepository.hasDeviceToken(userId: user.id)
+        async let prefs = try? notificationPreferencesRepository.preferences(userId: user.id)
+        let decision = NotificationDeliveryPolicy.decide(
+            hasPushToken: try await hasToken,
+            pushDeliveryFailed: pushDeliveryFailed,
+            preferences: await prefs,
+            category: category,
+            hasPhoneNumber: (user.phone?.isEmpty == false)
+        )
+        if case .smsFallback(let reason) = decision, let phone = user.phone {
+            _ = try await smsFallbackRepository.sendFallback(
+                userId: user.id, phone: phone, category: category, body: body, reason: reason
+            )
+        }
+        return decision
+    }
+}
+
+// MARK: - K6: lab test ordering + report delivery. Ordering reuses the
+// existing catalog/cart/checkout flow (`Service` of `.labTest` category);
+// this use case only surfaces the resulting reports.
+struct GetLabTestReportsUseCase {
+    let repository: LabTestReportRepository
+
+    func forPet(_ petId: UUID) async throws -> [LabTestReport] {
+        try await repository.reports(petId: petId)
+    }
+
+    func forVisit(_ visitId: UUID) async throws -> [LabTestReport] {
+        try await repository.reports(visitId: visitId)
     }
 }
 

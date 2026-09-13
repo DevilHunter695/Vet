@@ -115,7 +115,9 @@ final class SessionStore {
 
 struct RootView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.scenePhase) private var scenePhase
     @State private var appConfigGate: CheckAppConfigUseCase.Gate?
+    @State private var biometricLock = BiometricLockGateModel()
 
     private let checkAppConfigUseCase = DependencyContainer.shared.checkAppConfigUseCase()
 
@@ -139,6 +141,20 @@ struct RootView: View {
                     Theme.heroGradient.ignoresSafeArea()
                     PawMascot(size: 88)
                 }
+            } else if let user = session.currentUser, user.accountStatus != .active {
+                // A11: checked before the biometric gate and before the tab
+                // bar — a blocked/deactivated user should never even reach
+                // the "unlock with Face ID" screen for content they can't use.
+                AccountBlockedView(status: user.accountStatus) {
+                    Task { await session.signOut() }
+                }
+                .transition(.opacity)
+            } else if session.currentUser != nil && BiometricLockSetting.isEnabled && !biometricLock.isUnlocked {
+                // A10: local device gate, evaluated per cold launch and per
+                // foreground return (below) — sits above MainTabView exactly
+                // like the maintenance/force-upgrade gate above it.
+                BiometricLockGateView(model: biometricLock)
+                    .transition(.opacity)
             } else if session.currentUser != nil {
                 MainTabView()
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
@@ -152,6 +168,9 @@ struct RootView: View {
         // O7/O8: fetched once at launch, before we even know whether there's a
         // session — a killed binary must be gated for signed-out users too.
         .task { appConfigGate = await checkAppConfigUseCase.execute(currentVersion: currentAppVersion) }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background { biometricLock.lock() }
+        }
     }
 }
 
