@@ -6,6 +6,9 @@ final class VisitHistoryViewModel {
     var visits: [Visit] = []
     var isLoading = false
     var errorMessage: String?
+    /// F4 + plan §9 rule 3: shown as a confirmation before the customer
+    /// commits to cancelling, so the money/time consequence is never a surprise.
+    var pendingCancellation: (visit: Visit, outcome: CancellationPolicy.Outcome)?
 
     private let getVisitHistoryUseCase = DependencyContainer.shared.getVisitHistoryUseCase()
     private let cancelVisitUseCase = DependencyContainer.shared.cancelVisitUseCase()
@@ -21,14 +24,28 @@ final class VisitHistoryViewModel {
         }
     }
 
-    func cancel(_ visit: Visit) async {
+    func requestCancellation(_ visit: Visit) async {
         do {
-            try await cancelVisitUseCase.execute(visitId: visit.id, currentStatus: visit.status)
-            if let index = visits.firstIndex(where: { $0.id == visit.id }) {
+            let outcome = try await cancelVisitUseCase.preview(visitId: visit.id, scheduledAt: visit.scheduledAt)
+            pendingCancellation = (visit, outcome)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func confirmCancellation() async {
+        guard let pending = pendingCancellation else { return }
+        pendingCancellation = nil
+        do {
+            try await cancelVisitUseCase.execute(
+                visitId: pending.visit.id, currentStatus: pending.visit.status,
+                scheduledAt: pending.visit.scheduledAt, paymentId: pending.visit.paymentId
+            )
+            if let index = visits.firstIndex(where: { $0.id == pending.visit.id }) {
                 // Cancelling moves this visit out of "Happening now" and changes
                 // its badge — without an explicit animation it just snaps
                 // between sections instead of settling there.
-                withAnimation(Theme.springSoft) { visits[index].status = .cancelled }
+                withAnimation(Theme.springSoft) { visits[index].status = .cancelledByUser }
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -69,14 +86,14 @@ struct VisitHistoryView: View {
                         if let activeVisit {
                             Section("Happening now") {
                                 VisitRow(visit: activeVisit, isPrimary: true) {
-                                    Task { await viewModel.cancel(activeVisit) }
+                                    Task { await viewModel.requestCancellation(activeVisit) }
                                 }
                             }
                         }
                         Section("History") {
                             ForEach(Array(viewModel.visits.filter { $0.id != activeVisit?.id }.enumerated()), id: \.element.id) { index, visit in
                                 VisitRow(visit: visit, isPrimary: false) {
-                                    Task { await viewModel.cancel(visit) }
+                                    Task { await viewModel.requestCancellation(visit) }
                                 }
                                 .appearAnimation(delay: Theme.staggerDelay(index))
                             }
@@ -93,6 +110,26 @@ struct VisitHistoryView: View {
                 Haptics.tap()
                 if let user = session.currentUser { await viewModel.load(userId: user.id) }
             }
+            .confirmationDialog(
+                "Cancel this visit?",
+                isPresented: Binding(get: { viewModel.pendingCancellation != nil }, set: { if !$0 { viewModel.pendingCancellation = nil } }),
+                presenting: viewModel.pendingCancellation
+            ) { _ in
+                Button("Cancel visit", role: .destructive) {
+                    Haptics.warning()
+                    Task { await viewModel.confirmCancellation() }
+                }
+                Button("Keep visit", role: .cancel) {}
+            } message: { pending in
+                // Plan §9 rule 3: state the consequence in money and time, never a bare "are you sure".
+                if pending.outcome.isPastVisitTime {
+                    Text("This visit's time has passed — no refund applies.")
+                } else if pending.outcome.refundPercent == 100 {
+                    Text("Cancelling now refunds \(CurrencyFormatter.rupees(pending.outcome.refundMinorUnits)) in full.")
+                } else {
+                    Text("Cancelling now refunds \(CurrencyFormatter.rupees(pending.outcome.refundMinorUnits)) of \(CurrencyFormatter.rupees(pending.outcome.paidMinorUnits)) (within \(Int(CancellationPolicy.freeWindowHours))h of the visit).")
+                }
+            }
         }
     }
 }
@@ -108,7 +145,7 @@ private struct VisitRow: View {
         } label: {
             HStack(spacing: 12) {
                 if isPrimary {
-                    PulsingDot(color: visit.status == .enRoute ? .purple : Theme.primary)
+                    PulsingDot(color: visit.status == .enRoute ? Theme.inProgress : Theme.primary)
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -118,7 +155,7 @@ private struct VisitRow: View {
                         StatusBadge(status: visit.status)
                     }
                     if isPrimary, visit.status == .enRoute {
-                        Text("Vet is on the way").font(.brandCaption).foregroundStyle(.purple)
+                        Text("Vet is on the way").font(.brandCaption).foregroundStyle(Theme.inProgress)
                     }
                 }
             }
@@ -130,6 +167,7 @@ private struct VisitRow: View {
                     Haptics.warning()
                     onCancel()
                 }
+                .tint(Theme.danger)
             }
         }
     }

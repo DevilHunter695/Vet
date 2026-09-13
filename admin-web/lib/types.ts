@@ -18,6 +18,23 @@ export interface Circuit {
   schedule_slots?: { id: string }[];
 }
 
+export interface PayoutRow {
+  id: string;
+  vet_id: string;
+  period_start: string;
+  period_end: string;
+  amount_minor_units: number;
+  status: "pending" | "paid" | "failed";
+  gateway_reference: string | null;
+  vets?: { name: string };
+}
+
+export interface VetUnpaidBalance {
+  vet_id: string;
+  vet_name: string;
+  unpaid_minor_units: number;
+}
+
 export interface ReviewRow {
   id: string;
   visit_id: string;

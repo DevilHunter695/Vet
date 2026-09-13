@@ -39,15 +39,241 @@ actor MockCircuitRepository: CircuitRepository {
     }
 }
 
+actor MockAccountRepository: AccountRepository {
+    private var deletionRequests: [UUID: DeletionRequest] = [:]
+
+    func requestDeletion(userId: UUID) async throws -> DeletionRequest {
+        let request = DeletionRequest(
+            id: UUID(), userId: userId, requestedAt: .now,
+            scheduledPurgeAt: Calendar.current.date(byAdding: .day, value: DeletionRequest.softWindowDays, to: .now) ?? .now,
+            status: .pending
+        )
+        deletionRequests[userId] = request
+        return request
+    }
+
+    func cancelDeletionRequest(userId: UUID) async throws {
+        deletionRequests[userId]?.status = .cancelled
+    }
+
+    func pendingDeletionRequest(userId: UUID) async throws -> DeletionRequest? {
+        let request = deletionRequests[userId]
+        return request?.status == .pending ? request : nil
+    }
+
+    func exportData(userId: UUID) async throws -> DataExport {
+        DataExport(
+            user: MockData.user, addresses: [MockData.address], visits: MockData.visits,
+            consents: [], generatedAt: .now
+        )
+    }
+}
+
+actor MockVisitOTPRepository: VisitOTPRepository {
+    private var otps: [UUID: VisitOTP] = [:]
+
+    func generateOTP(visitId: UUID) async throws -> VisitOTP {
+        if let existing = otps[visitId], !existing.isExpired { return existing }
+        let code = String(format: "%04d", Int.random(in: 0...9999))
+        let otp = VisitOTP(visitId: visitId, code: code, expiresAt: Date().addingTimeInterval(3600), verifiedAt: nil)
+        otps[visitId] = otp
+        return otp
+    }
+
+    func verifyOTP(visitId: UUID, code: String) async throws -> Bool {
+        guard var otp = otps[visitId], !otp.isExpired, otp.code == code else { return false }
+        otp.verifiedAt = .now
+        otps[visitId] = otp
+        return true
+    }
+}
+
+actor MockConsentRepository: ConsentRepository {
+    private var consents: [ConsentRecord] = []
+
+    func activeConsents(userId: UUID) async throws -> [ConsentRecord] {
+        consents.filter { $0.userId == userId && $0.isActive }
+    }
+
+    func grant(userId: UUID, purpose: String, version: String) async throws -> ConsentRecord {
+        let record = ConsentRecord(id: UUID(), userId: userId, purpose: purpose, version: version, grantedAt: .now, withdrawnAt: nil)
+        consents.append(record)
+        return record
+    }
+
+    func withdraw(userId: UUID, purpose: String) async throws {
+        for index in consents.indices where consents[index].userId == userId && consents[index].purpose == purpose {
+            consents[index].withdrawnAt = .now
+        }
+    }
+}
+
+actor MockCartRepository: CartRepository {
+    private var carts: [UUID: Cart] = [:]
+
+    func currentCart(userId: UUID) async throws -> Cart {
+        carts[userId] ?? Cart(id: UUID(), userId: userId)
+    }
+
+    func save(_ cart: Cart) async throws -> Cart {
+        carts[cart.userId] = cart
+        return cart
+    }
+
+    func clear(userId: UUID) async throws {
+        carts[userId] = nil
+    }
+}
+
+actor MockQuoteRepository: QuoteRepository {
+    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote {
+        var lineItems: [PriceLineItem] = []
+        var total = 0
+        for item in cart.items {
+            guard let service = catalog.first(where: { $0.id == item.serviceId }),
+                  let variant = service.variants.first(where: { $0.id == item.variantId }) else {
+                throw DomainError.notFound("Service variant")
+            }
+            let addons = service.addons.filter { item.addonIds.contains($0.id) }
+            let input = PricingEngine.Input(
+                variant: variant, addons: addons,
+                additionalPetCount: max(0, item.petIds.count - 1),
+                travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500
+            )
+            let breakdown = PricingEngine.quote(input)
+            lineItems.append(contentsOf: breakdown.lineItems)
+            total += breakdown.totalMinorUnits
+        }
+        let breakdown = PriceBreakdown(lineItems: lineItems, totalMinorUnits: total)
+        // A real deployment HMAC-signs this with a server-held secret; the
+        // mock stands in with a deterministic non-secret marker so the
+        // client contract (a quote must carry *some* signature) is exercised.
+        let signature = "mock-signed-\(cart.id.uuidString)-\(total)"
+        return Quote(id: UUID(), cartId: cart.id, breakdown: breakdown, signature: signature,
+                     expiresAt: Date().addingTimeInterval(Quote.ttl))
+    }
+}
+
+actor MockSlotHoldRepository: SlotHoldRepository {
+    private var holds: [SlotHold] = []
+
+    func placeHold(slotId: UUID, userId: UUID) async throws -> SlotHold {
+        holds.removeAll(\.isExpired)
+        let hold = SlotHold(id: UUID(), slotId: slotId, userId: userId, expiresAt: Date().addingTimeInterval(SlotHold.holdDuration))
+        holds.append(hold)
+        return hold
+    }
+
+    func releaseHold(id: UUID) async throws {
+        holds.removeAll { $0.id == id }
+    }
+
+    func activeHolds(slotId: UUID) async throws -> [SlotHold] {
+        holds.removeAll(\.isExpired)
+        return holds.filter { $0.slotId == slotId }
+    }
+}
+
+actor MockAddressRepository: AddressRepository {
+    private var addresses: [Address] = [MockData.address]
+
+    /// Mirrors the served clusters in `MockData.circuits` — a coarse
+    /// "within ~2km" check stands in for the real PostGIS polygon lookup.
+    private let servedClusters: [(area: String, lat: Double, lng: Double)] = [
+        ("Koramangala 5th Block", 12.9352, 77.6146),
+        ("Indiranagar 100 Feet Road", 12.9719, 77.6412),
+        ("HSR Layout Sector 2", 12.9121, 77.6446),
+        ("Whitefield", 12.9698, 77.7500),
+        ("JP Nagar Phase 6", 12.9010, 77.5850),
+        ("Jayanagar 4th Block", 12.9250, 77.5938),
+        ("Bellandur", 12.9260, 77.6762),
+    ]
+
+    func listAddresses(ownerId: UUID) async throws -> [Address] {
+        addresses.filter { $0.ownerId == ownerId }
+    }
+
+    func addAddress(_ address: Address) async throws -> Address {
+        var address = address
+        if addresses.isEmpty || addresses.allSatisfy({ $0.ownerId != address.ownerId }) {
+            address.isDefault = true
+        }
+        addresses.append(address)
+        return address
+    }
+
+    func updateAddress(_ address: Address) async throws -> Address {
+        guard let index = addresses.firstIndex(where: { $0.id == address.id }) else {
+            throw DomainError.notFound("Address")
+        }
+        addresses[index] = address
+        return address
+    }
+
+    func deleteAddress(id: UUID) async throws {
+        addresses.removeAll { $0.id == id }
+    }
+
+    func setDefault(id: UUID, ownerId: UUID) async throws {
+        for index in addresses.indices where addresses[index].ownerId == ownerId {
+            addresses[index].isDefault = addresses[index].id == id
+        }
+    }
+
+    func matchCluster(latitude: Double, longitude: Double) async throws -> String? {
+        let thresholdDegrees = 0.03 // ~3km, generous for a mock geofence
+        return servedClusters.first {
+            abs($0.lat - latitude) < thresholdDegrees && abs($0.lng - longitude) < thresholdDegrees
+        }?.area
+    }
+}
+
+actor MockCatalogRepository: CatalogRepository {
+    private var extraServices: [Service] = []
+
+    /// Test-only hook to inject additional fixtures without mutating shared `MockData`.
+    func seed(_ services: [Service]) { extraServices.append(contentsOf: services) }
+
+    func listServices(vertical: Vertical?) async throws -> [Service] {
+        let all = MockData.services + extraServices
+        guard let vertical else { return all }
+        return all.filter { $0.category.vertical == vertical }
+    }
+
+    func service(id: UUID) async throws -> Service {
+        guard let service = (MockData.services + extraServices).first(where: { $0.id == id }) else {
+            throw DomainError.notFound("Service")
+        }
+        return service
+    }
+}
+
 actor MockVisitRepository: VisitRepository {
     private var visits: [Visit] = MockData.visits
+    /// Simulates the DB's `idempotency_keys` table (Appendix D): the same
+    /// key always returns the same visit rather than creating a duplicate.
+    private var visitsByIdempotencyKey: [String: UUID] = [:]
+    /// Simulates `SELECT ... FOR UPDATE` + the capacity CHECK inside
+    /// `book_visit()` — a slot can never be oversold even under concurrent
+    /// calls, since actor isolation serializes access to this dictionary.
+    private var bookedCountBySlot: [UUID: Int] = [:]
 
-    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot) async throws -> Visit {
+    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String) async throws -> Visit {
+        if let existingVisitId = visitsByIdempotencyKey[idempotencyKey],
+           let existing = visits.first(where: { $0.id == existingVisitId }) {
+            return existing
+        }
+        let alreadyBooked = bookedCountBySlot[slot.id] ?? 0
+        guard slot.bookedCount + alreadyBooked < slot.capacity else {
+            throw DomainError.slotUnavailable
+        }
         let visit = Visit(
             id: UUID(), userId: MockData.user.id, petId: petId, vetId: vetId, circuitId: circuitId,
             status: .requested, scheduledAt: slot.startTime, completedAt: nil, notes: nil, paymentId: nil
         )
         visits.append(visit)
+        visitsByIdempotencyKey[idempotencyKey] = visit.id
+        bookedCountBySlot[slot.id] = alreadyBooked + 1
         return visit
     }
 
@@ -68,8 +294,39 @@ actor MockVisitRepository: VisitRepository {
 
     func cancelVisit(visitId: UUID) async throws {
         guard let index = visits.firstIndex(where: { $0.id == visitId }) else { throw DomainError.notFound("Visit") }
-        visits[index].status = .cancelled
+        visits[index].status = .cancelledByUser
     }
+
+    func rescheduleVisit(visitId: UUID, newSlot: ScheduleSlot) async throws -> Visit {
+        guard let index = visits.firstIndex(where: { $0.id == visitId }) else { throw DomainError.notFound("Visit") }
+        visits[index].scheduledAt = newSlot.startTime
+        return visits[index]
+    }
+
+    func paidAmountMinorUnits(visitId: UUID) async throws -> Int {
+        // Mock visits don't carry a real payment row; stand in with a
+        // representative consult price so the policy math has something to work with.
+        59_900
+    }
+}
+
+actor MockRefundRepository: RefundRepository {
+    private var refunds: [Refund] = []
+
+    func issueRefund(visitId: UUID, paymentId: UUID, amountMinorUnits: Int, reason: String, initiatedByOpsUserId: UUID?) async throws -> Refund {
+        let refund = Refund(id: UUID(), visitId: visitId, paymentId: paymentId, amountMinorUnits: amountMinorUnits,
+                             reason: reason, status: .processed, createdAt: .now, initiatedByOpsUserId: initiatedByOpsUserId)
+        refunds.append(refund)
+        return refund
+    }
+
+    func refunds(visitId: UUID) async throws -> [Refund] {
+        refunds.filter { $0.visitId == visitId }
+    }
+}
+
+actor MockInvoiceRepository: InvoiceRepository {
+    func invoice(visitId: UUID) async throws -> Invoice? { nil }
 }
 
 actor MockSubscriptionRepository: SubscriptionRepository {
@@ -107,7 +364,17 @@ actor MockChatRepository: ChatRepository {
     func history(visitId: UUID) async throws -> [ChatMessage] { messages[visitId] ?? [] }
 
     func send(visitId: UUID, body: String) async throws -> ChatMessage {
-        let message = ChatMessage(id: UUID(), visitId: visitId, senderId: MockData.user.id, body: body, sentAt: .now, readAt: nil)
+        let message = ChatMessage(id: UUID(), visitId: visitId, senderId: MockData.user.id, body: body, sentAt: .now, readAt: nil, attachmentURL: nil)
+        messages[visitId, default: []].append(message)
+        return message
+    }
+
+    func sendPhoto(visitId: UUID, imageData: Data) async throws -> ChatMessage {
+        // No real storage bucket in mock mode — write to a local temp file so
+        // the UI still has a real, loadable URL to render.
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
+        try imageData.write(to: url)
+        let message = ChatMessage(id: UUID(), visitId: visitId, senderId: MockData.user.id, body: "📷 Photo", sentAt: .now, readAt: nil, attachmentURL: url)
         messages[visitId, default: []].append(message)
         return message
     }
@@ -168,8 +435,11 @@ actor MockLiveTrackingRepository: LiveTrackingRepository {
 }
 
 actor MockCallRepository: CallRepository {
-    func startCall(visitId: UUID) async throws -> URL {
-        URL(string: "https://call.example.com/visit/\(visitId)")!
+    func startCall(visitId: UUID) async throws -> CallSession {
+        // A real deployment gets this proxy number from Exotel/Twilio,
+        // provisioned per-call; the mock uses a fixed demo number so the
+        // "tap to call" flow is exercisable without a live gateway.
+        CallSession(id: UUID(), visitId: visitId, proxyNumber: "+911800123456", expiresAt: .now.addingTimeInterval(3600))
     }
 }
 
@@ -220,6 +490,13 @@ enum MockData {
 
     static let vet = vets[0]
 
+    static let address = Address(
+        id: UUID(), ownerId: user.id, label: "Home",
+        line1: "14, 5th Cross, Koramangala 5th Block", line2: nil,
+        landmark: "Near Forum Mall", accessNotes: "Ring the bell, dog-friendly building",
+        latitude: 12.9352, longitude: 77.6146, clusterArea: "Koramangala 5th Block", isDefault: true
+    )
+
     /// A varied roster of vets so the list, ratings, and verification badge
     /// all have something realistic to show while testing.
     static let vets: [Vet] = [
@@ -253,11 +530,94 @@ enum MockData {
                     id: UUID(), dayOfWeek: (offset % 7) + 1,
                     startTime: Calendar.current.date(byAdding: .day, value: offset + index, to: .now) ?? .now,
                     endTime: Calendar.current.date(byAdding: .hour, value: offset + 1, to: .now) ?? .now,
-                    isAvailable: true
+                    capacity: 5, bookedCount: offset == 2 ? 5 : offset
                 )
             }
         )
     }
 
     static let visits: [Visit] = []
+
+    /// The full catalog (plan §D): categories, variants, and add-ons with real
+    /// prices — the "multiple options for each thing" the v1 model had no
+    /// concept of at all.
+    static let services: [Service] = [
+        Service(
+            id: UUID(), category: .consult, name: "Home consultation",
+            summary: "A vet examines your pet at home for any general health concern.",
+            whatToPrepare: "Keep any prior reports or medication handy.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Standard 20 min", durationMinutes: 20, priceMinorUnits: 59_900, additionalPetPriceMinorUnits: 29_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Extended 40 min", durationMinutes: 40, priceMinorUnits: 89_900, additionalPetPriceMinorUnits: 44_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Follow-up (within 14 days)", durationMinutes: 15, priceMinorUnits: 0, isFollowUp: true),
+            ],
+            addons: [
+                Addon(id: UUID(), name: "Nail trim", priceMinorUnits: 14_900),
+                Addon(id: UUID(), name: "Deworming", priceMinorUnits: 24_900),
+                Addon(id: UUID(), name: "Blood sample pickup", priceMinorUnits: 39_900),
+            ]
+        ),
+        Service(
+            id: UUID(), category: .vaccination, name: "Vaccination",
+            summary: "Core and non-core vaccines administered at home, with a certificate and next-due reminder.",
+            whatToPrepare: "Bring the previous vaccination card if this isn't the first dose.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Single vaccine", durationMinutes: 15, priceMinorUnits: 49_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Vaccine + wellness check", durationMinutes: 25, priceMinorUnits: 69_900),
+            ],
+            eligibility: ServiceEligibility(requiresPrescriberVet: true)
+        ),
+        Service(
+            id: UUID(), category: .grooming, name: "Grooming",
+            summary: "Bath, brush-out, nail trim and ear cleaning at home.",
+            whatToPrepare: "A space with water access makes this faster.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Basic groom", durationMinutes: 45, priceMinorUnits: 79_900, additionalPetPriceMinorUnits: 49_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Full groom + haircut", durationMinutes: 75, priceMinorUnits: 129_900, additionalPetPriceMinorUnits: 79_900),
+            ]
+        ),
+        Service(
+            id: UUID(), category: .diagnostics, name: "Sample pickup & diagnostics",
+            summary: "Blood, urine, or stool sample collected at home and sent to a partner lab.",
+            whatToPrepare: "Fasting may be required — you'll get instructions after booking.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Basic panel", durationMinutes: 15, priceMinorUnits: 99_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Comprehensive panel", durationMinutes: 20, priceMinorUnits: 189_900),
+            ]
+        ),
+        Service(
+            id: UUID(), category: .deworming, name: "Deworming",
+            summary: "Routine deworming dose appropriate to your pet's weight and age.",
+            whatToPrepare: nil,
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Single dose", durationMinutes: 10, priceMinorUnits: 34_900),
+            ]
+        ),
+        Service(
+            id: UUID(), category: .dental, name: "Dental check & clean",
+            summary: "Oral exam and scale-and-polish for tartar buildup.",
+            whatToPrepare: "Sedation-free — your pet stays awake throughout.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Dental check", durationMinutes: 20, priceMinorUnits: 59_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Scale & polish", durationMinutes: 40, priceMinorUnits: 149_900),
+            ],
+            eligibility: ServiceEligibility(requiresPrescriberVet: true)
+        ),
+        Service(
+            id: UUID(), category: .elderCareVisit, name: "Elder care check-in",
+            summary: "A nursing/physio check-in visit for elderly family members.",
+            whatToPrepare: nil,
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Standard check-in", durationMinutes: 30, priceMinorUnits: 69_900),
+            ]
+        ),
+        Service(
+            id: UUID(), category: .physioSession, name: "Physio session",
+            summary: "A rehab/physiotherapy session at home.",
+            whatToPrepare: "Wear comfortable clothing.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Single session", durationMinutes: 45, priceMinorUnits: 89_900),
+            ]
+        ),
+    ]
 }

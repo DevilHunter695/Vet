@@ -43,7 +43,7 @@ struct LiveTrackingView: View {
             Map(position: $viewModel.cameraPosition) {
                 if let location = viewModel.location {
                     Marker("Vet", coordinate: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude))
-                        .tint(.purple)
+                        .tint(Theme.inProgress)
                 }
             }
             .frame(height: 320)
@@ -51,8 +51,8 @@ struct LiveTrackingView: View {
             Card {
                 HStack(spacing: 12) {
                     ZStack {
-                        Circle().fill(Color.purple.opacity(0.15))
-                        Image(systemName: "figure.walk.motion").foregroundStyle(.purple)
+                        Circle().fill(Theme.inProgress.opacity(0.15))
+                        Image(systemName: "figure.walk.motion").foregroundStyle(Theme.inProgress)
                     }
                     .frame(width: 40, height: 40)
 

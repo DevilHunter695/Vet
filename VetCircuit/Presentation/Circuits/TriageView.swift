@@ -88,9 +88,9 @@ private struct TriageResultCard: View {
 
     private var accent: Color {
         switch result.recommendation {
-        case .bookVisitUrgently: return .red
-        case .bookVisit: return .orange
-        case .selfCare: return .green
+        case .bookVisitUrgently: return Theme.danger
+        case .bookVisit: return Theme.warning
+        case .selfCare: return Theme.success
         }
     }
 

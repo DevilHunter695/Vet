@@ -157,6 +157,15 @@ struct ProfileView: View {
                 .transition(.opacity)
                 .animation(Theme.crossFade, value: viewModel.subscription?.id)
 
+                Section {
+                    NavigationLink("Addresses") {
+                        AddressListView()
+                    }
+                    NavigationLink("Privacy & consent") {
+                        PrivacyConsentView()
+                    }
+                }
+
                 Section("Pets") {
                     ForEach(viewModel.pets) { pet in
                         Text("\(pet.name) · \(pet.species.rawValue.capitalized)")
@@ -194,6 +203,7 @@ struct ProfileView: View {
                         Haptics.warning()
                         Task { await session.signOut() }
                     }
+                    .tint(Theme.danger)
                 }
             }
             .navigationTitle("Profile")
@@ -207,9 +217,9 @@ struct ProfileView: View {
 
     private func tierColor(_ tier: LoyaltyAccount.Tier) -> Color {
         switch tier {
-        case .bronze: return .orange
-        case .silver: return .gray
-        case .gold: return .yellow
+        case .bronze: return Theme.bronzeTier
+        case .silver: return Theme.silverTier
+        case .gold: return Theme.goldTier
         }
     }
 

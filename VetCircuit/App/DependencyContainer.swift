@@ -20,6 +20,16 @@ final class DependencyContainer {
     let referralRepository: ReferralRepository
     let triageRepository: TriageRepository
     let loyaltyRepository: LoyaltyRepository
+    let catalogRepository: CatalogRepository
+    let addressRepository: AddressRepository
+    let slotHoldRepository: SlotHoldRepository
+    let cartRepository: CartRepository
+    let quoteRepository: QuoteRepository
+    let refundRepository: RefundRepository
+    let invoiceRepository: InvoiceRepository
+    let visitOTPRepository: VisitOTPRepository
+    let consentRepository: ConsentRepository
+    let accountRepository: AccountRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -38,13 +48,30 @@ final class DependencyContainer {
         self.referralRepository = MockReferralRepository()
         self.triageRepository = MockTriageRepository()
         self.loyaltyRepository = MockLoyaltyRepository()
+        self.catalogRepository = MockCatalogRepository()
+        self.addressRepository = MockAddressRepository()
+        self.slotHoldRepository = MockSlotHoldRepository()
+        self.cartRepository = MockCartRepository()
+        self.quoteRepository = MockQuoteRepository()
+        self.refundRepository = MockRefundRepository()
+        self.invoiceRepository = MockInvoiceRepository()
+        self.visitOTPRepository = MockVisitOTPRepository()
+        self.consentRepository = MockConsentRepository()
+        self.accountRepository = MockAccountRepository()
     }
 
     // MARK: Use case factories
 
     func getCircuitsUseCase() -> GetCircuitsUseCase { GetCircuitsUseCase(repository: circuitRepository) }
     func bookVisitUseCase() -> BookVisitUseCase { BookVisitUseCase(visitRepository: visitRepository) }
-    func cancelVisitUseCase() -> CancelVisitUseCase { CancelVisitUseCase(visitRepository: visitRepository) }
+    func cancelVisitUseCase() -> CancelVisitUseCase { CancelVisitUseCase(visitRepository: visitRepository, refundRepository: refundRepository) }
+    func rescheduleVisitUseCase() -> RescheduleVisitUseCase { RescheduleVisitUseCase(visitRepository: visitRepository) }
+    func startVisitUseCase() -> StartVisitUseCase { StartVisitUseCase(visitOTPRepository: visitOTPRepository, visitRepository: visitRepository) }
+    func manageConsentUseCase() -> ManageConsentUseCase { ManageConsentUseCase(consentRepository: consentRepository) }
+    func manageAccountDeletionUseCase() -> ManageAccountDeletionUseCase {
+        ManageAccountDeletionUseCase(accountRepository: accountRepository, authRepository: authRepository)
+    }
+    func exportDataUseCase() -> ExportDataUseCase { ExportDataUseCase(accountRepository: accountRepository) }
     func getVisitHistoryUseCase() -> GetVisitHistoryUseCase { GetVisitHistoryUseCase(visitRepository: visitRepository) }
     func subscribeToPlanUseCase() -> SubscribeToPlanUseCase {
         SubscribeToPlanUseCase(subscriptionRepository: subscriptionRepository, paymentRepository: paymentRepository)
@@ -58,4 +85,9 @@ final class DependencyContainer {
     func sendReferralUseCase() -> SendReferralUseCase { SendReferralUseCase(referralRepository: referralRepository) }
     func runTriageUseCase() -> RunTriageUseCase { RunTriageUseCase(triageRepository: triageRepository) }
     func getLoyaltyAccountUseCase() -> GetLoyaltyAccountUseCase { GetLoyaltyAccountUseCase(loyaltyRepository: loyaltyRepository) }
+    func getCatalogUseCase() -> GetCatalogUseCase { GetCatalogUseCase(catalogRepository: catalogRepository) }
+    func manageAddressesUseCase() -> ManageAddressesUseCase { ManageAddressesUseCase(addressRepository: addressRepository) }
+    func holdSlotUseCase() -> HoldSlotUseCase { HoldSlotUseCase(circuitRepository: circuitRepository, slotHoldRepository: slotHoldRepository) }
+    func manageCartUseCase() -> ManageCartUseCase { ManageCartUseCase(cartRepository: cartRepository) }
+    func getQuoteUseCase() -> GetQuoteUseCase { GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository) }
 }

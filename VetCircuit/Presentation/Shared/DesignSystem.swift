@@ -92,11 +92,12 @@ struct StatusBadge: View {
 
     private var color: Color {
         switch status {
-        case .requested: return .orange
-        case .confirmed: return Theme.primary
-        case .enRoute: return .purple
-        case .completed: return .green
-        case .cancelled: return .gray
+        case .requested: return Theme.warning
+        case .confirmed, .assigned: return Theme.primary
+        case .enRoute, .arrived, .inProgress: return Theme.inProgress
+        case .completed, .resolved: return Theme.success
+        case .cancelledByUser, .cancelledByVet, .noShowUser, .noShowVet: return Theme.neutral
+        case .disputed: return Theme.danger
         }
     }
 
@@ -104,9 +105,15 @@ struct StatusBadge: View {
         switch status {
         case .requested: return "clock.fill"
         case .confirmed: return "checkmark.circle.fill"
+        case .assigned: return "person.fill.checkmark"
         case .enRoute: return "figure.walk.motion"
+        case .arrived: return "location.fill"
+        case .inProgress: return "stethoscope"
         case .completed: return "checkmark.seal.fill"
-        case .cancelled: return "xmark.circle.fill"
+        case .cancelledByUser, .cancelledByVet: return "xmark.circle.fill"
+        case .noShowUser, .noShowVet: return "questionmark.circle.fill"
+        case .disputed: return "exclamationmark.triangle.fill"
+        case .resolved: return "checkmark.circle"
         }
     }
 
@@ -128,12 +135,31 @@ struct ChatBubble: View {
     var body: some View {
         HStack {
             if isMine { Spacer(minLength: 40) }
-            Text(message.body)
-                .font(.brandBody)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(isMine ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color(.secondarySystemBackground)))
-                .foregroundStyle(isMine ? .white : .primary)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            Group {
+                if let attachmentURL = message.attachmentURL {
+                    // J2: "Pet owners send photos. Always." — rendered inline,
+                    // not as a bare filename link.
+                    AsyncImage(url: attachmentURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFill()
+                        case .failure:
+                            Image(systemName: "photo.badge.exclamationmark").font(.title).foregroundStyle(.secondary)
+                        default:
+                            ProgressView()
+                        }
+                    }
+                    .frame(width: 180, height: 180)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                } else {
+                    Text(message.body)
+                        .font(.brandBody)
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(isMine ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color(.secondarySystemBackground)))
+                        .foregroundStyle(isMine ? .white : .primary)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+            }
             if !isMine { Spacer(minLength: 40) }
         }
         .transition(.asymmetric(insertion: .move(edge: isMine ? .trailing : .leading).combined(with: .opacity), removal: .opacity))
@@ -179,8 +205,8 @@ struct ErrorBanner: View {
         Label(message, systemImage: "exclamationmark.triangle.fill")
             .font(.footnote)
             .padding(10)
-            .background(Color.red.opacity(0.12))
-            .foregroundStyle(.red)
+            .background(Theme.danger.opacity(0.12))
+            .foregroundStyle(Theme.danger)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .accessibilityLabel("Error: \(message)")
             .transition(.opacity.combined(with: .move(edge: .top)))

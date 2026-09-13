@@ -126,9 +126,9 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | A3 | Session persistence + silent refresh | P0 | 🔨 | Access 15 min, refresh 60 days w/ **rotation + reuse detection** |
 | A4 | Sign out (single device + all devices) | P0 | 🔨 | "Sign out everywhere" revokes refresh family |
 | A5 | Edit profile (name, email, photo, language) | P0 | 🔨 | |
-| A6 | **Delete account + data** | **P0** | ⛔ | **App Store guideline 5.1.1(v) — a hard rejection if missing.** 30-day soft window, financial records retained per statute with justification shown to user |
-| A7 | Export my data (JSON + PDF of records) | P1 | ⛔ | DPDP data-principal right |
-| A8 | Multiple addresses (home/office/parents), default, geofence check | **P0** | ⛔ | A circuit is *address-scoped* — this is core inventory logic, not a nicety |
+| A6 | **Delete account + data** | **P0** | ✅ | **App Store guideline 5.1.1(v) — a hard rejection if missing.** 30-day soft window, financial records retained per statute with justification shown to user |
+| A7 | Export my data (JSON + PDF of records) | P1 | 🔨 | DPDP data-principal right — JSON export done, no PDF |
+| A8 | Multiple addresses (home/office/parents), default, geofence check | **P0** | ✅ | A circuit is *address-scoped* — this is core inventory logic, not a nicety |
 | A9 | Household: invite spouse/family to same pets & bookings | P1 | ⛔ | Very common real-world need; roles: owner/member |
 | A10 | Biometric lock on app (Face ID) | P1 | ⛔ | Medical records = sensitive |
 | A11 | Blocked/deactivated account handling | P1 | ⛔ | Graceful screen, support path |
@@ -176,8 +176,8 @@ Service (Home consultation)
 
 | # | Capability | Pri | Status |
 |---|---|---|---|
-| D1 | Service catalog w/ categories (Consult, Vaccination, Grooming, Diagnostics, Deworming, Dental, Elder-care visit, Physio session) | **P0** | ⛔ |
-| D2 | Variants per service (duration/tier/package) | **P0** | ⛔ |
+| D1 | Service catalog w/ categories (Consult, Vaccination, Grooming, Diagnostics, Deworming, Dental, Elder-care visit, Physio session) | **P0** | 🔨 |
+| D2 | Variants per service (duration/tier/package) | **P0** | 🔨 |
 | D3 | Add-ons attachable to a booking | P1 | ⛔ |
 | D4 | Packages/bundles ("Puppy first-year: 4 visits + 3 vaccines") | P1 | ⛔ |
 | D5 | Per-vet service availability & per-vet pricing overrides | P1 | ⛔ |
@@ -188,13 +188,13 @@ Service (Home consultation)
 
 | # | Capability | Pri | Status | Notes |
 |---|---|---|---|---|
-| E1 | **Cart**: multiple services/pets/add-ons in one booking | **P0** | ⛔ | Add / **remove** / change quantity / clear |
-| E2 | Cart persistence across devices + restore on relaunch | P0 | ⛔ | Server-side cart, not local only |
-| E3 | **Transparent price breakdown**: subtotal · per-pet · travel fee · peak · discount · GST · total | **P0** | ⛔ | Non-negotiable for trust |
+| E1 | **Cart**: multiple services/pets/add-ons in one booking | **P0** | 🔨 | Add / **remove** / change quantity / clear |
+| E2 | Cart persistence across devices + restore on relaunch | P0 | ✅ | Server-side cart, not local only |
+| E3 | **Transparent price breakdown**: subtotal · per-pet · travel fee · peak · discount · GST · total | **P0** | ✅ | Non-negotiable for trust |
 | E4 | Coupon / promo code entry + validation + stacking rules | P1 | ⛔ | |
 | E5 | Wallet credits & loyalty point redemption at checkout | P1 | 🔨 | Loyalty exists; redemption doesn't |
-| E6 | **Server-authoritative quote**: `POST /quotes` returns a signed, TTL'd quote; order must reference a valid quote | **P0** | ⛔ | Prevents client price tampering entirely |
-| E7 | Slot **hold** (10 min) during checkout, auto-release | **P0** | ⛔ | Prevents the "slot taken while I was paying" disaster |
+| E6 | **Server-authoritative quote**: `POST /quotes` returns a signed, TTL'd quote; order must reference a valid quote | **P0** | 🔨 | Prevents client price tampering entirely |
+| E7 | Slot **hold** (10 min) during checkout, auto-release | **P0** | 🔨 | Prevents the "slot taken while I was paying" disaster |
 | E8 | Payment method choice: UPI intent, cards, netbanking, wallets, **pay-after-visit (cash/UPI to vet)** | P0 | 🔨 | Cash-on-visit is table stakes in India |
 | E9 | Saved payment methods (gateway-tokenized, never stored by you) | P1 | ⛔ | |
 | E10 | Order confirmation screen + receipt email/SMS | P0 | 🔨 | |
@@ -205,9 +205,9 @@ Service (Home consultation)
 | # | Capability | Pri | Status |
 |---|---|---|---|
 | F1 | Slot picker from circuit schedule (7–14 day horizon) | P0 | ✅ |
-| F2 | Capacity per slot (N stops per block), not boolean availability | **P0** | 🔨 |
-| F3 | **Reschedule** (with policy window) | **P0** | ⛔ |
-| F4 | **Cancel** with policy: free >4h, 50% <4h, 100% no-show | **P0** | 🔨 (cancel exists; no policy/refund) |
+| F2 | Capacity per slot (N stops per block), not boolean availability | **P0** | ✅ |
+| F3 | **Reschedule** (with policy window) | **P0** | ✅ |
+| F4 | **Cancel** with policy: free >4h, 50% <4h, 100% no-show | **P0** | 🔨 (policy + refund now wired; no-show detection still manual) |
 | F5 | Recurring bookings (monthly deworming, weekly physio) | P1 | ⛔ |
 | F6 | Vet-initiated reschedule + customer accept/decline + auto-compensation credit | P1 | ⛔ |
 | F7 | Customer no-show & vet no-show handling, both directions | P1 | ⛔ |
@@ -221,10 +221,10 @@ Service (Home consultation)
 | G1 | Hosted checkout (Razorpay), **never raw card data** | P0 | ✅ | PCI scope avoided by construction |
 | G2 | **Webhook-only confirmation**, signature-verified, idempotent | P0 | ✅ | Already in `payment-webhook` — keep this discipline everywhere |
 | G3 | Payment retry on failure + clear failure states | P0 | 🔨 | |
-| G4 | **Refunds** (full/partial), initiated by ops, tracked to gateway | **P0** | ⛔ | You cannot launch without a refund path |
-| G5 | GST-compliant invoice PDF per order | **P0** | ⛔ | Legal requirement once registered |
+| G4 | **Refunds** (full/partial), initiated by ops, tracked to gateway | **P0** | 🔨 | You cannot launch without a refund path |
+| G5 | GST-compliant invoice PDF per order | **P0** | 🔨 | Legal requirement once registered |
 | G6 | Wallet + double-entry ledger | P1 | ⛔ | Credits, compensation, refund-to-wallet |
-| G7 | **Vet payouts**: earnings view, weekly payout run, reconciliation | **P0 (partner)** | ⛔ | Vets quit over late/unclear pay faster than over anything else |
+| G7 | **Vet payouts**: earnings view, weekly payout run, reconciliation | **P0 (partner)** | 🔨 | Vets quit over late/unclear pay faster than over anything else |
 | G8 | Daily reconciliation job: gateway settlements vs your ledger | P1 | ⛔ | |
 | G9 | Chargeback/dispute handling from gateway | P2 | ⛔ | |
 
@@ -245,11 +245,11 @@ Service (Home consultation)
 | # | Capability | Pri | Status | Notes |
 |---|---|---|---|---|
 | I1 | Persistent "what's happening now" card on Home | P0 | 🔨 | The highest-trust feature per unit of effort |
-| I2 | Status timeline w/ timestamps (requested → confirmed → assigned → en route → arrived → in progress → completed) | P0 | 🔨 | Expand the 5-state enum to 8 |
+| I2 | Status timeline w/ timestamps (requested → confirmed → assigned → en route → arrived → in progress → completed) | P0 | 🔨 | 8-state enum + legal-transition table done; timestamped timeline UI still uses badges, not a full timeline view |
 | I3 | **Live Activity + Dynamic Island** for "vet en route / ETA" | P1 | ⛔ | iOS-native differentiator; huge perceived-quality win |
 | I4 | Live map tracking with ETA | P1 | 🔨 | |
-| I5 | **Start-of-visit OTP** (customer reads 4-digit code to vet) | **P0** | ⛔ | Anti-fraud + proof-of-service. Cheap, high value. |
-| I6 | Digital consent/liability waiver accepted in-app before first visit | **P0** | ⛔ | Legal shield |
+| I5 | **Start-of-visit OTP** (customer reads 4-digit code to vet) | **P0** | 🔨 | Anti-fraud + proof-of-service. Cheap, high value. |
+| I6 | Digital consent/liability waiver accepted in-app before first visit | **P0** | ✅ | Legal shield |
 | I7 | Visit checklist completed by vet → becomes the customer's record | P0 | 🔨 | |
 | I8 | Post-visit summary push + in-app detail | P0 | 🔨 | |
 
@@ -258,9 +258,9 @@ Service (Home consultation)
 | # | Capability | Pri | Status | Notes |
 |---|---|---|---|---|
 | J1 | Per-visit chat, text | P0 | ✅ | |
-| J2 | Chat attachments (photo of the symptom) | **P0** | ⛔ | Pet owners send photos. Always. |
+| J2 | Chat attachments (photo of the symptom) | **P0** | 🔨 | Pet owners send photos. Always. |
 | J3 | Read receipts, typing, unread badge | P1 | 🔨 | |
-| J4 | **Masked voice calling** (Exotel/Twilio proxy — real numbers never exposed) | **P0** | ⛔ | Privacy + safety + "vet can't find the gate" reality |
+| J4 | **Masked voice calling** (Exotel/Twilio proxy — real numbers never exposed) | **P0** | 🔨 | Privacy + safety + "vet can't find the gate" reality |
 | J5 | Chat auto-closes 48h post-visit, with escalation to support | P1 | ⛔ | Prevents unpaid consulting over chat |
 | J6 | Video consult | P2 | 🔨 (stub) | |
 | J7 | Notification centre in-app + per-channel preferences | P1 | ⛔ | |
@@ -322,7 +322,7 @@ Service (Home consultation)
 | O2 | Language: English + Hindi (+1 regional at launch cluster) | P1 | ⛔ |
 | O3 | Appearance light/dark/system | P0 | ✅ |
 | O4 | Accessibility: Dynamic Type to AX5, VoiceOver, Reduce Motion | P0 | 🔨 |
-| O5 | **Consent dashboard**: what you collect, why, withdraw consent | P0 (DPDP) | ⛔ |
+| O5 | **Consent dashboard**: what you collect, why, withdraw consent | P0 (DPDP) | ✅ |
 | O6 | Privacy policy + T&C in-app and on web | P0 | ⛔ |
 | O7 | **Force-upgrade gate** (server-driven minimum version) | **P0** | ⛔ | Your only true rollback lever for a shipped binary |
 | O8 | Maintenance mode screen (server flag) | P0 | ⛔ |
@@ -956,7 +956,7 @@ shells · XcodeGen + GitHub Actions CI · design system (Theme/Mascot/motion) ·
 1. Catalog + variants + add-ons (D) — everything downstream depends on it
 2. Addresses + capacity slots + holds (A8, F2, E7)
 3. Server-authoritative quote + cart + price breakdown (E)
-4. `book_visit()` transaction + idempotency (7.1)
+4. ✅ `book_visit()` transaction + idempotency (7.1) — atomic, capacity-locked, idempotent by key; not yet quote-referencing (see note below)
 5. Cancel/reschedule policy + refunds + invoices (F3–F4, G4–G5)
 6. 8-state machine + visit OTP + consent + record (I)
 7. Delete account, consent dashboard, export (A6, A7, O5) — App Store + DPDP blockers

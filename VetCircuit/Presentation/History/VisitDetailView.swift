@@ -1,12 +1,16 @@
 import SwiftUI
+import UIKit
 
 struct VisitDetailView: View {
     let visit: Visit
     @State private var showingReview = false
-    @State private var callURL: URL?
+    @State private var showingReschedule = false
+    @State private var activeCallSession: CallSession?
     @State private var callErrorMessage: String?
+    @State private var visitOTP: VisitOTP?
 
     private let startCallUseCase = DependencyContainer.shared.startCallUseCase()
+    private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
 
     var body: some View {
         ScrollView {
@@ -30,10 +34,38 @@ struct VisitDetailView: View {
                     NavigationLink {
                         LiveTrackingView(visitId: visit.id)
                     } label: {
-                        ActionRow(title: "Track your vet live", systemImage: "location.fill", tint: .purple)
+                        ActionRow(title: "Track your vet live", systemImage: "location.fill", tint: Theme.inProgress)
                     }
                     .buttonStyle(PressableStyle())
                     .appearAnimation(delay: 0.05)
+                }
+
+                if visit.status == .arrived, let visitOTP {
+                    Card {
+                        VStack(spacing: 8) {
+                            Label("Read this code to your vet", systemImage: "lock.shield")
+                                .font(.brandHeadline).foregroundStyle(Theme.primary)
+                            Text(visitOTP.code)
+                                .font(.system(size: 40, weight: .bold, design: .rounded))
+                                .kerning(8)
+                            Text("This confirms the visit actually started — a quick anti-fraud check.")
+                                .font(.brandCaption).foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .appearAnimation()
+                }
+
+                if visit.status == .requested || visit.status == .confirmed {
+                    Button {
+                        Haptics.tap()
+                        showingReschedule = true
+                    } label: {
+                        ActionRow(title: "Reschedule this visit", systemImage: "calendar.badge.clock", tint: Theme.primary)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .appearAnimation(delay: 0.03)
                 }
 
                 if let notes = visit.notes, !notes.isEmpty {
@@ -60,14 +92,30 @@ struct VisitDetailView: View {
                 if visit.status == .requested || visit.status == .confirmed {
                     Button {
                         Task {
-                            do { callURL = try await startCallUseCase.execute(visitId: visit.id) }
-                            catch { callErrorMessage = error.localizedDescription }
+                            do {
+                                let session = try await startCallUseCase.execute(visitId: visit.id)
+                                activeCallSession = session
+                                if let dialURL = URL(string: "tel://\(session.proxyNumber.filter { $0.isNumber || $0 == "+" })") {
+                                    await UIApplication.shared.open(dialURL)
+                                }
+                            } catch {
+                                callErrorMessage = error.localizedDescription
+                            }
                         }
                     } label: {
-                        ActionRow(title: "Quick call with vet", systemImage: "video.fill", tint: Theme.accent)
+                        // J4: masked calling — the customer dials a shared
+                        // proxy number, never the vet's real phone number.
+                        ActionRow(title: "Call your vet", systemImage: "phone.fill", tint: Theme.accent)
                     }
                     .buttonStyle(PressableStyle())
                     .appearAnimation(delay: 0.15)
+                }
+
+                if let activeCallSession {
+                    Label("Connecting you on \(activeCallSession.proxyNumber) — your real number stays private.", systemImage: "lock.shield")
+                        .font(.brandCaption)
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
                 }
 
                 if let callErrorMessage {
@@ -87,8 +135,12 @@ struct VisitDetailView: View {
         .sheet(isPresented: $showingReview) {
             ReviewView(visitId: visit.id)
         }
-        .sheet(item: $callURL) { url in
-            CheckoutWebView(url: url)
+        .sheet(isPresented: $showingReschedule) {
+            RescheduleVisitView(visit: visit)
+        }
+        .task {
+            guard visit.status == .arrived else { return }
+            visitOTP = try? await visitOTPRepository.generateOTP(visitId: visit.id)
         }
     }
 }

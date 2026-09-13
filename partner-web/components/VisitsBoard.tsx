@@ -4,24 +4,52 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Visit, VisitStatus } from "@/lib/types";
 
+// Follows the legal_visit_transitions table exactly — one legal next step
+// per state, so this board can never attempt a transition the DB trigger
+// would reject (Appendix B's 8-state machine). `arrived -> in_progress` is
+// deliberately absent here: Appendix B gates it on "vet (OTP ok)", so that
+// one transition only happens through verify_visit_otp(), not a plain button.
 const NEXT_STATUS: Partial<Record<VisitStatus, VisitStatus>> = {
-  requested: "confirmed",
-  confirmed: "en_route",
-  en_route: "completed",
+  confirmed: "assigned",
+  assigned: "en_route",
+  en_route: "arrived",
+  in_progress: "completed",
 };
 
 const NEXT_LABEL: Partial<Record<VisitStatus, string>> = {
-  requested: "Confirm",
-  confirmed: "Start visit (en route)",
-  en_route: "Mark completed",
+  confirmed: "Assign myself",
+  assigned: "Start route (en route)",
+  en_route: "Mark arrived",
+  in_progress: "Mark completed",
 };
 
 export default function VisitsBoard({ initialVisits }: { initialVisits: Visit[] }) {
   const supabase = createClient();
   const [visits, setVisits] = useState(initialVisits);
   const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
+  const [otpDraft, setOtpDraft] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /// arrived -> in_progress only ever happens through this RPC (Appendix B:
+  /// "arrived -> in_progress | vet (OTP ok)") — never a plain status update,
+  /// so a vet can't fast-forward past the anti-fraud check.
+  async function verifyOTP(visit: Visit) {
+    const code = otpDraft[visit.id] ?? "";
+    setBusyId(visit.id);
+    setError(null);
+    const { data: verified, error } = await supabase.rpc("verify_visit_otp", { p_visit_id: visit.id, p_code: code });
+    setBusyId(null);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    if (!verified) {
+      setError("That code doesn't match — ask the customer to double-check it.");
+      return;
+    }
+    setVisits((prev) => prev.map((v) => (v.id === visit.id ? { ...v, status: "in_progress" } : v)));
+  }
 
   async function advanceStatus(visit: Visit) {
     const nextStatus = NEXT_STATUS[visit.status];
@@ -47,13 +75,13 @@ export default function VisitsBoard({ initialVisits }: { initialVisits: Visit[] 
 
   async function cancelVisit(visit: Visit) {
     setBusyId(visit.id);
-    const { error } = await supabase.from("visits").update({ status: "cancelled" }).eq("id", visit.id);
+    const { error } = await supabase.from("visits").update({ status: "cancelled_by_vet" }).eq("id", visit.id);
     setBusyId(null);
     if (error) {
       setError(error.message);
       return;
     }
-    setVisits((prev) => prev.map((v) => (v.id === visit.id ? { ...v, status: "cancelled" } : v)));
+    setVisits((prev) => prev.map((v) => (v.id === visit.id ? { ...v, status: "cancelled_by_vet" } : v)));
   }
 
   if (visits.length === 0) {
@@ -78,7 +106,21 @@ export default function VisitsBoard({ initialVisits }: { initialVisits: Visit[] 
             <span className={`badge ${visit.status}`}>{visit.status.replace("_", " ")}</span>
           </div>
 
-          {visit.status === "en_route" && (
+          {visit.status === "arrived" && (
+            <div className="row" style={{ marginTop: 10, gap: 8 }}>
+              <input
+                placeholder="4-digit code from customer"
+                maxLength={4}
+                value={otpDraft[visit.id] ?? ""}
+                onChange={(e) => setOtpDraft((prev) => ({ ...prev, [visit.id]: e.target.value }))}
+              />
+              <button onClick={() => verifyOTP(visit)} disabled={busyId === visit.id || (otpDraft[visit.id] ?? "").length !== 4}>
+                {busyId === visit.id ? "Checking…" : "Verify & start visit"}
+              </button>
+            </div>
+          )}
+
+          {visit.status === "in_progress" && (
             <textarea
               placeholder="Visit notes (vaccination record, observations, etc.)"
               value={notesDraft[visit.id] ?? visit.notes ?? ""}
@@ -98,7 +140,7 @@ export default function VisitsBoard({ initialVisits }: { initialVisits: Visit[] 
                 {busyId === visit.id ? "Saving…" : NEXT_LABEL[visit.status]}
               </button>
             )}
-            {(visit.status === "requested" || visit.status === "confirmed") && (
+            {(visit.status === "requested" || visit.status === "confirmed" || visit.status === "assigned") && (
               <button className="secondary" onClick={() => cancelVisit(visit)} disabled={busyId === visit.id}>
                 Cancel
               </button>

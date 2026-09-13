@@ -55,7 +55,7 @@ create table schedule_slots (
   day_of_week integer not null check (day_of_week between 1 and 7),
   start_time timestamptz not null,
   end_time timestamptz not null,
-  is_available boolean not null default true
+  is_available boolean not null default true -- superseded by capacity/booked_count, see 0005_slot_capacity.sql
 );
 
 -- ---------------------------------------------------------------------------

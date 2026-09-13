@@ -49,6 +49,7 @@ final class CachedChatMessage {
     var body: String
     var sentAt: Date
     var readAt: Date?
+    var attachmentURL: URL?
 
     init(from message: ChatMessage) {
         self.id = message.id
@@ -57,10 +58,11 @@ final class CachedChatMessage {
         self.body = message.body
         self.sentAt = message.sentAt
         self.readAt = message.readAt
+        self.attachmentURL = message.attachmentURL
     }
 
     func toDomain() -> ChatMessage {
-        ChatMessage(id: id, visitId: visitId, senderId: senderId, body: body, sentAt: sentAt, readAt: readAt)
+        ChatMessage(id: id, visitId: visitId, senderId: senderId, body: body, sentAt: sentAt, readAt: readAt, attachmentURL: attachmentURL)
     }
 }
 

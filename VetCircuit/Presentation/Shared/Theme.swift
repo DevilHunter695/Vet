@@ -70,6 +70,22 @@ enum Theme {
 
     static let cardShadow = Color.black.opacity(0.08)
 
+    // Semantic status colors, tuned to sit alongside the teal/coral brand
+    // instead of clashing system defaults (a raw system .orange reads harsh
+    // and disconnected next to a warm-coral accent).
+    static let warning = Color(hue: 0.09, saturation: 0.7, brightness: 0.92)   // warm amber, not traffic-cone orange
+    static let danger = Color(hue: 0.0, saturation: 0.72, brightness: 0.88)    // clear, unambiguous red
+    static let success = Color(hue: 0.38, saturation: 0.55, brightness: 0.62)  // muted green, matches the palette's saturation
+    static let inProgress = Color(hue: 0.72, saturation: 0.45, brightness: 0.72) // soft violet, distinct from primary teal
+    static let neutral = Color(.systemGray)
+
+    // Loyalty tier colors — a distinct family from status colors above
+    // (achievement tiers, not urgency/state), tuned to the same saturation
+    // level as the rest of the palette instead of raw system .orange/.yellow.
+    static let bronzeTier = Color(hue: 0.07, saturation: 0.55, brightness: 0.72)  // warm copper
+    static let silverTier = Color(hue: 0.58, saturation: 0.06, brightness: 0.72)  // cool metallic gray
+    static let goldTier = Color(hue: 0.12, saturation: 0.65, brightness: 0.88)    // rich gold
+
     // Motion language, tuned against Apple's fluid-interfaces defaults and
     // Emil Kowalski's animation standards:
     //  - critically damped (no bounce) for anything fired many times/day
