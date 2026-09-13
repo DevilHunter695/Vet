@@ -555,7 +555,10 @@ struct CartAndQuoteUseCaseTests {
 
     @Test("rejects a quote for an empty cart")
     func rejectsEmptyCartQuote() async {
-        let quoteUseCase = GetQuoteUseCase(quoteRepository: MockQuoteRepository(), catalogRepository: MockCatalogRepository())
+        let quoteUseCase = GetQuoteUseCase(
+            quoteRepository: MockQuoteRepository(couponRepository: MockCouponRepository(), walletRepository: MockWalletRepository()),
+            catalogRepository: MockCatalogRepository(), circuitRepository: MockCircuitRepository(),
+            vetServiceOverrideRepository: MockVetServiceOverrideRepository())
         let emptyCart = Cart(id: UUID(), userId: UUID())
 
         await #expect(throws: DomainError.self) {
@@ -567,7 +570,10 @@ struct CartAndQuoteUseCaseTests {
     func producesRealQuote() async throws {
         let cartRepo = MockCartRepository()
         let cartUseCase = ManageCartUseCase(cartRepository: cartRepo)
-        let quoteUseCase = GetQuoteUseCase(quoteRepository: MockQuoteRepository(), catalogRepository: MockCatalogRepository())
+        let quoteUseCase = GetQuoteUseCase(
+            quoteRepository: MockQuoteRepository(couponRepository: MockCouponRepository(), walletRepository: MockWalletRepository()),
+            catalogRepository: MockCatalogRepository(), circuitRepository: MockCircuitRepository(),
+            vetServiceOverrideRepository: MockVetServiceOverrideRepository())
 
         let service = MockData.services[0]
         let userId = UUID()
@@ -587,8 +593,11 @@ struct CartAndQuoteUseCaseTests {
         let cartUseCase = ManageCartUseCase(cartRepository: cartRepo)
         let subscriptionRepo = MockSubscriptionRepository()
         let entitlementRepo = MockSubscriptionEntitlementRepository()
-        let quoteUseCase = GetQuoteUseCase(quoteRepository: MockQuoteRepository(), catalogRepository: MockCatalogRepository(),
-                                           subscriptionRepository: subscriptionRepo, entitlementRepository: entitlementRepo)
+        let quoteUseCase = GetQuoteUseCase(
+            quoteRepository: MockQuoteRepository(couponRepository: MockCouponRepository(), walletRepository: MockWalletRepository()),
+            catalogRepository: MockCatalogRepository(), circuitRepository: MockCircuitRepository(),
+            vetServiceOverrideRepository: MockVetServiceOverrideRepository(),
+            subscriptionRepository: subscriptionRepo, entitlementRepository: entitlementRepo)
 
         let service = MockData.services[0]
         let userId = UUID()
@@ -610,7 +619,10 @@ struct CartAndQuoteUseCaseTests {
         #expect(noCreditQuote.breakdown.lineItems.first?.label == service.variants[0].name)
 
         // Without a subscription/entitlement wired at all, no credit applies either.
-        let plainQuoteUseCase = GetQuoteUseCase(quoteRepository: MockQuoteRepository(), catalogRepository: MockCatalogRepository())
+        let plainQuoteUseCase = GetQuoteUseCase(
+            quoteRepository: MockQuoteRepository(couponRepository: MockCouponRepository(), walletRepository: MockWalletRepository()),
+            catalogRepository: MockCatalogRepository(), circuitRepository: MockCircuitRepository(),
+            vetServiceOverrideRepository: MockVetServiceOverrideRepository())
         let plainQuote = try await plainQuoteUseCase.execute(cart: cart)
         #expect(plainQuote.breakdown.lineItems.first?.label == service.variants[0].name)
     }

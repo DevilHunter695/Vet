@@ -23,15 +23,19 @@ enum PricingEngine {
         // and it's applied at most once per quote by the caller (see
         // `EntitlementPolicy`/`GetQuoteUseCase`), never per line item.
         var entitlementCreditApplied: Bool = false
+        /// D5: a vet's per-service price override, when one exists for this
+        /// vet+service/variant — takes precedence over the catalog default.
+        /// Ignored when `entitlementCreditApplied` zeroes the base instead.
+        var vetOverridePriceMinorUnits: Int? = nil
     }
 
     static func quote(_ input: Input) -> PriceBreakdown {
         var lineItems: [PriceLineItem] = []
 
-        let base = input.entitlementCreditApplied ? 0 : input.variant.priceMinorUnits
         if input.entitlementCreditApplied {
             lineItems.append(PriceLineItem(label: "\(input.variant.name) (subscription credit)", amountMinorUnits: 0))
         } else {
+            let base = input.vetOverridePriceMinorUnits ?? input.variant.priceMinorUnits
             lineItems.append(PriceLineItem(label: input.variant.name, amountMinorUnits: base))
         }
 

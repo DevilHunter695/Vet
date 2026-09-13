@@ -14,11 +14,28 @@ struct VisitDetailView: View {
     @State private var followUpPet: Pet?
     @State private var showingTip = false
     @State private var hasTipped = false
+    // F6: a pending vet-initiated reschedule proposal, if any.
+    @State private var pendingProposal: RescheduleProposal?
+    @State private var proposalActionMessage: String?
+    @State private var isRespondingToProposal = false
+    // F7: vet no-show reporting.
+    @State private var noShowMessage: String?
+    @State private var isReportingNoShow = false
 
     private let startCallUseCase = DependencyContainer.shared.startCallUseCase()
     private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
     private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
+    private let rescheduleProposalRepository = DependencyContainer.shared.rescheduleProposalRepository
+    private let respondToRescheduleProposalUseCase = DependencyContainer.shared.respondToRescheduleProposalUseCase()
+    private let reportVetNoShowUseCase = DependencyContainer.shared.reportVetNoShowUseCase()
+
+    /// F7: a visit stuck en route to being serviced, past its scheduled time
+    /// by the grace window, is eligible for the customer to report a no-show.
+    private var canReportVetNoShow: Bool {
+        (visit.status == .assigned || visit.status == .enRoute)
+            && Date().timeIntervalSince(visit.scheduledAt) / 60 >= NoShowPolicy.vetGraceWindowMinutes
+    }
 
     var body: some View {
         ScrollView {
@@ -37,6 +54,49 @@ struct VisitDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .appearAnimation()
+
+                // F6: vet-initiated reschedule accept/decline banner.
+                if let pendingProposal {
+                    Card {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Your vet proposed a new time", systemImage: "calendar.badge.exclamationmark")
+                                .font(.brandHeadline).foregroundStyle(Theme.warning)
+                            Text("Accepting moves this visit to the new slot right away. Declining keeps your original time and adds a goodwill credit to your account.")
+                                .font(.brandCaption).foregroundStyle(.secondary)
+                            if let proposalActionMessage {
+                                Text(proposalActionMessage).font(.brandCaption).foregroundStyle(Theme.danger)
+                            }
+                            HStack(spacing: 12) {
+                                PrimaryButton(title: "Accept", isLoading: isRespondingToProposal) {
+                                    Task { await respond(to: pendingProposal, accept: true) }
+                                }
+                                Button("Decline", role: .destructive) {
+                                    Task { await respond(to: pendingProposal, accept: false) }
+                                }
+                                .disabled(isRespondingToProposal)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .appearAnimation(delay: 0.02)
+                }
+
+                if canReportVetNoShow {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Button {
+                            Haptics.tap()
+                            Task { await reportVetNoShow() }
+                        } label: {
+                            ActionRow(title: "Vet didn't show up", systemImage: "exclamationmark.triangle.fill", tint: Theme.danger)
+                        }
+                        .buttonStyle(PressableStyle())
+                        .disabled(isReportingNoShow)
+                        if let noShowMessage {
+                            Text(noShowMessage).font(.brandCaption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .appearAnimation(delay: 0.04)
+                }
 
                 if visit.status == .enRoute {
                     NavigationLink {
@@ -210,8 +270,38 @@ struct VisitDetailView: View {
             }
         }
         .task {
-            guard visit.status == .arrived else { return }
-            visitOTP = try? await visitOTPRepository.generateOTP(visitId: visit.id)
+            if visit.status == .arrived {
+                visitOTP = try? await visitOTPRepository.generateOTP(visitId: visit.id)
+            }
+            pendingProposal = try? await rescheduleProposalRepository.pendingProposal(visitId: visit.id)
+        }
+    }
+
+    /// F6: accept reschedules the visit immediately (bypassing the
+    /// customer-side 4h policy window, since the vet moved the slot);
+    /// decline awards the goodwill credit. Either way the banner clears.
+    private func respond(to proposal: RescheduleProposal, accept: Bool) async {
+        isRespondingToProposal = true
+        proposalActionMessage = nil
+        defer { isRespondingToProposal = false }
+        do {
+            _ = try await respondToRescheduleProposalUseCase.execute(proposal: proposal, visit: visit, accept: accept)
+            pendingProposal = nil
+        } catch {
+            proposalActionMessage = error.localizedDescription
+        }
+    }
+
+    /// F7: reports the vet as a no-show once the grace window has passed —
+    /// transitions the visit to `noShowVet` and triggers the full refund + credit.
+    private func reportVetNoShow() async {
+        isReportingNoShow = true
+        defer { isReportingNoShow = false }
+        do {
+            let outcome = try await reportVetNoShowUseCase.execute(visit: visit)
+            noShowMessage = "Reported. Your ₹\(outcome.refundMinorUnits / 100) refund and \(outcome.goodwillCreditPoints) goodwill points are on the way."
+        } catch {
+            noShowMessage = error.localizedDescription
         }
     }
 

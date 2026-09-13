@@ -189,6 +189,10 @@ struct ProfileView: View {
                     NavigationLink("Notifications centre") {
                         NotificationCenterView()
                     }
+                    // F5: recurring bookings management (view/pause/cancel).
+                    NavigationLink("Your recurring bookings") {
+                        RecurringBookingsView()
+                    }
                 }
 
                 Section("Support & legal") {

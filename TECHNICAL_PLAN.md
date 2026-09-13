@@ -180,7 +180,7 @@ Service (Home consultation)
 | D2 | Variants per service (duration/tier/package) | **P0** | 🔨 |
 | D3 | Add-ons attachable to a booking | P1 | ✅ | ServiceDetailView now toggles add-ons into `CartItem.addonIds`; PricingEngine/create_quote already priced them |
 | D4 | Packages/bundles ("Puppy first-year: 4 visits + 3 vaccines") | P1 | 🔨 | `Package`/`PackageRepository` + `PackagesView` + `0015_packages.sql` ship; buying one is a stub that expands into individual cart lines — no redemption/entitlement tracking ("3 of 4 visits used") yet |
-| D5 | Per-vet service availability & per-vet pricing overrides | P1 | ⛔ |
+| D5 | Per-vet service availability & per-vet pricing overrides | P1 | 🔨 | `VetServiceOverride`/`VetServiceOverrideRepository` (Mock+Supabase) + `0026_vet_service_overrides.sql`; wired into `PricingEngine`/`GetQuoteUseCase` client-side — the `create-quote` edge function itself still needs updating to read the same table server-side |
 | D6 | Multi-pet in one visit (2nd pet at reduced fee) | **P0** | ✅ | ServiceDetailView's pet multi-select feeds `CartItem.petIds`, which already drove `PricingEngine.additionalPetCount` — that wiring was the only missing piece |
 | D7 | Catalog managed from ops console, not hardcoded | P0 | 🔨 | iOS `SupabaseCatalogRepository`/`SupabasePackageRepository` read services/packages from Postgres (Mock repos stay hardcoded for local dev, by design); the ops console side is a separate workstream |
 
@@ -208,9 +208,9 @@ Service (Home consultation)
 | F2 | Capacity per slot (N stops per block), not boolean availability | **P0** | ✅ |
 | F3 | **Reschedule** (with policy window) | **P0** | ✅ |
 | F4 | **Cancel** with policy: free >4h, 50% <4h, 100% no-show | **P0** | 🔨 (policy + refund now wired; no-show detection still manual) |
-| F5 | Recurring bookings (monthly deworming, weekly physio) | P1 | ⛔ |
-| F6 | Vet-initiated reschedule + customer accept/decline + auto-compensation credit | P1 | ⛔ |
-| F7 | Customer no-show & vet no-show handling, both directions | P1 | ⛔ |
+| F5 | Recurring bookings (monthly deworming, weekly physio) | P1 | 🔨 (rule model/repo/UI + `RecurrenceScheduler` ship; a scheduled job to actually spawn each cycle's visit is out of scope for the client app — known gap) |
+| F6 | Vet-initiated reschedule + customer accept/decline + auto-compensation credit | P1 | 🔨 (proposal model/repo + accept/decline banner in `VisitDetailView` ship; the vet-side "propose a new slot" screen is a separate (vet-app) workstream) |
+| F7 | Customer no-show & vet no-show handling, both directions | P1 | 🔨 (`NoShowPolicy` + `assigned`/`en_route` → `no_show_vet` transition + customer-facing "Vet didn't show up" report ship; customer no-show is reported vet-side, out of scope here) |
 | F8 | Buffer/travel-time aware slot generation | P1 | ⛔ |
 | F9 | Blackouts/leave/holiday handling for vets | P1 | ⛔ |
 

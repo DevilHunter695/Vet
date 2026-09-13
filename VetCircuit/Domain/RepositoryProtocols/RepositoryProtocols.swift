@@ -189,7 +189,9 @@ protocol QuoteRepository: Sendable {
     /// — the server still re-derives and re-checks eligibility itself
     /// (`GetQuoteUseCase` only decides "is it worth asking", never "is it
     /// allowed": the client is never the source of truth for money).
-    func createQuote(for cart: Cart, catalog: [Service], useWalletBalance: Bool, applyEntitlementCredit: Bool) async throws -> Quote
+    /// `overrides` (D5) are the booking vet's per-service price overrides, if
+    /// any — resolved by the caller from the cart's circuit before quoting.
+    func createQuote(for cart: Cart, catalog: [Service], overrides: [VetServiceOverride], useWalletBalance: Bool, applyEntitlementCredit: Bool) async throws -> Quote
 }
 
 protocol WalletRepository: Sendable {
@@ -256,6 +258,28 @@ protocol LoyaltyRepository: Sendable {
     func account(userId: UUID) async throws -> LoyaltyAccount
     /// Called when a visit completes; awards points and returns the updated account.
     func awardPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount
+}
+
+// MARK: - D5: per-vet service overrides — public read (customers need to see
+// the effective price before booking), vet-write-own.
+protocol VetServiceOverrideRepository: Sendable {
+    func overrides(vetId: UUID) async throws -> [VetServiceOverride]
+    func setOverride(_ override: VetServiceOverride) async throws -> VetServiceOverride
+}
+
+// MARK: - F5: recurring booking rules — owner-only.
+protocol RecurringBookingRuleRepository: Sendable {
+    func rules(userId: UUID) async throws -> [RecurringBookingRule]
+    func create(_ rule: RecurringBookingRule) async throws -> RecurringBookingRule
+    func setActive(id: UUID, isActive: Bool) async throws -> RecurringBookingRule
+    func delete(id: UUID) async throws
+}
+
+// MARK: - F6: vet-initiated reschedule proposals.
+protocol RescheduleProposalRepository: Sendable {
+    func pendingProposal(visitId: UUID) async throws -> RescheduleProposal?
+    func create(_ proposal: RescheduleProposal) async throws -> RescheduleProposal
+    func respond(id: UUID, accept: Bool) async throws -> RescheduleProposal
 }
 
 protocol NotificationPreferencesRepository: Sendable {

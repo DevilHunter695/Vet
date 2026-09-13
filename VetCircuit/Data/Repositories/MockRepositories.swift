@@ -138,7 +138,16 @@ actor MockQuoteRepository: QuoteRepository {
         self.walletRepository = walletRepository
     }
 
-    func createQuote(for cart: Cart, catalog: [Service], useWalletBalance: Bool, applyEntitlementCredit: Bool) async throws -> Quote {
+    func createQuote(for cart: Cart, catalog: [Service], overrides: [VetServiceOverride], useWalletBalance: Bool, applyEntitlementCredit: Bool) async throws -> Quote {
+        // D5: a variant-specific override wins over a whole-service one, and
+        // only an offered override counts as a price override at all — an
+        // unoffered service shouldn't reach checkout in the first place, but
+        // pricing here stays defensive regardless.
+        func override(for item: CartItem) -> VetServiceOverride? {
+            overrides.first { $0.isOffered && $0.serviceId == item.serviceId && $0.variantId == item.variantId }
+                ?? overrides.first { $0.isOffered && $0.serviceId == item.serviceId && $0.variantId == nil }
+        }
+
         // Pre-discount/pre-wallet subtotal, computed first because coupon
         // validation (min-spend) and the wallet cap both need it.
         var preSubtotal = 0
@@ -154,7 +163,8 @@ actor MockQuoteRepository: QuoteRepository {
                 travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500,
                 // H6: a credit pays for one visit — applied to the first
                 // line item only, never every line in a multi-item cart.
-                entitlementCreditApplied: applyEntitlementCredit && index == 0
+                entitlementCreditApplied: applyEntitlementCredit && index == 0,
+                vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits
             )
             preSubtotal += PricingEngine.quote(input).totalMinorUnits
         }
@@ -189,7 +199,8 @@ actor MockQuoteRepository: QuoteRepository {
                 travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500,
                 couponDiscountMinorUnits: isFirst ? couponDiscount : 0,
                 walletBalanceMinorUnits: isFirst ? walletBalance : 0,
-                entitlementCreditApplied: applyEntitlementCredit && isFirst
+                entitlementCreditApplied: applyEntitlementCredit && isFirst,
+                vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits
             )
             let breakdown = PricingEngine.quote(input)
             lineItems.append(contentsOf: breakdown.lineItems)
@@ -1132,5 +1143,74 @@ actor MockIncidentReportRepository: IncidentReportRepository {
 
     func myReports(reporterId: UUID) async throws -> [IncidentReport] {
         reports.filter { $0.reporterId == reporterId }
+    }
+}
+
+// MARK: - D5 per-vet service overrides
+
+actor MockVetServiceOverrideRepository: VetServiceOverrideRepository {
+    private var overridesByVet: [UUID: [VetServiceOverride]] = [:]
+
+    func overrides(vetId: UUID) async throws -> [VetServiceOverride] {
+        overridesByVet[vetId] ?? []
+    }
+
+    func setOverride(_ override: VetServiceOverride) async throws -> VetServiceOverride {
+        var list = overridesByVet[override.vetId] ?? []
+        if let idx = list.firstIndex(where: { $0.serviceId == override.serviceId && $0.variantId == override.variantId }) {
+            list[idx] = override
+        } else {
+            list.append(override)
+        }
+        overridesByVet[override.vetId] = list
+        return override
+    }
+}
+
+// MARK: - F5 recurring booking rules
+
+actor MockRecurringBookingRuleRepository: RecurringBookingRuleRepository {
+    private var rulesById: [UUID: RecurringBookingRule] = [:]
+
+    func rules(userId: UUID) async throws -> [RecurringBookingRule] {
+        rulesById.values.filter { $0.userId == userId }.sorted { $0.nextOccurrenceAt < $1.nextOccurrenceAt }
+    }
+
+    func create(_ rule: RecurringBookingRule) async throws -> RecurringBookingRule {
+        rulesById[rule.id] = rule
+        return rule
+    }
+
+    func setActive(id: UUID, isActive: Bool) async throws -> RecurringBookingRule {
+        guard var rule = rulesById[id] else { throw DomainError.notFound("Recurring booking rule") }
+        rule.isActive = isActive
+        rulesById[id] = rule
+        return rule
+    }
+
+    func delete(id: UUID) async throws {
+        rulesById[id] = nil
+    }
+}
+
+// MARK: - F6 vet-initiated reschedule proposals
+
+actor MockRescheduleProposalRepository: RescheduleProposalRepository {
+    private var proposalsById: [UUID: RescheduleProposal] = [:]
+
+    func pendingProposal(visitId: UUID) async throws -> RescheduleProposal? {
+        proposalsById.values.first { $0.visitId == visitId && $0.status == .pending }
+    }
+
+    func create(_ proposal: RescheduleProposal) async throws -> RescheduleProposal {
+        proposalsById[proposal.id] = proposal
+        return proposal
+    }
+
+    func respond(id: UUID, accept: Bool) async throws -> RescheduleProposal {
+        guard var proposal = proposalsById[id] else { throw DomainError.notFound("Reschedule proposal") }
+        proposal.status = accept ? .accepted : .declined
+        proposalsById[id] = proposal
+        return proposal
     }
 }
