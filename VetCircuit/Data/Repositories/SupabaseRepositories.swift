@@ -1565,39 +1565,40 @@ final class SupabaseReviewRepository: ReviewRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
-    func submit(visitId: UUID, rating: Int, comment: String?) async throws -> Review {
-        struct Insert: Encodable {
-            let visitId: UUID, rating: Int, comment: String?
-            enum CodingKeys: String, CodingKey { case visitId = "visit_id", rating, comment }
+    private struct ReviewRow: Decodable {
+        let id: UUID, visitId: UUID, vetId: UUID, userId: UUID, rating: Int, comment: String?, createdAt: Date
+        let needsModeration: Bool?, moderationFlags: [String]?
+        enum CodingKeys: String, CodingKey {
+            case id, rating, comment
+            case visitId = "visit_id", vetId = "vet_id", userId = "user_id", createdAt = "created_at"
+            case needsModeration = "needs_moderation", moderationFlags = "moderation_flags"
         }
-        struct Row: Decodable {
-            let id: UUID, visitId: UUID, vetId: UUID, userId: UUID, rating: Int, comment: String?, createdAt: Date
+        func toDomain() -> Review {
+            Review(id: id, visitId: visitId, vetId: vetId, userId: userId, rating: rating, comment: comment,
+                   createdAt: createdAt, needsModeration: needsModeration ?? false, moderationFlags: moderationFlags ?? [])
+        }
+    }
+
+    func submit(visitId: UUID, rating: Int, comment: String?, needsModeration: Bool, moderationFlags: [String]) async throws -> Review {
+        struct Insert: Encodable {
+            let visitId: UUID, rating: Int, comment: String?, needsModeration: Bool, moderationFlags: [String]
             enum CodingKeys: String, CodingKey {
-                case id, rating, comment
-                case visitId = "visit_id", vetId = "vet_id", userId = "user_id", createdAt = "created_at"
+                case visitId = "visit_id", rating, comment
+                case needsModeration = "needs_moderation", moderationFlags = "moderation_flags"
             }
         }
-        let rows: [Row] = try await client.from("reviews")
-            .insert(Insert(visitId: visitId, rating: rating, comment: comment)).select().execute().value
+        let rows: [ReviewRow] = try await client.from("reviews")
+            .insert(Insert(visitId: visitId, rating: rating, comment: comment,
+                           needsModeration: needsModeration, moderationFlags: moderationFlags))
+            .select().execute().value
         guard let row = rows.first else { throw DomainError.unknown }
-        return Review(id: row.id, visitId: row.visitId, vetId: row.vetId, userId: row.userId,
-                      rating: row.rating, comment: row.comment, createdAt: row.createdAt)
+        return row.toDomain()
     }
 
     func reviews(vetId: UUID) async throws -> [Review] {
-        struct Row: Decodable {
-            let id: UUID, visitId: UUID, vetId: UUID, userId: UUID, rating: Int, comment: String?, createdAt: Date
-            enum CodingKeys: String, CodingKey {
-                case id, rating, comment
-                case visitId = "visit_id", vetId = "vet_id", userId = "user_id", createdAt = "created_at"
-            }
-        }
-        let rows: [Row] = try await client.from("reviews").select().eq("vet_id", value: vetId)
+        let rows: [ReviewRow] = try await client.from("reviews").select().eq("vet_id", value: vetId)
             .order("created_at", ascending: false).execute().value
-        return rows.map {
-            Review(id: $0.id, visitId: $0.visitId, vetId: $0.vetId, userId: $0.userId,
-                   rating: $0.rating, comment: $0.comment, createdAt: $0.createdAt)
-        }
+        return rows.map { $0.toDomain() }
     }
 }
 

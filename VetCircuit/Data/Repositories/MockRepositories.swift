@@ -638,9 +638,10 @@ actor MockChatRepository: ChatRepository {
 actor MockReviewRepository: ReviewRepository {
     private var submitted: [Review] = []
 
-    func submit(visitId: UUID, rating: Int, comment: String?) async throws -> Review {
+    func submit(visitId: UUID, rating: Int, comment: String?, needsModeration: Bool, moderationFlags: [String]) async throws -> Review {
         let review = Review(id: UUID(), visitId: visitId, vetId: MockData.circuits[0].vetId, userId: MockData.user.id,
-                             rating: rating, comment: comment, createdAt: .now)
+                             rating: rating, comment: comment, createdAt: .now,
+                             needsModeration: needsModeration, moderationFlags: moderationFlags)
         submitted.append(review)
         return review
     }

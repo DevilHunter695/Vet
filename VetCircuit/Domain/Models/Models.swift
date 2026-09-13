@@ -476,6 +476,13 @@ struct Review: Identifiable, Codable, Equatable, Hashable {
     var rating: Int // 1...5
     var comment: String?
     var createdAt: Date
+    /// L6: set when `ReviewModerationPolicy` flagged this review's text
+    /// (PII redacted and/or defamation-risk language detected) for human
+    /// review — the review itself is still stored and shown, this is only a
+    /// signal for ops, never a block.
+    var needsModeration: Bool = false
+    /// L6: which policy checks tripped, e.g. "pii_email", "defamation_risk".
+    var moderationFlags: [String] = []
 }
 
 // MARK: - Multi-vertical & loyalty (V3)

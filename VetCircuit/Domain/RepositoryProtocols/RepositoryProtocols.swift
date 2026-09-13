@@ -127,7 +127,10 @@ protocol ChatRepository: Sendable {
 }
 
 protocol ReviewRepository: Sendable {
-    func submit(visitId: UUID, rating: Int, comment: String?) async throws -> Review
+    /// `comment` is the already-moderated text (PII redacted where needed)
+    /// and `needsModeration`/`flags` are `ReviewModerationPolicy`'s verdict —
+    /// `SubmitReviewUseCase` runs the policy before ever calling this.
+    func submit(visitId: UUID, rating: Int, comment: String?, needsModeration: Bool, moderationFlags: [String]) async throws -> Review
     /// C5: reviews for a vet's profile — the ratings histogram and review
     /// list are both computed client-side from this.
     func reviews(vetId: UUID) async throws -> [Review]

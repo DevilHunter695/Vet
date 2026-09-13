@@ -291,11 +291,35 @@ struct SendChatMessageUseCase {
 struct SubmitReviewUseCase {
     let reviewRepository: ReviewRepository
 
+    /// L6: runs `comment` through `ReviewModerationPolicy` before it ever
+    /// reaches the repository. Profanity rejects the submission outright;
+    /// PII is auto-redacted in place; defamation-risk language is flagged
+    /// (`needsModeration`) but never blocks — a false positive there must
+    /// not silently eat a legitimate review.
     func execute(visitId: UUID, rating: Int, comment: String?) async throws -> Review {
         guard (1...5).contains(rating) else {
             throw DomainError.validation("Rating must be between 1 and 5.")
         }
-        return try await reviewRepository.submit(visitId: visitId, rating: rating, comment: comment)
+
+        var moderatedComment = comment
+        var needsModeration = false
+        var flags: [String] = []
+
+        if let comment, !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            do {
+                let result = try ReviewModerationPolicy.moderate(comment)
+                moderatedComment = result.text
+                needsModeration = result.needsModeration
+                flags = result.moderationFlags
+            } catch ReviewModerationPolicy.Violation.profanity {
+                throw DomainError.validation("Your review contains language we can't publish — please rephrase and try again.")
+            }
+        }
+
+        return try await reviewRepository.submit(
+            visitId: visitId, rating: rating, comment: moderatedComment,
+            needsModeration: needsModeration, moderationFlags: flags
+        )
     }
 }
 
