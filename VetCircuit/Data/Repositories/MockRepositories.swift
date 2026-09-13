@@ -130,9 +130,18 @@ actor MockCartRepository: CartRepository {
 }
 
 actor MockQuoteRepository: QuoteRepository {
-    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote {
-        var lineItems: [PriceLineItem] = []
-        var total = 0
+    private let couponRepository: CouponRepository
+    private let walletRepository: WalletRepository
+
+    init(couponRepository: CouponRepository, walletRepository: WalletRepository) {
+        self.couponRepository = couponRepository
+        self.walletRepository = walletRepository
+    }
+
+    func createQuote(for cart: Cart, catalog: [Service], useWalletBalance: Bool) async throws -> Quote {
+        // Pre-discount/pre-wallet subtotal, computed first because coupon
+        // validation (min-spend) and the wallet cap both need it.
+        var preSubtotal = 0
         for item in cart.items {
             guard let service = catalog.first(where: { $0.id == item.serviceId }),
                   let variant = service.variants.first(where: { $0.id == item.variantId }) else {
@@ -143,6 +152,39 @@ actor MockQuoteRepository: QuoteRepository {
                 variant: variant, addons: addons,
                 additionalPetCount: max(0, item.petIds.count - 1),
                 travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500
+            )
+            preSubtotal += PricingEngine.quote(input).totalMinorUnits
+        }
+
+        var couponDiscount = 0
+        if let code = cart.couponCode, !code.isEmpty,
+           let coupon = try await couponRepository.validate(code: code, userId: cart.userId, cartTotalMinorUnits: preSubtotal) {
+            couponDiscount = Self.discountMinorUnits(for: coupon, subtotal: preSubtotal)
+        }
+
+        var walletBalance = 0
+        if useWalletBalance {
+            walletBalance = try await walletRepository.balanceMinorUnits(userId: cart.userId)
+        }
+
+        var lineItems: [PriceLineItem] = []
+        var total = 0
+        for item in cart.items {
+            guard let service = catalog.first(where: { $0.id == item.serviceId }),
+                  let variant = service.variants.first(where: { $0.id == item.variantId }) else {
+                throw DomainError.notFound("Service variant")
+            }
+            let addons = service.addons.filter { item.addonIds.contains($0.id) }
+            // Coupon/wallet apply once, against the *first* line item's
+            // computation, so a multi-item cart doesn't double-apply either —
+            // mirrors the single-total shape a real server-side quote returns.
+            let isFirst = item.id == cart.items.first?.id
+            let input = PricingEngine.Input(
+                variant: variant, addons: addons,
+                additionalPetCount: max(0, item.petIds.count - 1),
+                travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500,
+                couponDiscountMinorUnits: isFirst ? couponDiscount : 0,
+                walletBalanceMinorUnits: isFirst ? walletBalance : 0
             )
             let breakdown = PricingEngine.quote(input)
             lineItems.append(contentsOf: breakdown.lineItems)
@@ -155,6 +197,63 @@ actor MockQuoteRepository: QuoteRepository {
         let signature = "mock-signed-\(cart.id.uuidString)-\(total)"
         return Quote(id: UUID(), cartId: cart.id, breakdown: breakdown, signature: signature,
                      expiresAt: Date().addingTimeInterval(Quote.ttl))
+    }
+
+    private static func discountMinorUnits(for coupon: Coupon, subtotal: Int) -> Int {
+        let raw: Int
+        switch coupon.discountType {
+        case .percentageOff: raw = subtotal * coupon.discountValue / 100
+        case .fixedAmountOff: raw = coupon.discountValue
+        }
+        if let cap = coupon.maxDiscountMinorUnits { return min(raw, cap) }
+        return raw
+    }
+}
+
+actor MockWalletRepository: WalletRepository {
+    // A little starting credit so the CartView toggle has something to show
+    // without needing a seeded backend.
+    private var entriesByUser: [UUID: [WalletLedgerEntry]] = [:]
+    private let seedAmount = 25_000 // ₹250
+
+    private func seededEntries(userId: UUID) -> [WalletLedgerEntry] {
+        if let existing = entriesByUser[userId] { return existing }
+        let seed = [WalletLedgerEntry(id: UUID(), userId: userId, amountMinorUnits: seedAmount,
+                                       reason: "Welcome credit", relatedVisitId: nil, relatedRefundId: nil, createdAt: .now)]
+        entriesByUser[userId] = seed
+        return seed
+    }
+
+    func balanceMinorUnits(userId: UUID) async throws -> Int {
+        seededEntries(userId: userId).reduce(0) { $0 + $1.amountMinorUnits }
+    }
+
+    func entries(userId: UUID) async throws -> [WalletLedgerEntry] {
+        seededEntries(userId: userId).sorted { $0.createdAt > $1.createdAt }
+    }
+}
+
+actor MockCouponRepository: CouponRepository {
+    // N2 example campaigns — mirrors what validate_coupon() would enforce.
+    private let coupons: [Coupon] = [
+        Coupon(id: UUID(), code: "FIRSTVISIT", discountType: .percentageOff, discountValue: 20,
+               maxDiscountMinorUnits: 30_000, validFrom: .distantPast, validUntil: .distantFuture,
+               usageLimit: nil, perUserLimit: 1, minSpendMinorUnits: nil, campaignName: "First-visit welcome"),
+        Coupon(id: UUID(), code: "WINBACK100", discountType: .fixedAmountOff, discountValue: 10_000,
+               maxDiscountMinorUnits: nil, validFrom: .distantPast, validUntil: .distantFuture,
+               usageLimit: nil, perUserLimit: 1, minSpendMinorUnits: 20_000, campaignName: "Win-back"),
+        Coupon(id: UUID(), code: "EXPIRED10", discountType: .percentageOff, discountValue: 10,
+               maxDiscountMinorUnits: nil, validFrom: .distantPast,
+               validUntil: Date().addingTimeInterval(-86_400), usageLimit: nil, perUserLimit: nil,
+               minSpendMinorUnits: nil, campaignName: "Expired example"),
+    ]
+
+    func validate(code: String, userId: UUID, cartTotalMinorUnits: Int) async throws -> Coupon? {
+        guard let coupon = coupons.first(where: { $0.code.caseInsensitiveCompare(code) == .orderedSame }) else { return nil }
+        let now = Date()
+        guard coupon.validFrom <= now, now <= coupon.validUntil else { return nil }
+        if let minSpend = coupon.minSpendMinorUnits, cartTotalMinorUnits < minSpend { return nil }
+        return coupon
     }
 }
 
@@ -404,6 +503,10 @@ actor MockPaymentRepository: PaymentRepository {
     }
 
     func paymentStatus(paymentId: UUID) async throws -> Payment.Status { .succeeded }
+
+    func createTipCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL {
+        URL(string: "https://checkout.example.com/tip/\(visitId)?amount=\(amountMinorUnits)")!
+    }
 }
 
 actor MockChatRepository: ChatRepository {

@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return new Response(JSON.stringify({ code: "UNAUTHENTICATED", message: "Sign in required." }), { status: 401 });
 
-  const { cart_id } = await req.json();
+  const { cart_id, use_wallet_balance } = await req.json();
   if (!cart_id) return new Response(JSON.stringify({ code: "VALIDATION", message: "cart_id is required." }), { status: 400 });
 
   const { data: cart, error: cartError } = await supabase.from("carts").select("*").eq("id", cart_id).single();
@@ -73,9 +73,42 @@ Deno.serve(async (req) => {
     total += itemLines.reduce((sum, li) => sum + li.amountMinorUnits, 0);
   }
 
-  const gst = Math.round(total * GST_RATE);
+  // E4/N2: coupon discount, validated (never trusted from the client) via
+  // validate_coupon() against this cart's real pre-discount subtotal —
+  // capped at that subtotal, same rule PricingEngine.swift enforces.
+  let discount = 0;
+  if (cart.coupon_code) {
+    const { data: coupons } = await supabase.rpc("validate_coupon", {
+      p_code: cart.coupon_code,
+      p_user_id: cart.user_id,
+      p_cart_total: total,
+    });
+    const coupon = coupons?.[0];
+    if (coupon) {
+      const raw = coupon.discount_type === "percentage_off"
+        ? Math.floor((total * coupon.discount_value) / 100)
+        : coupon.discount_value;
+      discount = Math.min(raw, total, coupon.max_discount_minor_units ?? raw);
+      if (discount > 0) lineItems.push({ label: "Discount", amountMinorUnits: -discount });
+    }
+  }
+  const taxable = Math.max(0, total - discount);
+
+  const gst = Math.round(taxable * GST_RATE);
   if (gst > 0) lineItems.push({ label: `GST (${Math.round(GST_RATE * 100)}%)`, amountMinorUnits: gst });
-  total += gst;
+  total = taxable + gst;
+
+  // G6: wallet credit applied last, after tax, capped at what's owed — the
+  // real balance is looked up server-side, never trusted from the client.
+  if (use_wallet_balance && cart.user_id) {
+    const { data: ledger } = await supabase.from("wallet_ledger").select("amount_minor_units").eq("user_id", cart.user_id);
+    const balance = (ledger ?? []).reduce((sum: number, row: any) => sum + row.amount_minor_units, 0);
+    const walletApplied = Math.min(Math.max(0, balance), total);
+    if (walletApplied > 0) {
+      lineItems.push({ label: "Wallet credit", amountMinorUnits: -walletApplied });
+      total -= walletApplied;
+    }
+  }
 
   const expiresAt = new Date(Date.now() + QUOTE_TTL_SECONDS * 1000).toISOString();
   const payload = JSON.stringify({ cart_id, total, expiresAt });

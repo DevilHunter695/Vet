@@ -92,6 +92,10 @@ protocol PaymentRepository: Sendable {
     func createCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL
     func createCheckout(forSubscription plan: Subscription.PlanType) async throws -> URL
     func paymentStatus(paymentId: UUID) async throws -> Payment.Status
+    /// E11: tagged distinctly from a regular visit charge (payments.kind =
+    /// 'tip') so the server can credit the vet 100% of it instead of the
+    /// ~70% split a completed visit earns (0028_tips.sql).
+    func createTipCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL
 }
 
 protocol ChatRepository: Sendable {
@@ -177,7 +181,24 @@ protocol CartRepository: Sendable {
 protocol QuoteRepository: Sendable {
     /// E6: the only source of a rupee amount the app is ever allowed to
     /// display or reference in an order. Pricing happens entirely server-side.
-    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote
+    /// `useWalletBalance` is the customer's toggle intent — the server (or
+    /// the mock, standing in for it) looks up the *real* balance and applies
+    /// at most that, never trusting a client-supplied amount.
+    func createQuote(for cart: Cart, catalog: [Service], useWalletBalance: Bool) async throws -> Quote
+}
+
+protocol WalletRepository: Sendable {
+    /// G6: balance is always derived from the ledger, never stored — see
+    /// wallet_ledger's append-only discipline (0026_wallet_ledger.sql).
+    func balanceMinorUnits(userId: UUID) async throws -> Int
+    func entries(userId: UUID) async throws -> [WalletLedgerEntry]
+}
+
+protocol CouponRepository: Sendable {
+    /// E4/N2: validated server-side via an RPC (never a direct table
+    /// select) so codes aren't enumerable and stacking/usage limits are
+    /// enforced in one place. Returns nil if the code doesn't apply.
+    func validate(code: String, userId: UUID, cartTotalMinorUnits: Int) async throws -> Coupon?
 }
 
 protocol SlotHoldRepository: Sendable {

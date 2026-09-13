@@ -444,12 +444,65 @@ struct GetQuoteUseCase {
 
     /// E6: the app hands over its selections and gets back a signed,
     /// itemized, TTL'd quote — it never assembles a rupee amount itself.
-    func execute(cart: Cart) async throws -> Quote {
+    /// `cart.couponCode` and `useWalletBalance` are the customer's *intent*;
+    /// the repository (server-side in the Supabase path) is what actually
+    /// re-validates the coupon and looks up the real wallet balance before
+    /// folding either into the signed total (Appendix C).
+    func execute(cart: Cart, useWalletBalance: Bool = false) async throws -> Quote {
         guard !cart.items.isEmpty else {
             throw DomainError.validation("Your cart is empty.")
         }
         let catalog = try await catalogRepository.listServices(vertical: nil)
-        return try await quoteRepository.createQuote(for: cart, catalog: catalog)
+        return try await quoteRepository.createQuote(for: cart, catalog: catalog, useWalletBalance: useWalletBalance)
+    }
+}
+
+struct GetWalletBalanceUseCase {
+    let walletRepository: WalletRepository
+
+    func balance(userId: UUID) async throws -> Int {
+        try await walletRepository.balanceMinorUnits(userId: userId)
+    }
+
+    func entries(userId: UUID) async throws -> [WalletLedgerEntry] {
+        try await walletRepository.entries(userId: userId)
+    }
+}
+
+struct ApplyCouponUseCase {
+    let couponRepository: CouponRepository
+
+    /// E4: validation happens against the real cart total, not a
+    /// client-guessed one — a coupon that would out-discount the cart (or
+    /// has expired/hit its usage limit) simply comes back nil rather than
+    /// letting the client decide it "should" apply (plan §N2 stacking rules
+    /// live entirely server-side in validate_coupon()).
+    func execute(code: String, userId: UUID, cartTotalMinorUnits: Int) async throws -> Coupon {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw DomainError.validation("Enter a promo code.")
+        }
+        guard let coupon = try await couponRepository.validate(code: trimmed, userId: userId, cartTotalMinorUnits: cartTotalMinorUnits) else {
+            throw DomainError.validation("That code isn't valid for this order.")
+        }
+        return coupon
+    }
+}
+
+struct TipUseCase {
+    let paymentRepository: PaymentRepository
+
+    static let presetAmountsMinorUnits = [5_000, 10_000, 15_000] // ₹50/₹100/₹150
+
+    /// E11: a tip is 100% the vet's — no platform cut, unlike a regular
+    /// visit's ~70% split (0014_payouts.sql credit_vet_on_visit_completed).
+    /// The credit itself happens server-side (a trigger on this payment
+    /// row, see 0028_tips.sql) once the tip payment succeeds.
+    func execute(visitId: UUID, amountMinorUnits: Int) async throws -> URL {
+        guard amountMinorUnits > 0, amountMinorUnits <= 50_000_00 else {
+            throw DomainError.validation("Enter a tip amount between ₹1 and ₹50,000.")
+        }
+        return try await paymentRepository.createTipCheckout(forVisit: visitId, amountMinorUnits: amountMinorUnits)
     }
 }
 

@@ -10,9 +10,21 @@ final class CartViewModel {
     var isQuoting = false
     var errorMessage: String?
 
+    // E4: the field just holds intent; the coupon is only ever validated
+    // (and its discount computed) inside the signed quote, never locally.
+    var couponCodeInput = ""
+    var couponMessage: String?
+
+    // G6: customer's toggle intent — the real balance is fetched fresh here
+    // so the label can show a rupee amount, but the *applied* amount always
+    // comes back from the quote, never trusted from this fetch.
+    var walletBalanceMinorUnits = 0
+    var useWalletBalance = false
+
     private let manageCartUseCase = DependencyContainer.shared.manageCartUseCase()
     private let getQuoteUseCase = DependencyContainer.shared.getQuoteUseCase()
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
+    private let getWalletBalanceUseCase = DependencyContainer.shared.getWalletBalanceUseCase()
 
     func load(userId: UUID) async {
         isLoading = true
@@ -23,8 +35,11 @@ final class CartViewModel {
             async let vetServices = getCatalogUseCase.execute(vertical: .vet)
             async let elderServices = getCatalogUseCase.execute(vertical: .elderCare)
             async let physioServices = getCatalogUseCase.execute(vertical: .physio)
+            async let balanceResult = getWalletBalanceUseCase.balance(userId: userId)
             cart = try await cartResult
             services = try await vetServices + elderServices + physioServices
+            walletBalanceMinorUnits = try await balanceResult
+            couponCodeInput = cart?.couponCode ?? ""
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -40,6 +55,15 @@ final class CartViewModel {
         }
     }
 
+    func applyCoupon() {
+        guard var cart else { return }
+        let trimmed = couponCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        cart.couponCode = trimmed.isEmpty ? nil : trimmed
+        self.cart = cart
+        couponMessage = trimmed.isEmpty ? nil : "Applied at checkout if valid — see the breakdown below."
+        quote = nil
+    }
+
     /// E3: transparent, itemized price breakdown — non-negotiable for trust
     /// per plan §9. This is the *only* place a price appears; it comes back
     /// from the server-signed quote, never computed here.
@@ -49,7 +73,7 @@ final class CartViewModel {
         errorMessage = nil
         defer { isQuoting = false }
         do {
-            quote = try await getQuoteUseCase.execute(cart: cart)
+            quote = try await getQuoteUseCase.execute(cart: cart, useWalletBalance: useWalletBalance)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -85,6 +109,22 @@ struct CartView: View {
                                 Haptics.warning()
                                 Task { await viewModel.remove(item) }
                             }
+                        }
+
+                        CouponEntryRow(code: $viewModel.couponCodeInput, message: viewModel.couponMessage) {
+                            viewModel.applyCoupon()
+                        }
+
+                        if viewModel.walletBalanceMinorUnits > 0 {
+                            Toggle(isOn: Binding(
+                                get: { viewModel.useWalletBalance },
+                                set: { viewModel.useWalletBalance = $0; viewModel.quote = nil }
+                            )) {
+                                Text("Use \(CurrencyFormatter.rupees(viewModel.walletBalanceMinorUnits)) wallet balance")
+                                    .font(.brandBody)
+                            }
+                            .padding()
+                            .glassCard()
                         }
 
                         if let quote = viewModel.quote {
@@ -159,6 +199,34 @@ struct PriceBreakdownView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+/// E4: "Have a promo code?" — deliberately no client-side validity check;
+/// the code is just carried on the cart and the server-signed quote is the
+/// only place that says whether it actually discounted anything.
+private struct CouponEntryRow: View {
+    @Binding var code: String
+    let message: String?
+    let onApply: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                TextField("Have a promo code?", text: $code)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .font(.brandBody)
+                Button("Apply", action: onApply)
+                    .font(.brandBody.bold())
+                    .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if let message {
+                Text(message).font(.brandCaption).foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .glassCard()
     }
 }
 

@@ -128,7 +128,7 @@ final class SupabaseQuoteRepository: QuoteRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
-    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote {
+    func createQuote(for cart: Cart, catalog: [Service], useWalletBalance: Bool) async throws -> Quote {
         struct Response: Decodable {
             let id: UUID
             let cartId: UUID
@@ -141,9 +141,93 @@ final class SupabaseQuoteRepository: QuoteRepository {
                 case cartId = "cart_id", totalMinorUnits = "total_minor_units", expiresAt = "expires_at"
             }
         }
-        let response: Response = try await client.functions.invoke("create-quote", options: .init(body: ["cart_id": cart.id.uuidString])).value
+        let response: Response = try await client.functions.invoke("create-quote", options: .init(body: [
+            "cart_id": cart.id.uuidString, "use_wallet_balance": useWalletBalance,
+        ] as [String: Any])).value
         return Quote(id: response.id, cartId: response.cartId, breakdown: response.breakdown,
                      signature: response.signature, expiresAt: response.expiresAt)
+    }
+}
+
+final class SupabaseWalletRepository: WalletRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    struct Row: Decodable {
+        let id: UUID
+        let userId: UUID
+        let amountMinorUnits: Int
+        let reason: String
+        let relatedVisitId: UUID?
+        let relatedRefundId: UUID?
+        let createdAt: Date
+        enum CodingKeys: String, CodingKey {
+            case id, reason
+            case userId = "user_id", amountMinorUnits = "amount_minor_units"
+            case relatedVisitId = "related_visit_id", relatedRefundId = "related_refund_id"
+            case createdAt = "created_at"
+        }
+        func toDomain() -> WalletLedgerEntry {
+            WalletLedgerEntry(id: id, userId: userId, amountMinorUnits: amountMinorUnits, reason: reason,
+                               relatedVisitId: relatedVisitId, relatedRefundId: relatedRefundId, createdAt: createdAt)
+        }
+    }
+
+    // The client has no insert policy on wallet_ledger at all (0026), so
+    // this is read-only by construction — the balance is just a fold, not
+    // a separate trusted column, matching the ledger's "no stored balance" rule.
+    func balanceMinorUnits(userId: UUID) async throws -> Int {
+        try await entries(userId: userId).reduce(0) { $0 + $1.amountMinorUnits }
+    }
+
+    func entries(userId: UUID) async throws -> [WalletLedgerEntry] {
+        let rows: [Row] = try await client.from("wallet_ledger").select()
+            .eq("user_id", value: userId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+final class SupabaseCouponRepository: CouponRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    struct Row: Decodable {
+        let id: UUID
+        let code: String
+        let discountType: String
+        let discountValue: Int
+        let maxDiscountMinorUnits: Int?
+        let validFrom: Date
+        let validUntil: Date
+        let usageLimit: Int?
+        let perUserLimit: Int?
+        let minSpendMinorUnits: Int?
+        let campaignName: String?
+        enum CodingKeys: String, CodingKey {
+            case id, code
+            case discountType = "discount_type", discountValue = "discount_value"
+            case maxDiscountMinorUnits = "max_discount_minor_units"
+            case validFrom = "valid_from", validUntil = "valid_until"
+            case usageLimit = "usage_limit", perUserLimit = "per_user_limit"
+            case minSpendMinorUnits = "min_spend_minor_units", campaignName = "campaign_name"
+        }
+        func toDomain() -> Coupon? {
+            guard let type = Coupon.DiscountType(rawValue: discountType) else { return nil }
+            return Coupon(id: id, code: code, discountType: type, discountValue: discountValue,
+                           maxDiscountMinorUnits: maxDiscountMinorUnits, validFrom: validFrom, validUntil: validUntil,
+                           usageLimit: usageLimit, perUserLimit: perUserLimit, minSpendMinorUnits: minSpendMinorUnits,
+                           campaignName: campaignName)
+        }
+    }
+
+    /// Goes through the validate_coupon() RPC (0027_coupons.sql), never a
+    /// direct table select — a client-readable coupons table would let a
+    /// code be enumerated/brute-forced (plan §E4).
+    func validate(code: String, userId: UUID, cartTotalMinorUnits: Int) async throws -> Coupon? {
+        let rows: [Row] = try await client.rpc("validate_coupon", params: [
+            "p_code": code, "p_user_id": userId.uuidString, "p_cart_total": String(cartTotalMinorUnits),
+        ]).execute().value
+        return rows.first?.toDomain()
     }
 }
 

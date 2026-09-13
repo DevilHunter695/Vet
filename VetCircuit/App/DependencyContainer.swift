@@ -25,6 +25,8 @@ final class DependencyContainer {
     let slotHoldRepository: SlotHoldRepository
     let cartRepository: CartRepository
     let quoteRepository: QuoteRepository
+    let walletRepository: WalletRepository
+    let couponRepository: CouponRepository
     let refundRepository: RefundRepository
     let invoiceRepository: InvoiceRepository
     let visitOTPRepository: VisitOTPRepository
@@ -65,7 +67,9 @@ final class DependencyContainer {
         self.addressRepository = MockAddressRepository()
         self.slotHoldRepository = MockSlotHoldRepository()
         self.cartRepository = MockCartRepository()
-        self.quoteRepository = MockQuoteRepository()
+        self.walletRepository = MockWalletRepository()
+        self.couponRepository = MockCouponRepository()
+        self.quoteRepository = MockQuoteRepository(couponRepository: couponRepository, walletRepository: walletRepository)
         self.refundRepository = MockRefundRepository()
         self.invoiceRepository = MockInvoiceRepository()
         self.visitOTPRepository = MockVisitOTPRepository()
@@ -118,6 +122,9 @@ final class DependencyContainer {
     func holdSlotUseCase() -> HoldSlotUseCase { HoldSlotUseCase(circuitRepository: circuitRepository, slotHoldRepository: slotHoldRepository) }
     func manageCartUseCase() -> ManageCartUseCase { ManageCartUseCase(cartRepository: cartRepository) }
     func getQuoteUseCase() -> GetQuoteUseCase { GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository) }
+    func getWalletBalanceUseCase() -> GetWalletBalanceUseCase { GetWalletBalanceUseCase(walletRepository: walletRepository) }
+    func applyCouponUseCase() -> ApplyCouponUseCase { ApplyCouponUseCase(couponRepository: couponRepository) }
+    func tipUseCase() -> TipUseCase { TipUseCase(paymentRepository: paymentRepository) }
     func browsePackagesUseCase() -> BrowsePackagesUseCase { BrowsePackagesUseCase(packageRepository: packageRepository) }
     func buyPackageUseCase() -> BuyPackageUseCase {
         BuyPackageUseCase(packageRepository: packageRepository, catalogRepository: catalogRepository, cartRepository: cartRepository)

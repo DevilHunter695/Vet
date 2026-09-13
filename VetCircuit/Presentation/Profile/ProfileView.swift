@@ -165,6 +165,9 @@ struct ProfileView: View {
                 .animation(Theme.crossFade, value: viewModel.subscription?.id)
 
                 Section {
+                    NavigationLink("Wallet") {
+                        WalletBalanceView()
+                    }
                     NavigationLink("Addresses") {
                         AddressListView()
                     }

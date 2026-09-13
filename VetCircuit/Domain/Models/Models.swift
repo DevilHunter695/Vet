@@ -595,6 +595,42 @@ struct Invoice: Identifiable, Codable, Equatable, Hashable {
     var issuedAt: Date
 }
 
+// MARK: - Wallet (plan §G6) — append-only double-entry ledger; balance is
+// always the sum of entries, never a stored/mutable column (mirrors
+// vet_ledger's discipline in 0014_payouts.sql).
+
+struct WalletLedgerEntry: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var amountMinorUnits: Int // positive = credit, negative = debit
+    var reason: String
+    var relatedVisitId: UUID?
+    var relatedRefundId: UUID?
+    var createdAt: Date
+}
+
+// MARK: - Coupons (plan §E4, §N2) — validated server-side only; the app
+// never enumerates codes, it asks the server "is this one valid for me now".
+
+struct Coupon: Identifiable, Codable, Equatable, Hashable {
+    enum DiscountType: String, Codable {
+        case percentageOff = "percentage_off"
+        case fixedAmountOff = "fixed_amount_off"
+    }
+
+    let id: UUID
+    var code: String
+    var discountType: DiscountType
+    var discountValue: Int // percent (1-100) or paise, per discountType
+    var maxDiscountMinorUnits: Int?
+    var validFrom: Date
+    var validUntil: Date
+    var usageLimit: Int?
+    var perUserLimit: Int?
+    var minSpendMinorUnits: Int?
+    var campaignName: String?
+}
+
 // MARK: - Cart, pricing & checkout (plan §E) — a server-authoritative quote
 // is the only thing an order may ever reference; the client never computes
 // a rupee (Appendix C).
