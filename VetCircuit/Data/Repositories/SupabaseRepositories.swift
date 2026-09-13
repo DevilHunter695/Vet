@@ -350,6 +350,22 @@ final class SupabaseAccountRepository: AccountRepository {
     }
 }
 
+final class SupabaseCallRepository: CallRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func startCall(visitId: UUID) async throws -> CallSession {
+        struct Response: Decodable {
+            let id: UUID, visitId: UUID, proxyNumber: String, expiresAt: Date
+            enum CodingKeys: String, CodingKey {
+                case id, proxyNumber = "proxy_number", expiresAt = "expires_at", visitId = "visit_id"
+            }
+        }
+        let response: Response = try await client.functions.invoke("start-call", options: .init(body: ["visit_id": visitId.uuidString])).value
+        return CallSession(id: response.id, visitId: response.visitId, proxyNumber: response.proxyNumber, expiresAt: response.expiresAt)
+    }
+}
+
 final class SupabaseVisitOTPRepository: VisitOTPRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }

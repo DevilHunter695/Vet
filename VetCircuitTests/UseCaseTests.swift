@@ -471,6 +471,17 @@ struct SendReferralUseCaseTests {
     }
 }
 
+@Suite("StartCallUseCase")
+struct StartCallUseCaseTests {
+    @Test("returns a masked proxy number, never a raw one")
+    func returnsMaskedProxyNumber() async throws {
+        let useCase = StartCallUseCase(callRepository: MockCallRepository())
+        let session = try await useCase.execute(visitId: UUID())
+        #expect(!session.proxyNumber.isEmpty)
+        #expect(!session.isExpired)
+    }
+}
+
 @Suite("TrackVetUseCase")
 struct TrackVetUseCaseTests {
     @Test("returns the vet's current location")

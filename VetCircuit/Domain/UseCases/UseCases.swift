@@ -190,7 +190,7 @@ struct TrackVetUseCase {
 struct StartCallUseCase {
     let callRepository: CallRepository
 
-    func execute(visitId: UUID) async throws -> URL {
+    func execute(visitId: UUID) async throws -> CallSession {
         try await callRepository.startCall(visitId: visitId)
     }
 }

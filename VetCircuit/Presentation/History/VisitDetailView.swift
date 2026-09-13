@@ -1,10 +1,11 @@
 import SwiftUI
+import UIKit
 
 struct VisitDetailView: View {
     let visit: Visit
     @State private var showingReview = false
     @State private var showingReschedule = false
-    @State private var callURL: URL?
+    @State private var activeCallSession: CallSession?
     @State private var callErrorMessage: String?
     @State private var visitOTP: VisitOTP?
 
@@ -91,14 +92,30 @@ struct VisitDetailView: View {
                 if visit.status == .requested || visit.status == .confirmed {
                     Button {
                         Task {
-                            do { callURL = try await startCallUseCase.execute(visitId: visit.id) }
-                            catch { callErrorMessage = error.localizedDescription }
+                            do {
+                                let session = try await startCallUseCase.execute(visitId: visit.id)
+                                activeCallSession = session
+                                if let dialURL = URL(string: "tel://\(session.proxyNumber.filter { $0.isNumber || $0 == "+" })") {
+                                    await UIApplication.shared.open(dialURL)
+                                }
+                            } catch {
+                                callErrorMessage = error.localizedDescription
+                            }
                         }
                     } label: {
-                        ActionRow(title: "Quick call with vet", systemImage: "video.fill", tint: Theme.accent)
+                        // J4: masked calling — the customer dials a shared
+                        // proxy number, never the vet's real phone number.
+                        ActionRow(title: "Call your vet", systemImage: "phone.fill", tint: Theme.accent)
                     }
                     .buttonStyle(PressableStyle())
                     .appearAnimation(delay: 0.15)
+                }
+
+                if let activeCallSession {
+                    Label("Connecting you on \(activeCallSession.proxyNumber) — your real number stays private.", systemImage: "lock.shield")
+                        .font(.brandCaption)
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
                 }
 
                 if let callErrorMessage {
@@ -117,9 +134,6 @@ struct VisitDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingReview) {
             ReviewView(visitId: visit.id)
-        }
-        .sheet(item: $callURL) { url in
-            CheckoutWebView(url: url)
         }
         .sheet(isPresented: $showingReschedule) {
             RescheduleVisitView(visit: visit)

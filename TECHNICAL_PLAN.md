@@ -260,7 +260,7 @@ Service (Home consultation)
 | J1 | Per-visit chat, text | P0 | ✅ | |
 | J2 | Chat attachments (photo of the symptom) | **P0** | 🔨 | Pet owners send photos. Always. |
 | J3 | Read receipts, typing, unread badge | P1 | 🔨 | |
-| J4 | **Masked voice calling** (Exotel/Twilio proxy — real numbers never exposed) | **P0** | ⛔ | Privacy + safety + "vet can't find the gate" reality |
+| J4 | **Masked voice calling** (Exotel/Twilio proxy — real numbers never exposed) | **P0** | 🔨 | Privacy + safety + "vet can't find the gate" reality |
 | J5 | Chat auto-closes 48h post-visit, with escalation to support | P1 | ⛔ | Prevents unpaid consulting over chat |
 | J6 | Video consult | P2 | 🔨 (stub) | |
 | J7 | Notification centre in-app + per-channel preferences | P1 | ⛔ | |

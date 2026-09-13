@@ -435,8 +435,11 @@ actor MockLiveTrackingRepository: LiveTrackingRepository {
 }
 
 actor MockCallRepository: CallRepository {
-    func startCall(visitId: UUID) async throws -> URL {
-        URL(string: "https://call.example.com/visit/\(visitId)")!
+    func startCall(visitId: UUID) async throws -> CallSession {
+        // A real deployment gets this proxy number from Exotel/Twilio,
+        // provisioned per-call; the mock uses a fixed demo number so the
+        // "tap to call" flow is exercisable without a live gateway.
+        CallSession(id: UUID(), visitId: visitId, proxyNumber: "+911800123456", expiresAt: .now.addingTimeInterval(3600))
     }
 }
 

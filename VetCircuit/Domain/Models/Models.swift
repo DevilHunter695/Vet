@@ -350,6 +350,19 @@ struct ConsentRecord: Identifiable, Codable, Equatable, Hashable {
     var isActive: Bool { withdrawnAt == nil }
 }
 
+// MARK: - Masked calling (plan §J4) — real phone numbers are never exposed
+// to either party; both dial a shared proxy number that the gateway bridges.
+
+struct CallSession: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var visitId: UUID
+    /// The proxy number to dial — not the vet's or customer's real number.
+    var proxyNumber: String
+    var expiresAt: Date
+
+    var isExpired: Bool { Date() >= expiresAt }
+}
+
 // MARK: - Cancellation policy, refunds & invoices (plan §F4, §G4-G5)
 
 /// F4: cancellation policy as code, not a support-team judgment call —

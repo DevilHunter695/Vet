@@ -116,8 +116,10 @@ protocol LiveTrackingRepository: Sendable {
 }
 
 protocol CallRepository: Sendable {
-    /// Creates (or joins) a call room for a visit and returns a joinable URL/token payload.
-    func startCall(visitId: UUID) async throws -> URL
+    /// J4: bridges a masked voice call for this visit — the customer dials
+    /// `proxyNumber`, never the vet's real number. The gateway (Exotel/
+    /// Twilio) resolves the proxy to whichever leg answers.
+    func startCall(visitId: UUID) async throws -> CallSession
 }
 
 protocol ReferralRepository: Sendable {
