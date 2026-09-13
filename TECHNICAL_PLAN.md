@@ -205,7 +205,7 @@ Service (Home consultation)
 | # | Capability | Pri | Status |
 |---|---|---|---|
 | F1 | Slot picker from circuit schedule (7–14 day horizon) | P0 | ✅ |
-| F2 | Capacity per slot (N stops per block), not boolean availability | **P0** | 🔨 |
+| F2 | Capacity per slot (N stops per block), not boolean availability | **P0** | ✅ |
 | F3 | **Reschedule** (with policy window) | **P0** | ⛔ |
 | F4 | **Cancel** with policy: free >4h, 50% <4h, 100% no-show | **P0** | 🔨 (cancel exists; no policy/refund) |
 | F5 | Recurring bookings (monthly deworming, weekly physio) | P1 | ⛔ |

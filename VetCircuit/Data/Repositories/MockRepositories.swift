@@ -334,7 +334,7 @@ enum MockData {
                     id: UUID(), dayOfWeek: (offset % 7) + 1,
                     startTime: Calendar.current.date(byAdding: .day, value: offset + index, to: .now) ?? .now,
                     endTime: Calendar.current.date(byAdding: .hour, value: offset + 1, to: .now) ?? .now,
-                    isAvailable: true
+                    capacity: 5, bookedCount: offset == 2 ? 5 : offset
                 )
             }
         )

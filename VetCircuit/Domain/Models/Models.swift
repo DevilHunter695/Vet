@@ -52,7 +52,13 @@ struct ScheduleSlot: Identifiable, Codable, Equatable, Hashable {
     var dayOfWeek: Int // 1 = Sunday ... 7 = Saturday
     var startTime: Date
     var endTime: Date
-    var isAvailable: Bool
+    /// F2: capacity by *stops on this run*, not a boolean — a slot can take
+    /// N bookings (bounded by circuit route/duration), not just one.
+    var capacity: Int = 1
+    var bookedCount: Int = 0
+
+    var isAvailable: Bool { bookedCount < capacity }
+    var remainingCapacity: Int { max(0, capacity - bookedCount) }
 }
 
 struct Visit: Identifiable, Codable, Equatable, Hashable {

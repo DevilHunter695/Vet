@@ -11,7 +11,7 @@ struct BookVisitUseCaseTests {
         let repo = MockVisitRepository()
         let useCase = BookVisitUseCase(visitRepository: repo)
         let slot = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(3600),
-                                 endTime: .now.addingTimeInterval(7200), isAvailable: false)
+                                 endTime: .now.addingTimeInterval(7200), capacity: 1, bookedCount: 1)
 
         await #expect(throws: DomainError.slotUnavailable) {
             _ = try await useCase.execute(petId: UUID(), vetId: UUID(), circuitId: UUID(), slot: slot)
@@ -23,9 +23,21 @@ struct BookVisitUseCaseTests {
         let repo = MockVisitRepository()
         let useCase = BookVisitUseCase(visitRepository: repo)
         let slot = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(-3600),
-                                 endTime: .now, isAvailable: true)
+                                 endTime: .now, capacity: 3, bookedCount: 0)
 
         await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(petId: UUID(), vetId: UUID(), circuitId: UUID(), slot: slot)
+        }
+    }
+
+    @Test("rejects a slot that is at full capacity even if not explicitly marked unavailable")
+    func rejectsFullCapacitySlot() async {
+        let repo = MockVisitRepository()
+        let useCase = BookVisitUseCase(visitRepository: repo)
+        let slot = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(3600),
+                                 endTime: .now.addingTimeInterval(7200), capacity: 5, bookedCount: 5)
+
+        await #expect(throws: DomainError.slotUnavailable) {
             _ = try await useCase.execute(petId: UUID(), vetId: UUID(), circuitId: UUID(), slot: slot)
         }
     }
@@ -35,7 +47,7 @@ struct BookVisitUseCaseTests {
         let repo = MockVisitRepository()
         let useCase = BookVisitUseCase(visitRepository: repo)
         let slot = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(3600),
-                                 endTime: .now.addingTimeInterval(7200), isAvailable: true)
+                                 endTime: .now.addingTimeInterval(7200), capacity: 3, bookedCount: 0)
 
         let visit = try await useCase.execute(petId: UUID(), vetId: UUID(), circuitId: UUID(), slot: slot)
         #expect(visit.status == .requested)
@@ -49,7 +61,7 @@ struct CancelVisitUseCaseTests {
         let repo = MockVisitRepository()
         let visit = try await repo.createVisit(
             petId: UUID(), vetId: UUID(), circuitId: UUID(),
-            slot: ScheduleSlot(id: UUID(), dayOfWeek: 1, startTime: .now.addingTimeInterval(3600), endTime: .now.addingTimeInterval(7200), isAvailable: true)
+            slot: ScheduleSlot(id: UUID(), dayOfWeek: 1, startTime: .now.addingTimeInterval(3600), endTime: .now.addingTimeInterval(7200), capacity: 3, bookedCount: 0)
         )
         let useCase = CancelVisitUseCase(visitRepository: repo)
         try await useCase.execute(visitId: visit.id, currentStatus: .requested)

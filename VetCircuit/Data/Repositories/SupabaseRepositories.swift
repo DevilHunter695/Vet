@@ -389,14 +389,16 @@ private struct SupabaseScheduleRow: Decodable {
     let dayOfWeek: Int
     let startTime: Date
     let endTime: Date
-    let isAvailable: Bool
+    let capacity: Int
+    let bookedCount: Int
 
     enum CodingKeys: String, CodingKey {
-        case id, dayOfWeek = "day_of_week", startTime = "start_time", endTime = "end_time", isAvailable = "is_available"
+        case id, dayOfWeek = "day_of_week", startTime = "start_time", endTime = "end_time"
+        case capacity, bookedCount = "booked_count"
     }
 
     func toDomain() -> ScheduleSlot {
-        ScheduleSlot(id: id, dayOfWeek: dayOfWeek, startTime: startTime, endTime: endTime, isAvailable: isAvailable)
+        ScheduleSlot(id: id, dayOfWeek: dayOfWeek, startTime: startTime, endTime: endTime, capacity: capacity, bookedCount: bookedCount)
     }
 }
 

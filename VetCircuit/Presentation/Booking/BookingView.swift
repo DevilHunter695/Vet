@@ -82,8 +82,11 @@ struct BookingView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Pick a time slot").font(.headline)
                     ForEach(Array(viewModel.circuit.schedule.filter(\.isAvailable).enumerated()), id: \.element.id) { index, slot in
-                        SelectableRow(title: slot.startTime.formatted(date: .abbreviated, time: .shortened),
-                                      isSelected: viewModel.selectedSlot?.id == slot.id) {
+                        SelectableRow(
+                            title: slot.startTime.formatted(date: .abbreviated, time: .shortened),
+                            subtitle: "\(slot.remainingCapacity) spot\(slot.remainingCapacity == 1 ? "" : "s") left",
+                            isSelected: viewModel.selectedSlot?.id == slot.id
+                        ) {
                             viewModel.selectedSlot = slot
                         }
                         .appearAnimation(delay: Theme.staggerDelay(index))
@@ -111,6 +114,7 @@ struct BookingView: View {
 
 private struct SelectableRow: View {
     let title: String
+    var subtitle: String? = nil
     let isSelected: Bool
     let action: () -> Void
 
@@ -120,7 +124,12 @@ private struct SelectableRow: View {
             withAnimation(Theme.springQuick) { action() }
         } label: {
             HStack {
-                Text(title).font(.brandBody)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.brandBody)
+                    if let subtitle {
+                        Text(subtitle).font(.brandCaption).foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(Theme.primary)
