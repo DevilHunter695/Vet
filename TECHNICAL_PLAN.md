@@ -141,7 +141,7 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | B2 | Pet detail screen: photo, species, breed, DOB, sex, neutered, weight, microchip, allergies, chronic conditions | P0 | 🔨 | `PetDetailView` built (no photo upload — known gap); fields live on `Pet` and edit in place |
 | B3 | Weight & vitals history (chart) | P1 | 🔨 | `pet_weights` table + `PetWeightRepository` + Swift Charts line chart in `PetDetailView`; vitals beyond weight (temp, HR) not modeled |
 | B4 | Vaccination record + **next-due reminders** | **P0** | 🔨 | Extends 0019's `vaccinations` table (batch number, visit link); `VaccinationPolicy` auto-computes next-due (+12mo) on record; history view color-codes overdue/due-soon with 1-tap "book vaccination visit" |
-| B5 | Prescription history | P1 | ⛔ | Must be vet-issued only (see §8.7) |
+| B5 | Prescription history | P1 | 🔨 | Same feature as K2 — see that row. Must be vet-issued only (see §8.7) |
 | B6 | Document vault (upload prior reports, insurance) | P1 | ⛔ | Private bucket, signed URLs, virus scan |
 | B7 | Shareable pet health summary (PDF) | P2 | ⛔ | For boarding/travel/clinic referral |
 | B8 | Deceased/rehomed pet handling | P1 | 🔨 | Soft-delete via `Pet.archivedAt`/`archiveReason`; excluded from `ManagePetsUseCase.list` (booking picker, vaccination nagging) by default; confirmation dialog uses calm copy, never "delete" |
