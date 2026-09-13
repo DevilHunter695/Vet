@@ -393,6 +393,38 @@ final class SupabasePrescriptionRepository: PrescriptionRepository {
     }
 }
 
+/// B6: document vault. The actual file bytes upload to the `documents`
+/// Storage bucket is not wired up yet — TODO: use the Supabase Storage SDK
+/// (`client.storage.from("documents").upload(...)`) once it's added as a
+/// dependency, then insert the resulting object path here. For now, `upload`
+/// mints a UUID-based mock path so the DB schema/RLS can be exercised end to
+/// end ahead of that wiring.
+final class SupabasePetDocumentRepository: PetDocumentRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func list(petId: UUID) async throws -> [PetDocument] {
+        let rows: [SupabasePetDocumentRow] = try await client
+            .from("pet_documents").select().eq("pet_id", value: petId).order("uploaded_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func upload(petId: UUID, uploaderId: UUID, title: String, data: Data) async throws -> PetDocument {
+        // TODO(Storage SDK): actually upload `data` to the `documents` bucket
+        // at this path (`client.storage.from("documents").upload(path, data: data)`)
+        // before inserting the row — today only the reference row is real.
+        let path = "documents/\(petId)/\(UUID().uuidString).pdf"
+        let insert = SupabasePetDocumentInsert(petId: petId, uploaderId: uploaderId, title: title, filePath: path)
+        let rows: [SupabasePetDocumentRow] = try await client.from("pet_documents").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func delete(id: UUID) async throws {
+        try await client.from("pet_documents").delete().eq("id", value: id).execute()
+    }
+}
+
 final class SupabaseCatalogRepository: CatalogRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
@@ -839,6 +871,40 @@ private struct SupabasePrescriptionRow: Decodable {
     func toDomain() -> Prescription {
         Prescription(id: id, visitId: visitId, petId: petId, medicationName: medicationName, dosage: dosage,
                      instructions: instructions, prescribedByVetId: prescribedByVetId, issuedAt: issuedAt)
+    }
+}
+
+/// B6: document vault. `filePath` is a `documents` Storage bucket object
+/// path, not a public URL — the app synthesizes a `mock-storage://` URL
+/// client-side until Storage SDK wiring lands (see `SupabasePetDocumentRepository`).
+private struct SupabasePetDocumentRow: Decodable {
+    let id: UUID
+    let petId: UUID
+    let uploaderId: UUID
+    let title: String
+    let filePath: String
+    let uploadedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, title
+        case petId = "pet_id", uploaderId = "uploader_id", filePath = "file_path", uploadedAt = "uploaded_at"
+    }
+
+    func toDomain() -> PetDocument {
+        let url = URL(string: "mock-storage://\(filePath)") ?? URL(string: "mock-storage://documents/unknown")!
+        return PetDocument(id: id, petId: petId, uploaderId: uploaderId, title: title, fileURL: url, uploadedAt: uploadedAt)
+    }
+}
+
+private struct SupabasePetDocumentInsert: Encodable {
+    let petId: UUID
+    let uploaderId: UUID
+    let title: String
+    let filePath: String
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case petId = "pet_id", uploaderId = "uploader_id", filePath = "file_path"
     }
 }
 
