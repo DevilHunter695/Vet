@@ -255,3 +255,59 @@ protocol AppNotificationRepository: Sendable {
     func notifications(userId: UUID) async throws -> [AppNotification]
     func markRead(id: UUID) async throws
 }
+
+// MARK: - A9 household sharing
+
+protocol HouseholdRepository: Sendable {
+    /// The household a user belongs to (owner or member), if any — a user
+    /// can be a member of at most one household in this model, matching
+    /// the plan's "invite spouse/family" scope rather than arbitrary groups.
+    func myHousehold(userId: UUID) async throws -> Household?
+    func createHousehold(name: String, ownerId: UUID) async throws -> Household
+    func members(householdId: UUID) async throws -> [HouseholdMember]
+    /// Invites by phone; the member row exists (with `invitedPhone` set)
+    /// even before the invitee's own user row does, mirroring `Referral`.
+    func invite(householdId: UUID, phone: String) async throws -> HouseholdMember
+    /// A member removes themselves, or the owner removes anyone — enforced
+    /// server-side by RLS (0020_households.sql), not just in the UI.
+    func removeMember(householdId: UUID, memberId: UUID) async throws
+}
+
+// MARK: - C10 waitlist
+
+// MARK: - C8 search — "Postgres FTS is enough; do not add a search cluster"
+// (plan §3 C8). Default extensions give every conformer (including any mock
+// or preview stub not updated here) a working client-side substring search
+// over whatever `listCircuits`/`listServices` already returns; the Supabase
+// conformers override these with a real server-side FTS/ILIKE query so
+// search doesn't require pulling the entire catalog to the client in prod.
+
+extension CircuitRepository {
+    func searchCircuits(term: String, area: String?) async throws -> [Circuit] {
+        let circuits = try await listCircuits(area: area)
+        let needle = term.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else { return circuits }
+        return circuits.filter {
+            $0.clusterArea.lowercased().contains(needle) || ($0.vet?.name.lowercased().contains(needle) ?? false)
+        }
+    }
+}
+
+extension CatalogRepository {
+    func searchServices(term: String, vertical: Vertical?) async throws -> [Service] {
+        let services = try await listServices(vertical: vertical)
+        let needle = term.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else { return services }
+        return services.filter {
+            $0.name.lowercased().contains(needle) || $0.summary.lowercased().contains(needle)
+        }
+    }
+}
+
+protocol WaitlistRepository: Sendable {
+    func join(userId: UUID, addressId: UUID?, latitude: Double, longitude: Double, areaLabel: String?) async throws -> WaitlistEntry
+    /// Count only — never the individual rows, so "N neighbours waiting"
+    /// never exposes who they are (see `waitlist_count_near` RPC).
+    func countNear(latitude: Double, longitude: Double, radiusKm: Double) async throws -> Int
+    func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool
+}

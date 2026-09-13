@@ -34,10 +34,36 @@ enum AppearanceOption: String, CaseIterable, Identifiable {
     }
 }
 
+/// N7: holds a deep link until the screen that can act on it is on screen.
+/// See the doc comment on `DeepLink` (Domain/DeepLinkParser.swift) for why
+/// this exists instead of a real Router: MainTabView runs three independent
+/// `NavigationStack`s today, so there is no single navigation path to push
+/// onto from `.onOpenURL` — each tab instead reads and clears this store
+/// when it can act on the pending link.
+@MainActor
+@Observable
+final class PendingDeepLinkStore {
+    var pending: DeepLink?
+
+    func handle(_ url: URL) {
+        let link = DeepLinkParser.parse(url)
+        guard link != .unknown else { return }
+        pending = link
+    }
+
+    /// Call once a tab has acted on `pending` so the same link doesn't
+    /// re-trigger navigation on the next appearance.
+    func consume() -> DeepLink? {
+        defer { pending = nil }
+        return pending
+    }
+}
+
 @main
 struct VetCircuitApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var session = SessionStore()
+    @State private var pendingDeepLink = PendingDeepLinkStore()
     @AppStorage("vc.appearance") private var appearanceRaw: String = AppearanceOption.system.rawValue
 
     var sharedModelContainer: ModelContainer = {
@@ -54,10 +80,14 @@ struct VetCircuitApp: App {
         WindowGroup {
             RootView()
                 .environment(session)
+                .environment(pendingDeepLink)
                 .tint(Theme.primary)
                 .preferredColorScheme((AppearanceOption(rawValue: appearanceRaw) ?? .system).colorScheme)
                 .task { await session.bootstrap() }
                 .task { await PushNotificationManager.shared.requestAuthorizationAndRegister() }
+                // N7: both the custom scheme and (once configured in the
+                // Associated Domains entitlement) a universal link land here.
+                .onOpenURL { url in pendingDeepLink.handle(url) }
         }
         .modelContainer(sharedModelContainer)
     }
@@ -126,6 +156,7 @@ struct RootView: View {
 }
 
 struct MainTabView: View {
+    @Environment(PendingDeepLinkStore.self) private var pendingDeepLink
     @State private var selectedTab = 0
 
     var body: some View {
@@ -143,5 +174,17 @@ struct MainTabView: View {
                 .tag(2)
         }
         .onChange(of: selectedTab) { _, _ in Haptics.selection() }
+        // N7: routes the pending deep link to the tab that can act on it.
+        // `.book` is fully resolved inside CircuitsListView; `.visit` only
+        // gets as far as the Visits tab (no shared Router to push a specific
+        // visit's detail screen onto — see PendingDeepLinkStore's doc comment).
+        .onChange(of: pendingDeepLink.pending) { _, link in
+            switch link {
+            case .book: selectedTab = 0
+            case .visit: selectedTab = 1
+            case .household: selectedTab = 2
+            case .unknown, nil: break
+            }
+        }
     }
 }

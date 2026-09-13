@@ -909,3 +909,69 @@ actor MockAppNotificationRepository: AppNotificationRepository {
         stored[index].readAt = .now
     }
 }
+
+// MARK: - A9 household
+
+actor MockHouseholdRepository: HouseholdRepository {
+    private var households: [Household] = []
+    private var membersByHousehold: [UUID: [HouseholdMember]] = [:]
+
+    func myHousehold(userId: UUID) async throws -> Household? {
+        households.first { household in
+            (membersByHousehold[household.id] ?? []).contains { $0.userId == userId }
+        }
+    }
+
+    func createHousehold(name: String, ownerId: UUID) async throws -> Household {
+        let household = Household(id: UUID(), name: name, ownerId: ownerId, createdAt: .now)
+        households.append(household)
+        membersByHousehold[household.id] = [
+            HouseholdMember(id: UUID(), householdId: household.id, userId: ownerId, role: .owner, invitedPhone: nil, joinedAt: .now)
+        ]
+        return household
+    }
+
+    func members(householdId: UUID) async throws -> [HouseholdMember] {
+        membersByHousehold[householdId] ?? []
+    }
+
+    func invite(householdId: UUID, phone: String) async throws -> HouseholdMember {
+        // Mock stand-in for "not yet a user" — a real invite resolves to a
+        // user row once the invitee signs up with this phone number.
+        let member = HouseholdMember(id: UUID(), householdId: householdId, userId: UUID(), role: .member, invitedPhone: phone, joinedAt: .now)
+        membersByHousehold[householdId, default: []].append(member)
+        return member
+    }
+
+    func removeMember(householdId: UUID, memberId: UUID) async throws {
+        membersByHousehold[householdId]?.removeAll { $0.id == memberId }
+    }
+}
+
+// MARK: - C10 waitlist
+
+actor MockWaitlistRepository: WaitlistRepository {
+    private var entries: [WaitlistEntry] = []
+
+    func join(userId: UUID, addressId: UUID?, latitude: Double, longitude: Double, areaLabel: String?) async throws -> WaitlistEntry {
+        // Dedup by (user, address) — matches the DB's unique constraint
+        // (0021_waitlist.sql) so tapping "join" twice is a no-op, not two rows.
+        if let existing = entries.first(where: { $0.userId == userId && $0.addressId == addressId }) {
+            return existing
+        }
+        let entry = WaitlistEntry(id: UUID(), userId: userId, addressId: addressId, latitude: latitude, longitude: longitude, areaLabel: areaLabel, joinedAt: .now)
+        entries.append(entry)
+        return entry
+    }
+
+    func countNear(latitude: Double, longitude: Double, radiusKm: Double) async throws -> Int {
+        let thresholdDegrees = radiusKm / 111.0 // ~111km per degree of latitude, coarse like matchCluster's mock
+        return entries.filter {
+            abs($0.latitude - latitude) < thresholdDegrees && abs($0.longitude - longitude) < thresholdDegrees
+        }.count
+    }
+
+    func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool {
+        entries.contains { $0.userId == userId && $0.addressId == addressId }
+    }
+}

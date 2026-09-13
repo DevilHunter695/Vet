@@ -41,6 +41,8 @@ final class DependencyContainer {
     let prescriptionRepository: PrescriptionRepository
     /// C11: 24x7 emergency clinic directory.
     let emergencyClinicRepository: EmergencyClinicRepository
+    let householdRepository: HouseholdRepository
+    let waitlistRepository: WaitlistRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -79,6 +81,8 @@ final class DependencyContainer {
         self.vaccinationRepository = MockVaccinationRepository()
         self.prescriptionRepository = MockPrescriptionRepository()
         self.emergencyClinicRepository = MockEmergencyClinicRepository()
+        self.householdRepository = MockHouseholdRepository()
+        self.waitlistRepository = MockWaitlistRepository()
     }
 
     // MARK: Use case factories
@@ -130,4 +134,8 @@ final class DependencyContainer {
     func managePrescriptionsUseCase() -> ManagePrescriptionsUseCase { ManagePrescriptionsUseCase(repository: prescriptionRepository) }
     func listEmergencyClinicsUseCase() -> ListEmergencyClinicsUseCase { ListEmergencyClinicsUseCase(repository: emergencyClinicRepository) }
     func getVetProfileUseCase() -> GetVetProfileUseCase { GetVetProfileUseCase(reviewRepository: reviewRepository) }
+    func manageHouseholdUseCase() -> ManageHouseholdUseCase { ManageHouseholdUseCase(householdRepository: householdRepository) }
+    func searchUseCase() -> SearchUseCase { SearchUseCase(circuitRepository: circuitRepository, catalogRepository: catalogRepository) }
+    func rebookLastVisitUseCase() -> RebookLastVisitUseCase { RebookLastVisitUseCase(visitRepository: visitRepository, circuitRepository: circuitRepository) }
+    func joinWaitlistUseCase() -> JoinWaitlistUseCase { JoinWaitlistUseCase(waitlistRepository: waitlistRepository) }
 }

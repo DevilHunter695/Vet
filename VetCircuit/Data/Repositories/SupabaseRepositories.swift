@@ -1305,6 +1305,60 @@ final class SupabaseNotificationPreferencesRepository: NotificationPreferencesRe
     }
 }
 
+// C8: server-side FTS override, per plan §3 C8's "Postgres FTS is enough" —
+// `.textSearch` against the generated `search_vector` column added in
+// 0022_search_fts.sql, using the SDK's `TextSearchType` the same way `.eq`/
+// `.in` are used elsewhere in this file for other filtered queries.
+extension SupabaseCircuitRepository {
+    func searchCircuits(term: String, area: String?) async throws -> [Circuit] {
+        let needle = term.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return try await listCircuits(area: area) }
+        // Vet name isn't a column on `circuits` itself, so this searches the
+        // joined vet's tsvector via `vet.search_vector` — falls back to a
+        // client-side area/vet-name filter if the embedded-resource text
+        // search syntax isn't supported by the SDK version in use.
+        var query = client.from("circuits").select("*, vet:vets!inner(*), schedule:schedule_slots(*)")
+        if let area { query = query.eq("cluster_area", value: area) }
+        do {
+            let rows: [SupabaseCircuitRow] = try await query
+                .or("cluster_area.ilike.%\(needle)%,vets.search_vector.fts.\(needle)")
+                .execute().value
+            return rows.map { $0.toDomain() }
+        } catch {
+            // Same client-side fallback the default protocol extension uses —
+            // keeps search available even if the embedded `.or` filter above
+            // isn't accepted by a given PostgREST/SDK version.
+            let circuits = try await listCircuits(area: area)
+            return try await self.searchCircuitsFallback(circuits, term: needle)
+        }
+    }
+
+    private func searchCircuitsFallback(_ circuits: [Circuit], term: String) async throws -> [Circuit] {
+        let lower = term.lowercased()
+        return circuits.filter {
+            $0.clusterArea.lowercased().contains(lower) || ($0.vet?.name.lowercased().contains(lower) ?? false)
+        }
+    }
+}
+
+extension SupabaseCatalogRepository {
+    func searchServices(term: String, vertical: Vertical?) async throws -> [Service] {
+        let needle = term.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return try await listServices(vertical: vertical) }
+        var query = client.from("services")
+            .select("*, service_variants(*), addons(*)")
+            .eq("is_active", value: true)
+        if let vertical {
+            let categories = ServiceCategory.allCases.filter { $0.vertical == vertical }.map(\.rawValue)
+            query = query.in("category", values: categories)
+        }
+        let rows: [SupabaseServiceRow] = try await query
+            .textSearch("search_vector", query: needle, config: "english")
+            .execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
 final class SupabaseAppConfigRepository: AppConfigRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
@@ -1343,6 +1397,176 @@ private struct SupabaseNotificationPreferencesRow: Codable {
     func toDomain() -> NotificationPreferences {
         NotificationPreferences(userId: userId, bookingUpdates: bookingUpdates, chatMessages: chatMessages,
                                  vaccinationReminders: vaccinationReminders, promotions: promotions)
+    }
+}
+
+// MARK: - A9 household
+
+final class SupabaseHouseholdRepository: HouseholdRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func myHousehold(userId: UUID) async throws -> Household? {
+        let memberRows: [SupabaseHouseholdMemberRow] = try await client
+            .from("household_members").select().eq("user_id", value: userId)
+            .execute().value
+        guard let membership = memberRows.first else { return nil }
+        let rows: [SupabaseHouseholdRow] = try await client
+            .from("households").select().eq("id", value: membership.householdId)
+            .execute().value
+        return rows.first?.toDomain()
+    }
+
+    func createHousehold(name: String, ownerId: UUID) async throws -> Household {
+        struct Insert: Encodable {
+            let name: String
+            let ownerId: UUID
+            enum CodingKeys: String, CodingKey { case name, ownerId = "owner_id" }
+        }
+        let rows: [SupabaseHouseholdRow] = try await client
+            .from("households").insert(Insert(name: name, ownerId: ownerId)).select()
+            .execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        // The owner is a member of their own household too, so `myHousehold`
+        // and `members` see them the same way any invited member would be.
+        struct MemberInsert: Encodable {
+            let householdId: UUID
+            let userId: UUID
+            let role: String
+            enum CodingKeys: String, CodingKey { case householdId = "household_id", userId = "user_id", role }
+        }
+        try await client.from("household_members")
+            .insert(MemberInsert(householdId: row.id, userId: ownerId, role: "owner"))
+            .execute()
+        return row.toDomain()
+    }
+
+    func members(householdId: UUID) async throws -> [HouseholdMember] {
+        let rows: [SupabaseHouseholdMemberRow] = try await client
+            .from("household_members").select().eq("household_id", value: householdId)
+            .execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func invite(householdId: UUID, phone: String) async throws -> HouseholdMember {
+        // The invitee's `user_id` isn't known yet — this inserts a
+        // placeholder member row keyed by phone, matched to a real user_id
+        // by a server-side trigger/Edge Function once that phone signs up
+        // (mirrors the referral flow's pending-until-joined shape).
+        struct Insert: Encodable {
+            let householdId: UUID
+            let invitedPhone: String
+            let role: String
+            enum CodingKeys: String, CodingKey { case householdId = "household_id", invitedPhone = "invited_phone", role }
+        }
+        let rows: [SupabaseHouseholdMemberRow] = try await client
+            .from("household_members")
+            .insert(Insert(householdId: householdId, invitedPhone: phone, role: "member")).select()
+            .execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func removeMember(householdId: UUID, memberId: UUID) async throws {
+        try await client.from("household_members").delete().eq("id", value: memberId).execute()
+    }
+}
+
+private struct SupabaseHouseholdRow: Decodable {
+    let id: UUID
+    let name: String
+    let ownerId: UUID
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, ownerId = "owner_id", createdAt = "created_at"
+    }
+
+    func toDomain() -> Household {
+        Household(id: id, name: name, ownerId: ownerId, createdAt: createdAt)
+    }
+}
+
+private struct SupabaseHouseholdMemberRow: Decodable {
+    let id: UUID
+    let householdId: UUID
+    let userId: UUID
+    let role: String
+    let invitedPhone: String?
+    let joinedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, role
+        case householdId = "household_id", userId = "user_id", invitedPhone = "invited_phone", joinedAt = "joined_at"
+    }
+
+    func toDomain() -> HouseholdMember {
+        HouseholdMember(id: id, householdId: householdId, userId: userId,
+                         role: HouseholdMember.Role(rawValue: role) ?? .member,
+                         invitedPhone: invitedPhone, joinedAt: joinedAt)
+    }
+}
+
+// MARK: - C10 waitlist
+
+final class SupabaseWaitlistRepository: WaitlistRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func join(userId: UUID, addressId: UUID?, latitude: Double, longitude: Double, areaLabel: String?) async throws -> WaitlistEntry {
+        struct Insert: Encodable {
+            let userId: UUID
+            let addressId: UUID?
+            let latitude: Double
+            let longitude: Double
+            let areaLabel: String?
+            enum CodingKeys: String, CodingKey {
+                case userId = "user_id", addressId = "address_id", latitude, longitude, areaLabel = "area_label"
+            }
+        }
+        // Upsert on the (user_id, address_id) unique constraint (0021_waitlist.sql)
+        // so a repeat tap is a no-op, matching the mock's dedup behavior.
+        let rows: [SupabaseWaitlistRow] = try await client
+            .from("waitlist_entries")
+            .upsert(Insert(userId: userId, addressId: addressId, latitude: latitude, longitude: longitude, areaLabel: areaLabel),
+                    onConflict: "user_id,address_id")
+            .select()
+            .execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func countNear(latitude: Double, longitude: Double, radiusKm: Double) async throws -> Int {
+        let count: Int = try await client.rpc("waitlist_count_near", params: [
+            "p_lat": latitude, "p_lng": longitude, "radius_km": radiusKm,
+        ]).execute().value
+        return count
+    }
+
+    func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool {
+        var query = client.from("waitlist_entries").select("id").eq("user_id", value: userId)
+        query = addressId.map { query.eq("address_id", value: $0) } ?? query.is("address_id", value: nil)
+        let rows: [SupabaseWaitlistRow] = try await query.execute().value
+        return !rows.isEmpty
+    }
+}
+
+private struct SupabaseWaitlistRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let addressId: UUID?
+    let latitude: Double
+    let longitude: Double
+    let areaLabel: String?
+    let joinedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, latitude, longitude
+        case userId = "user_id", addressId = "address_id", areaLabel = "area_label", joinedAt = "joined_at"
+    }
+
+    func toDomain() -> WaitlistEntry {
+        WaitlistEntry(id: id, userId: userId, addressId: addressId, latitude: latitude, longitude: longitude, areaLabel: areaLabel, joinedAt: joinedAt)
     }
 }
 
