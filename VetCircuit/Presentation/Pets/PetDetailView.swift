@@ -80,6 +80,28 @@ final class PetDetailViewModel {
     var nextActionableVaccination: Vaccination? {
         vaccinations.first { $0.dueStatus() != .upToDate }
     }
+
+    // MARK: - B7: shareable PDF health summary
+
+    private let generateHealthSummaryUseCase = DependencyContainer.shared.generatePetHealthSummaryUseCase()
+
+    /// Renders the PDF to a temp file (rather than sharing raw `Data`) so the
+    /// share sheet — Mail, Files, AirDrop — sees a real `.pdf` with a sensible
+    /// name instead of an untyped data blob.
+    func generateHealthSummaryFile() -> URL? {
+        let data = generateHealthSummaryUseCase.execute(pet: pet, weightHistory: weightHistory, vaccinations: vaccinations)
+        guard !data.isEmpty else { return nil }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(pet.name)-health-summary-\(UUID().uuidString)")
+            .appendingPathExtension("pdf")
+        do {
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            errorMessage = "Couldn't prepare the PDF for sharing."
+            return nil
+        }
+    }
 }
 
 struct PetDetailView: View {
@@ -89,6 +111,8 @@ struct PetDetailView: View {
     @State private var showingArchiveConfirm = false
     @State private var pendingArchiveReason: Pet.ArchiveReason = .other
     @State private var bookVaccinationService: Service?
+    @State private var shareFileURL: URL?
+    @State private var showingShareSheet = false
 
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
 
@@ -125,6 +149,20 @@ struct PetDetailView: View {
                     ErrorBanner(message: errorMessage)
                 }
 
+                documentVaultLink.appearAnimation(delay: 0.22)
+
+                Button {
+                    if let url = viewModel.generateHealthSummaryFile() {
+                        shareFileURL = url
+                        showingShareSheet = true
+                    }
+                } label: {
+                    Label("Share health summary", systemImage: "square.and.arrow.up")
+                }
+                .font(.brandBody)
+                .buttonStyle(.bordered)
+                .padding(.top, 4)
+
                 if !viewModel.pet.isArchived {
                     Button(role: .destructive) {
                         showingArchiveConfirm = true
@@ -145,6 +183,11 @@ struct PetDetailView: View {
         .sheet(item: $bookVaccinationService) { service in
             NavigationStack {
                 ServiceDetailView(service: service, pet: viewModel.pet, preselectedVariantId: service.variants.first?.id)
+            }
+        }
+        .sheet(isPresented: $showingShareSheet) {
+            if let shareFileURL {
+                ShareSheet(activityItems: [shareFileURL])
             }
         }
         // B8: a confirmation dialog, not a plain destructive button tap — and
@@ -314,6 +357,24 @@ struct PetDetailView: View {
         guard let services = try? await getCatalogUseCase.execute(vertical: .vet, forSpecies: viewModel.pet.species),
               let service = services.first(where: { $0.category == .vaccination }) else { return }
         bookVaccinationService = service
+    }
+
+    // MARK: - Document vault (B6)
+
+    private var documentVaultLink: some View {
+        NavigationLink {
+            DocumentVaultView(pet: viewModel.pet)
+        } label: {
+            Card {
+                HStack {
+                    Label("Document vault", systemImage: "doc.text.fill")
+                        .font(.brandHeadline).foregroundStyle(Theme.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Prescriptions (K2)
