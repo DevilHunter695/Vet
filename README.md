@@ -2,6 +2,11 @@
 
 Two-sided marketplace connecting pet owners with vets/para-vets who run scheduled home-visit "circuits". This repo contains the customer-facing iOS app (Swift/SwiftUI) and the Supabase backend it talks to, per the technical plan.
 
+> **Start here: [TECHNICAL_PLAN.md](TECHNICAL_PLAN.md)** — the v2.0 product & technical master plan
+> (market positioning, full feature inventory with P0/P1/P2 priorities, data model, reliability and
+> security engineering, compliance, roadmap). Appendix F maps what is built today against what is still
+> required to be deployable.
+
 ## Repository layout
 
 ```
