@@ -145,6 +145,48 @@ struct GetLoyaltyAccountUseCase {
     }
 }
 
+struct ManageCartUseCase {
+    let cartRepository: CartRepository
+
+    func current(userId: UUID) async throws -> Cart {
+        try await cartRepository.currentCart(userId: userId)
+    }
+
+    func addItem(_ item: CartItem, to cart: Cart) async throws -> Cart {
+        guard !item.petIds.isEmpty else {
+            throw DomainError.validation("Choose at least one pet.")
+        }
+        var cart = cart
+        cart.items.append(item)
+        return try await cartRepository.save(cart)
+    }
+
+    func removeItem(id: UUID, from cart: Cart) async throws -> Cart {
+        var cart = cart
+        cart.items.removeAll { $0.id == id }
+        return try await cartRepository.save(cart)
+    }
+
+    func clear(userId: UUID) async throws {
+        try await cartRepository.clear(userId: userId)
+    }
+}
+
+struct GetQuoteUseCase {
+    let quoteRepository: QuoteRepository
+    let catalogRepository: CatalogRepository
+
+    /// E6: the app hands over its selections and gets back a signed,
+    /// itemized, TTL'd quote — it never assembles a rupee amount itself.
+    func execute(cart: Cart) async throws -> Quote {
+        guard !cart.items.isEmpty else {
+            throw DomainError.validation("Your cart is empty.")
+        }
+        let catalog = try await catalogRepository.listServices(vertical: nil)
+        return try await quoteRepository.createQuote(for: cart, catalog: catalog)
+    }
+}
+
 struct HoldSlotUseCase {
     let circuitRepository: CircuitRepository
     let slotHoldRepository: SlotHoldRepository

@@ -39,6 +39,52 @@ actor MockCircuitRepository: CircuitRepository {
     }
 }
 
+actor MockCartRepository: CartRepository {
+    private var carts: [UUID: Cart] = [:]
+
+    func currentCart(userId: UUID) async throws -> Cart {
+        carts[userId] ?? Cart(id: UUID(), userId: userId)
+    }
+
+    func save(_ cart: Cart) async throws -> Cart {
+        carts[cart.userId] = cart
+        return cart
+    }
+
+    func clear(userId: UUID) async throws {
+        carts[userId] = nil
+    }
+}
+
+actor MockQuoteRepository: QuoteRepository {
+    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote {
+        var lineItems: [PriceLineItem] = []
+        var total = 0
+        for item in cart.items {
+            guard let service = catalog.first(where: { $0.id == item.serviceId }),
+                  let variant = service.variants.first(where: { $0.id == item.variantId }) else {
+                throw DomainError.notFound("Service variant")
+            }
+            let addons = service.addons.filter { item.addonIds.contains($0.id) }
+            let input = PricingEngine.Input(
+                variant: variant, addons: addons,
+                additionalPetCount: max(0, item.petIds.count - 1),
+                travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500
+            )
+            let breakdown = PricingEngine.quote(input)
+            lineItems.append(contentsOf: breakdown.lineItems)
+            total += breakdown.totalMinorUnits
+        }
+        let breakdown = PriceBreakdown(lineItems: lineItems, totalMinorUnits: total)
+        // A real deployment HMAC-signs this with a server-held secret; the
+        // mock stands in with a deterministic non-secret marker so the
+        // client contract (a quote must carry *some* signature) is exercised.
+        let signature = "mock-signed-\(cart.id.uuidString)-\(total)"
+        return Quote(id: UUID(), cartId: cart.id, breakdown: breakdown, signature: signature,
+                     expiresAt: Date().addingTimeInterval(Quote.ttl))
+    }
+}
+
 actor MockSlotHoldRepository: SlotHoldRepository {
     private var holds: [SlotHold] = []
 

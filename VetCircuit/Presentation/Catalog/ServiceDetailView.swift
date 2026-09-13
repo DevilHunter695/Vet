@@ -6,10 +6,33 @@ struct ServiceDetailView: View {
     let service: Service
     let pet: Pet?
 
+    @Environment(SessionStore.self) private var session
     @State private var selectedVariantId: UUID?
+    @State private var isAddingToCart = false
+    @State private var addedToCart = false
+    @State private var errorMessage: String?
+
+    private let manageCartUseCase = DependencyContainer.shared.manageCartUseCase()
 
     private var selectedVariant: ServiceVariant? {
         service.variants.first { $0.id == selectedVariantId } ?? service.variants.first
+    }
+
+    private func addToCart() async {
+        guard let variant = selectedVariant, let pet, let userId = session.currentUser?.id else { return }
+        isAddingToCart = true
+        errorMessage = nil
+        defer { isAddingToCart = false }
+        do {
+            let cart = try await manageCartUseCase.current(userId: userId)
+            let item = CartItem(id: UUID(), serviceId: service.id, variantId: variant.id, petIds: [pet.id])
+            _ = try await manageCartUseCase.addItem(item, to: cart)
+            Haptics.success()
+            withAnimation(Theme.springSoft) { addedToCart = true }
+        } catch {
+            Haptics.error()
+            errorMessage = error.localizedDescription
+        }
     }
 
     var body: some View {
@@ -70,12 +93,27 @@ struct ServiceDetailView: View {
                         .foregroundStyle(Theme.inProgress)
                         .appearAnimation(delay: 0.2)
                 }
+
+                if let errorMessage {
+                    ErrorBanner(message: errorMessage)
+                }
+
+                PrimaryButton(title: addedToCart ? "Added to cart" : "Add to cart", isLoading: isAddingToCart) {
+                    Task { await addToCart() }
+                }
+                .disabled(pet == nil || addedToCart)
+                .appearAnimation(delay: 0.25)
             }
             .padding()
         }
         .background(Color(.systemGroupedBackground))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { selectedVariantId = service.variants.first?.id }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { CartView() } label: { Image(systemName: "cart") }
+            }
+        }
     }
 }
 

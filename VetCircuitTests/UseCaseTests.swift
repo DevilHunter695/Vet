@@ -210,6 +210,84 @@ struct ManagePetsUseCaseTests {
     }
 }
 
+@Suite("PricingEngine")
+struct PricingEngineTests {
+    private let variant = ServiceVariant(id: UUID(), serviceId: UUID(), name: "Standard 20 min", durationMinutes: 20, priceMinorUnits: 59_900, additionalPetPriceMinorUnits: 29_900)
+
+    @Test("base variant price plus GST, no extras")
+    func basePriceWithGST() {
+        let breakdown = PricingEngine.quote(.init(variant: variant, addons: [], additionalPetCount: 0, travelFeeMinorUnits: 0))
+        let expectedGST = Int((Double(59_900) * 0.18).rounded())
+        #expect(breakdown.totalMinorUnits == 59_900 + expectedGST)
+    }
+
+    @Test("multi-pet, add-ons, and travel fee all itemize and sum correctly")
+    func multiPetAddonsAndTravel() {
+        let addon = Addon(id: UUID(), name: "Nail trim", priceMinorUnits: 14_900)
+        let breakdown = PricingEngine.quote(.init(variant: variant, addons: [addon], additionalPetCount: 1, travelFeeMinorUnits: 4_500))
+        let subtotal = 59_900 + 29_900 + 14_900 + 4_500
+        let gst = Int((Double(subtotal) * 0.18).rounded())
+        #expect(breakdown.totalMinorUnits == subtotal + gst)
+        #expect(breakdown.lineItems.contains { $0.label.contains("Additional pet") })
+        #expect(breakdown.lineItems.contains { $0.label == "Travel fee" })
+    }
+
+    @Test("a coupon discount never pushes the taxable amount negative")
+    func discountNeverGoesNegative() {
+        let breakdown = PricingEngine.quote(.init(variant: variant, addons: [], additionalPetCount: 0, travelFeeMinorUnits: 0, couponDiscountMinorUnits: 999_999))
+        #expect(breakdown.totalMinorUnits >= 0)
+    }
+
+    @Test("wallet credit is capped at the pre-wallet total, never overdraws")
+    func walletCappedAtTotal() {
+        let breakdown = PricingEngine.quote(.init(variant: variant, addons: [], additionalPetCount: 0, travelFeeMinorUnits: 0, walletBalanceMinorUnits: 999_999))
+        #expect(breakdown.totalMinorUnits == 0)
+    }
+}
+
+@Suite("ManageCartUseCase + GetQuoteUseCase")
+struct CartAndQuoteUseCaseTests {
+    @Test("rejects adding an item with no pets selected")
+    func rejectsNoPets() async throws {
+        let repo = MockCartRepository()
+        let useCase = ManageCartUseCase(cartRepository: repo)
+        let cart = try await useCase.current(userId: UUID())
+        let item = CartItem(id: UUID(), serviceId: UUID(), variantId: UUID(), petIds: [])
+
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.addItem(item, to: cart)
+        }
+    }
+
+    @Test("rejects a quote for an empty cart")
+    func rejectsEmptyCartQuote() async {
+        let quoteUseCase = GetQuoteUseCase(quoteRepository: MockQuoteRepository(), catalogRepository: MockCatalogRepository())
+        let emptyCart = Cart(id: UUID(), userId: UUID())
+
+        await #expect(throws: DomainError.self) {
+            _ = try await quoteUseCase.execute(cart: emptyCart)
+        }
+    }
+
+    @Test("a real cart produces a signed, itemized, unexpired quote")
+    func producesRealQuote() async throws {
+        let cartRepo = MockCartRepository()
+        let cartUseCase = ManageCartUseCase(cartRepository: cartRepo)
+        let quoteUseCase = GetQuoteUseCase(quoteRepository: MockQuoteRepository(), catalogRepository: MockCatalogRepository())
+
+        let service = MockData.services[0]
+        let userId = UUID()
+        var cart = try await cartUseCase.current(userId: userId)
+        let item = CartItem(id: UUID(), serviceId: service.id, variantId: service.variants[0].id, petIds: [UUID()])
+        cart = try await cartUseCase.addItem(item, to: cart)
+
+        let quote = try await quoteUseCase.execute(cart: cart)
+        #expect(!quote.signature.isEmpty)
+        #expect(!quote.isExpired)
+        #expect(quote.breakdown.totalMinorUnits > 0)
+    }
+}
+
 @Suite("HoldSlotUseCase")
 struct HoldSlotUseCaseTests {
     @Test("places a hold on a slot with remaining capacity")

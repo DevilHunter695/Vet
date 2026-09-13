@@ -77,6 +77,73 @@ final class SupabaseCircuitRepository: CircuitRepository {
     }
 }
 
+final class SupabaseCartRepository: CartRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func currentCart(userId: UUID) async throws -> Cart {
+        let rows: [SupabaseCartRow] = try await client.from("carts").select("*, cart_items(*)").eq("user_id", value: userId).execute().value
+        return rows.first?.toDomain() ?? Cart(id: UUID(), userId: userId)
+    }
+
+    func save(_ cart: Cart) async throws -> Cart {
+        // Upsert the cart row, then replace its items wholesale — simpler and
+        // safer than diffing line items for a cart that's rebuilt on most edits.
+        struct CartUpsert: Encodable {
+            let id: UUID
+            let userId: UUID
+            enum CodingKeys: String, CodingKey { case id, userId = "user_id" }
+        }
+        try await client.from("carts").upsert(CartUpsert(id: cart.id, userId: cart.userId)).execute()
+        try await client.from("cart_items").delete().eq("cart_id", value: cart.id).execute()
+        if !cart.items.isEmpty {
+            struct ItemInsert: Encodable {
+                let cartId: UUID
+                let serviceId: UUID
+                let variantId: UUID
+                let petIds: [UUID]
+                let addonIds: [UUID]
+                enum CodingKeys: String, CodingKey {
+                    case cartId = "cart_id", serviceId = "service_id", variantId = "variant_id"
+                    case petIds = "pet_ids", addonIds = "addon_ids"
+                }
+            }
+            let inserts = cart.items.map {
+                ItemInsert(cartId: cart.id, serviceId: $0.serviceId, variantId: $0.variantId, petIds: $0.petIds, addonIds: $0.addonIds)
+            }
+            try await client.from("cart_items").insert(inserts).execute()
+        }
+        return cart
+    }
+
+    func clear(userId: UUID) async throws {
+        try await client.from("carts").delete().eq("user_id", value: userId).execute()
+    }
+}
+
+final class SupabaseQuoteRepository: QuoteRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote {
+        struct Response: Decodable {
+            let id: UUID
+            let cartId: UUID
+            let breakdown: PriceBreakdown
+            let totalMinorUnits: Int
+            let signature: String
+            let expiresAt: Date
+            enum CodingKeys: String, CodingKey {
+                case id, breakdown, signature
+                case cartId = "cart_id", totalMinorUnits = "total_minor_units", expiresAt = "expires_at"
+            }
+        }
+        let response: Response = try await client.functions.invoke("create-quote", options: .init(body: ["cart_id": cart.id.uuidString])).value
+        return Quote(id: response.id, cartId: response.cartId, breakdown: response.breakdown,
+                     signature: response.signature, expiresAt: response.expiresAt)
+    }
+}
+
 final class SupabaseSlotHoldRepository: SlotHoldRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
@@ -266,6 +333,40 @@ private struct SupabaseCircuitRow: Decodable {
         Circuit(id: id, vetId: vetId, vet: vet?.toDomain(), clusterArea: clusterArea,
                 schedule: (schedule ?? []).map { $0.toDomain() }, vertical: Vertical(rawValue: vertical) ?? .vet)
     }
+}
+
+private struct SupabaseCartRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let addressId: UUID?
+    let circuitId: UUID?
+    let slotId: UUID?
+    let couponCode: String?
+    let cartItems: [SupabaseCartItemRow]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, userId = "user_id", addressId = "address_id", circuitId = "circuit_id"
+        case slotId = "slot_id", couponCode = "coupon_code", cartItems = "cart_items"
+    }
+
+    func toDomain() -> Cart {
+        Cart(id: id, userId: userId, addressId: addressId, circuitId: circuitId, slotId: slotId,
+             items: (cartItems ?? []).map { $0.toDomain() }, couponCode: couponCode)
+    }
+}
+
+private struct SupabaseCartItemRow: Decodable {
+    let id: UUID
+    let serviceId: UUID
+    let variantId: UUID
+    let petIds: [UUID]
+    let addonIds: [UUID]
+
+    enum CodingKeys: String, CodingKey {
+        case id, serviceId = "service_id", variantId = "variant_id", petIds = "pet_ids", addonIds = "addon_ids"
+    }
+
+    func toDomain() -> CartItem { CartItem(id: id, serviceId: serviceId, variantId: variantId, petIds: petIds, addonIds: addonIds) }
 }
 
 private struct SupabaseSlotHoldRow: Decodable {

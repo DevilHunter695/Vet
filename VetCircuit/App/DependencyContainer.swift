@@ -23,6 +23,8 @@ final class DependencyContainer {
     let catalogRepository: CatalogRepository
     let addressRepository: AddressRepository
     let slotHoldRepository: SlotHoldRepository
+    let cartRepository: CartRepository
+    let quoteRepository: QuoteRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -44,6 +46,8 @@ final class DependencyContainer {
         self.catalogRepository = MockCatalogRepository()
         self.addressRepository = MockAddressRepository()
         self.slotHoldRepository = MockSlotHoldRepository()
+        self.cartRepository = MockCartRepository()
+        self.quoteRepository = MockQuoteRepository()
     }
 
     // MARK: Use case factories
@@ -67,4 +71,6 @@ final class DependencyContainer {
     func getCatalogUseCase() -> GetCatalogUseCase { GetCatalogUseCase(catalogRepository: catalogRepository) }
     func manageAddressesUseCase() -> ManageAddressesUseCase { ManageAddressesUseCase(addressRepository: addressRepository) }
     func holdSlotUseCase() -> HoldSlotUseCase { HoldSlotUseCase(circuitRepository: circuitRepository, slotHoldRepository: slotHoldRepository) }
+    func manageCartUseCase() -> ManageCartUseCase { ManageCartUseCase(cartRepository: cartRepository) }
+    func getQuoteUseCase() -> GetQuoteUseCase { GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository) }
 }

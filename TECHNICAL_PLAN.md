@@ -188,12 +188,12 @@ Service (Home consultation)
 
 | # | Capability | Pri | Status | Notes |
 |---|---|---|---|---|
-| E1 | **Cart**: multiple services/pets/add-ons in one booking | **P0** | ⛔ | Add / **remove** / change quantity / clear |
-| E2 | Cart persistence across devices + restore on relaunch | P0 | ⛔ | Server-side cart, not local only |
-| E3 | **Transparent price breakdown**: subtotal · per-pet · travel fee · peak · discount · GST · total | **P0** | ⛔ | Non-negotiable for trust |
+| E1 | **Cart**: multiple services/pets/add-ons in one booking | **P0** | 🔨 | Add / **remove** / change quantity / clear |
+| E2 | Cart persistence across devices + restore on relaunch | P0 | ✅ | Server-side cart, not local only |
+| E3 | **Transparent price breakdown**: subtotal · per-pet · travel fee · peak · discount · GST · total | **P0** | ✅ | Non-negotiable for trust |
 | E4 | Coupon / promo code entry + validation + stacking rules | P1 | ⛔ | |
 | E5 | Wallet credits & loyalty point redemption at checkout | P1 | 🔨 | Loyalty exists; redemption doesn't |
-| E6 | **Server-authoritative quote**: `POST /quotes` returns a signed, TTL'd quote; order must reference a valid quote | **P0** | ⛔ | Prevents client price tampering entirely |
+| E6 | **Server-authoritative quote**: `POST /quotes` returns a signed, TTL'd quote; order must reference a valid quote | **P0** | 🔨 | Prevents client price tampering entirely |
 | E7 | Slot **hold** (10 min) during checkout, auto-release | **P0** | 🔨 | Prevents the "slot taken while I was paying" disaster |
 | E8 | Payment method choice: UPI intent, cards, netbanking, wallets, **pay-after-visit (cash/UPI to vet)** | P0 | 🔨 | Cash-on-visit is table stakes in India |
 | E9 | Saved payment methods (gateway-tokenized, never stored by you) | P1 | ⛔ | |

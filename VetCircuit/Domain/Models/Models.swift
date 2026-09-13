@@ -244,6 +244,59 @@ struct Address: Identifiable, Codable, Equatable, Hashable {
     var isServed: Bool { clusterArea != nil }
 }
 
+// MARK: - Cart, pricing & checkout (plan §E) — a server-authoritative quote
+// is the only thing an order may ever reference; the client never computes
+// a rupee (Appendix C).
+
+struct CartItem: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var serviceId: UUID
+    var variantId: UUID
+    var petIds: [UUID]           // 1 or more pets on this line item (D6: multi-pet)
+    var addonIds: [UUID] = []
+}
+
+struct Cart: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var addressId: UUID?
+    var circuitId: UUID?
+    var slotId: UUID?
+    var items: [CartItem] = []
+    var couponCode: String? = nil
+}
+
+/// One line in the itemized breakdown a quote returns — displayed verbatim
+/// in the app and stored on the order for the invoice (Appendix C: "the
+/// client never computes a rupee").
+struct PriceLineItem: Identifiable, Codable, Equatable, Hashable {
+    let id = UUID()
+    var label: String
+    var amountMinorUnits: Int // negative for discounts/credits
+
+    enum CodingKeys: String, CodingKey { case label, amountMinorUnits }
+}
+
+struct PriceBreakdown: Codable, Equatable {
+    var lineItems: [PriceLineItem]
+    var totalMinorUnits: Int
+}
+
+/// A server-signed, TTL'd quote (E6). An order must reference a valid,
+/// unexpired quote — this is what makes client-side price tampering
+/// structurally impossible rather than merely discouraged.
+struct Quote: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var cartId: UUID
+    var breakdown: PriceBreakdown
+    var signature: String
+    var expiresAt: Date
+
+    var isExpired: Bool { Date() >= expiresAt }
+
+    static let ttl: TimeInterval = 10 * 60
+}
+
 // MARK: - Slot holds (plan §E7) — the "slot taken while I was paying"
 // disaster is prevented by reserving a slot's capacity for a short window
 // during checkout, auto-released if checkout never completes.

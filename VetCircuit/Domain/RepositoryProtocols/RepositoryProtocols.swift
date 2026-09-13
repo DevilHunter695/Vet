@@ -76,6 +76,19 @@ protocol ReferralRepository: Sendable {
     func listReferrals(userId: UUID) async throws -> [Referral]
 }
 
+protocol CartRepository: Sendable {
+    /// Server-side cart (E2) — persists across devices, restored on relaunch.
+    func currentCart(userId: UUID) async throws -> Cart
+    func save(_ cart: Cart) async throws -> Cart
+    func clear(userId: UUID) async throws
+}
+
+protocol QuoteRepository: Sendable {
+    /// E6: the only source of a rupee amount the app is ever allowed to
+    /// display or reference in an order. Pricing happens entirely server-side.
+    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote
+}
+
 protocol SlotHoldRepository: Sendable {
     /// Places a 10-minute hold on a slot's remaining capacity for this user.
     /// Throws `.slotUnavailable` if no capacity remains once other active
