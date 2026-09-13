@@ -646,6 +646,85 @@ final class SupabaseRefundRepository: RefundRepository {
     }
 }
 
+final class SupabaseSavedPaymentMethodRepository: SavedPaymentMethodRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func list(userId: UUID) async throws -> [SavedPaymentMethod] {
+        let rows: [SupabaseSavedPaymentMethodRow] = try await client.from("saved_payment_methods")
+            .select().eq("user_id", value: userId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func save(userId: UUID, gatewayTokenId: String, displayLabel: String, makeDefault: Bool) async throws -> SavedPaymentMethod {
+        // Only the gateway's token reference and a display label are ever
+        // sent here — never a PAN/CVV, which this app's client never holds.
+        struct Insert: Encodable {
+            let userId: UUID, gatewayTokenId: String, displayLabel: String, isDefault: Bool
+            enum CodingKeys: String, CodingKey {
+                case userId = "user_id", gatewayTokenId = "gateway_token_id"
+                case displayLabel = "display_label", isDefault = "is_default"
+            }
+        }
+        if makeDefault {
+            try await client.from("saved_payment_methods").update(["is_default": false])
+                .eq("user_id", value: userId).execute()
+        }
+        let rows: [SupabaseSavedPaymentMethodRow] = try await client.from("saved_payment_methods")
+            .insert(Insert(userId: userId, gatewayTokenId: gatewayTokenId, displayLabel: displayLabel, isDefault: makeDefault))
+            .select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func remove(id: UUID) async throws {
+        try await client.from("saved_payment_methods").delete().eq("id", value: id).execute()
+    }
+
+    func setDefault(id: UUID, userId: UUID) async throws {
+        try await client.from("saved_payment_methods").update(["is_default": false])
+            .eq("user_id", value: userId).execute()
+        try await client.from("saved_payment_methods").update(["is_default": true])
+            .eq("id", value: id).eq("user_id", value: userId).execute()
+    }
+}
+
+final class SupabaseSupportRefundAuditRepository: SupportRefundAuditRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func issueSupportRefund(
+        ticketId: UUID, visitId: UUID, issuedByUserId: UUID,
+        kind: SupportRefundAudit.Kind, amountMinorUnits: Int, reason: String
+    ) async throws -> SupportRefundAudit {
+        // Money creation (refund) or wallet credit, plus its audit row, all
+        // happen server-side — this never inserts into refunds,
+        // wallet_ledger, or support_refund_audit directly (RLS forbids all
+        // three for every client role); it only invokes the trusted
+        // issue-support-refund Edge Function.
+        struct Body: Encodable {
+            let ticketId: UUID
+            let visitId: UUID
+            let kind: String
+            let amountMinorUnits: Int
+            let reason: String
+            enum CodingKeys: String, CodingKey {
+                case ticketId = "ticket_id", visitId = "visit_id", kind
+                case amountMinorUnits = "amount_minor_units", reason
+            }
+        }
+        let body = Body(ticketId: ticketId, visitId: visitId, kind: kind.rawValue, amountMinorUnits: amountMinorUnits, reason: reason)
+        let row: SupabaseSupportRefundAuditRow = try await client.functions.invoke("issue-support-refund", options: .init(body: body))
+        return row.toDomain()
+    }
+
+    func auditTrail(ticketId: UUID) async throws -> [SupportRefundAudit] {
+        let rows: [SupabaseSupportRefundAuditRow] = try await client.from("support_refund_audit")
+            .select().eq("ticket_id", value: ticketId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
 final class SupabaseInvoiceRepository: InvoiceRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
@@ -2095,6 +2174,53 @@ private struct SupabaseRescheduleProposalInsert: Encodable {
     init(proposal: RescheduleProposal) {
         id = proposal.id; visitId = proposal.visitId; proposedByRole = proposal.proposedByRole.rawValue
         proposedSlotId = proposal.proposedSlotId; status = proposal.status.rawValue
+    }
+}
+
+private struct SupabaseSavedPaymentMethodRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let gatewayTokenId: String
+    let displayLabel: String
+    let isDefault: Bool
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id", gatewayTokenId = "gateway_token_id"
+        case displayLabel = "display_label", isDefault = "is_default", createdAt = "created_at"
+    }
+
+    func toDomain() -> SavedPaymentMethod {
+        SavedPaymentMethod(id: id, userId: userId, gatewayTokenId: gatewayTokenId,
+                            displayLabel: displayLabel, isDefault: isDefault, createdAt: createdAt)
+    }
+}
+
+private struct SupabaseSupportRefundAuditRow: Decodable {
+    let id: UUID
+    let ticketId: UUID
+    let visitId: UUID
+    let issuedByUserId: UUID
+    let kind: String
+    let amountMinorUnits: Int
+    let reason: String
+    let refundId: UUID?
+    let walletLedgerEntryId: UUID?
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, reason
+        case ticketId = "ticket_id", visitId = "visit_id", issuedByUserId = "issued_by_user_id"
+        case amountMinorUnits = "amount_minor_units", refundId = "refund_id"
+        case walletLedgerEntryId = "wallet_ledger_entry_id", createdAt = "created_at"
+    }
+
+    func toDomain() -> SupportRefundAudit {
+        SupportRefundAudit(id: id, ticketId: ticketId, visitId: visitId, issuedByUserId: issuedByUserId,
+                            kind: SupportRefundAudit.Kind(rawValue: kind) ?? .refund,
+                            amountMinorUnits: amountMinorUnits, reason: reason,
+                            refundId: refundId, walletLedgerEntryId: walletLedgerEntryId, createdAt: createdAt)
     }
 }
 
