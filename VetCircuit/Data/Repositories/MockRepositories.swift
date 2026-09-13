@@ -703,6 +703,26 @@ actor MockVaccinationRepository: VaccinationRepository {
 /// B6: document vault — no real storage backend wired up yet, so "upload"
 /// just fabricates a placeholder `mock-storage://` URL from a UUID-based
 /// filename and keeps the row in memory.
+/// K6: reports are uploaded ops-side (out of this app's scope), so this mock
+/// starts pre-seeded with a couple of demo rows for `MockData.user`'s pet
+/// rather than exposing any way to add one from the client, mirroring the
+/// real repository's read-only contract.
+actor MockLabTestReportRepository: LabTestReportRepository {
+    private var reportsById: [UUID: LabTestReport]
+
+    init(seed: [LabTestReport] = MockData.labTestReports) {
+        reportsById = Dictionary(uniqueKeysWithValues: seed.map { ($0.id, $0) })
+    }
+
+    func reports(petId: UUID) async throws -> [LabTestReport] {
+        reportsById.values.filter { $0.petId == petId }
+    }
+
+    func reports(visitId: UUID) async throws -> [LabTestReport] {
+        reportsById.values.filter { $0.visitId == visitId }
+    }
+}
+
 actor MockPetDocumentRepository: PetDocumentRepository {
     private var documents: [PetDocument] = []
 
@@ -735,7 +755,33 @@ actor MockPrescriptionRepository: PrescriptionRepository {
 }
 
 actor MockPushTokenRepository: PushTokenRepository {
-    func registerDeviceToken(_ token: String, userId: UUID) async throws {}
+    private var tokensByUser: [UUID: String] = [:]
+
+    func registerDeviceToken(_ token: String, userId: UUID) async throws {
+        tokensByUser[userId] = token
+    }
+
+    func hasDeviceToken(userId: UUID) async throws -> Bool {
+        tokensByUser[userId] != nil
+    }
+}
+
+/// J8: no real SMS/WhatsApp gateway is wired in — this mock just records
+/// what would have been sent, for previews and tests to inspect.
+actor MockSMSFallbackRepository: SMSFallbackRepository {
+    private(set) var sentRecords: [SMSFallbackRecord] = []
+
+    func sendFallback(
+        userId: UUID, phone: String, category: TransactionalNotificationCategory,
+        body: String, reason: NotificationDeliveryDecision.FallbackReason
+    ) async throws -> SMSFallbackRecord {
+        let record = SMSFallbackRecord(
+            id: UUID(), userId: userId, phone: phone, category: category,
+            body: body, reason: reason, createdAt: .now
+        )
+        sentRecords.append(record)
+        return record
+    }
 }
 
 /// F9: no vet is on leave by default in the mock — seed a blackout in tests
@@ -929,6 +975,26 @@ enum MockData {
 
     static let visits: [Visit] = []
 
+    /// K6: a demo visit id a seeded `LabTestReport` attaches to — `visits` is
+    /// empty in the mock, so there's no real booked visit to key off; a
+    /// preview only needs *a* stable UUID to demonstrate the report flow.
+    static let demoLabTestVisitId = UUID(uuidString: "00000000-0000-0000-0000-0000000000aa")!
+
+    static let labTestReports: [LabTestReport] = [
+        LabTestReport(
+            id: UUID(), visitId: demoLabTestVisitId, petId: user.pets[0].id,
+            testName: "Complete blood panel", status: .ready,
+            reportFileURL: URL(string: "mock-storage://lab_test_reports/\(demoLabTestVisitId)/cbc.pdf"),
+            resultSummary: "All values within normal range.",
+            availableAt: Calendar.current.date(byAdding: .day, value: -1, to: .now)
+        ),
+        LabTestReport(
+            id: UUID(), visitId: demoLabTestVisitId, petId: user.pets[0].id,
+            testName: "Urinalysis", status: .pending,
+            reportFileURL: nil, resultSummary: nil, availableAt: nil
+        ),
+    ]
+
     /// The full catalog (plan §D): categories, variants, and add-ons with real
     /// prices — the "multiple options for each thing" the v1 model had no
     /// concept of at all.
@@ -1001,6 +1067,22 @@ enum MockData {
                 ServiceVariant(id: UUID(), serviceId: UUID(), name: "Scale & polish", durationMinutes: 40, priceMinorUnits: 149_900),
             ],
             eligibility: ServiceEligibility(requiresPrescriberVet: true)
+        ),
+        // K6: standalone/add-on bookable lab tests, reusing the same
+        // catalog/cart/checkout flow as every other service — the resulting
+        // visit is what a `LabTestReport` later attaches to.
+        Service(
+            id: UUID(), category: .labTest, name: "Lab tests",
+            summary: "Blood panel or urinalysis, sample collected at home and processed by a partner lab.",
+            whatToPrepare: "Fasting may be required for a blood panel — you'll get instructions after booking.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Complete blood panel", durationMinutes: 15, priceMinorUnits: 149_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Urinalysis", durationMinutes: 10, priceMinorUnits: 79_900),
+            ],
+            faqs: [
+                FAQ(id: UUID(), question: "When will my report be ready?",
+                    answer: "Most reports are ready within 24-48 hours; you'll be able to view and share it from the visit's detail page."),
+            ]
         ),
         Service(
             id: UUID(), category: .elderCareVisit, name: "Elder care check-in",
