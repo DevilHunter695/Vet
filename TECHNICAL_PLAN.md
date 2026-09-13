@@ -343,6 +343,13 @@ coupon & catalog management · user lookup + impersonate-read-only (audited) · 
 > **The console is P0, not P2.** Every hour you don't have it, you are running ops with `psql` against
 > production — which is how student projects lose real customer data.
 
+**Built:** refund/credit issuance (admin-web/app/disputes/page.tsx, calling the existing issue-refund
+Edge Function — `refunds` stays select-only under RLS), feature-flag & kill-switch panel
+(admin-web/app/flags/page.tsx, `feature_flags` table, migration 0015), manual status override — audited
+(admin-web/app/visits/page.tsx, `admin_override_visit_status()` RPC, migration 0015, logs to
+`visit_events`). Still open from this list: circuit & slot editor, live visit board with stuck-state
+alerts, coupon & catalog management, user lookup + impersonate-read-only, metrics dashboard.
+
 ### R. Platform services (invisible but P0)
 
 Remote config + feature flags · analytics event pipeline · crash + error reporting (Sentry) · structured
@@ -960,7 +967,9 @@ shells · XcodeGen + GitHub Actions CI · design system (Theme/Mascot/motion) ·
 5. Cancel/reschedule policy + refunds + invoices (F3–F4, G4–G5)
 6. 8-state machine + visit OTP + consent + record (I)
 7. Delete account, consent dashboard, export (A6, A7, O5) — App Store + DPDP blockers
-8. Ops console for verification, refunds, disputes, flags (Q)
+8. ✅ Ops console for verification, refunds, disputes, flags (Q) — verification queue, refund issuance,
+   dispute review, and the feature-flag panel are built; circuit/slot editor, live visit board, coupon
+   management, user lookup/impersonate, and metrics dashboard remain open
 9. Masked calling + chat photos (J2, J4)
 10. Vet payouts (G7) — without it, supply churns
 

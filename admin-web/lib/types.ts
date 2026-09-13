@@ -35,6 +35,32 @@ export interface VetUnpaidBalance {
   unpaid_minor_units: number;
 }
 
+export const VISIT_STATUSES = [
+  "requested", "confirmed", "assigned", "en_route", "arrived", "in_progress",
+  "completed", "cancelled_by_user", "cancelled_by_vet", "no_show_user", "no_show_vet",
+  "disputed", "resolved",
+] as const;
+
+export type VisitStatus = (typeof VISIT_STATUSES)[number];
+
+export interface VisitRow {
+  id: string;
+  user_id: string;
+  vet_id: string;
+  status: VisitStatus;
+  scheduled_at: string;
+  completed_at: string | null;
+  payment_id: string | null;
+  vets?: { name: string };
+  payments?: { id: string; amount_minor_units: number; status: string } | null;
+}
+
+export interface FeatureFlag {
+  name: string;
+  enabled: boolean;
+  description: string | null;
+}
+
 export interface ReviewRow {
   id: string;
   visit_id: string;
