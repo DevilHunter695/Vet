@@ -1025,3 +1025,181 @@ struct DunningPolicyTests {
         #expect(!DunningPolicy.shouldAutoDowngrade(state: state, now: .now.addingTimeInterval(86400 * 30)))
     }
 }
+
+// MARK: - C3/C4: discovery filters & sort
+
+@Suite("CircuitFilter")
+struct CircuitFilterTests {
+    private func makeCircuit(vet: Vet, slots: [ScheduleSlot] = []) -> Circuit {
+        Circuit(id: UUID(), vetId: vet.id, vet: vet, clusterArea: "Test Area",
+                schedule: slots.isEmpty ? [ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(3600), endTime: .now.addingTimeInterval(7200))] : slots)
+    }
+
+    @Test("an empty filter matches everything")
+    func emptyFilterMatchesAll() {
+        let vet = Vet(id: UUID(), name: "Dr. Test", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 4.0, reviewCount: 1, photoURL: nil)
+        #expect(CircuitFilter().matches(makeCircuit(vet: vet)))
+    }
+
+    @Test("rating filter excludes a lower-rated vet")
+    func ratingFilterExcludesLowerRated() {
+        let vet = Vet(id: UUID(), name: "Dr. Test", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 3.5, reviewCount: 1, photoURL: nil)
+        let filter = CircuitFilter(minRating: 4.0)
+        #expect(!filter.matches(makeCircuit(vet: vet)))
+    }
+
+    @Test("species filter only matches a vet that handles that species")
+    func speciesFilterMatchesHandledSpecies() {
+        let vet = Vet(id: UUID(), name: "Dr. Test", licenseNumber: "VCI-1", verificationStatus: .verified,
+                      rating: 4.5, reviewCount: 1, photoURL: nil, speciesHandled: [.dog])
+        #expect(CircuitFilter(species: .dog).matches(makeCircuit(vet: vet)))
+        #expect(!CircuitFilter(species: .cat).matches(makeCircuit(vet: vet)))
+    }
+
+    @Test("language filter is case-insensitive")
+    func languageFilterCaseInsensitive() {
+        let vet = Vet(id: UUID(), name: "Dr. Test", licenseNumber: "VCI-1", verificationStatus: .verified,
+                      rating: 4.5, reviewCount: 1, photoURL: nil, languages: ["Hindi"])
+        #expect(CircuitFilter(language: "hindi").matches(makeCircuit(vet: vet)))
+        #expect(!CircuitFilter(language: "tamil").matches(makeCircuit(vet: vet)))
+    }
+
+    @Test("gender filter matches only the requested gender")
+    func genderFilterMatches() {
+        let vet = Vet(id: UUID(), name: "Dr. Test", licenseNumber: "VCI-1", verificationStatus: .verified,
+                      rating: 4.5, reviewCount: 1, photoURL: nil, gender: .female)
+        #expect(CircuitFilter(gender: .female).matches(makeCircuit(vet: vet)))
+        #expect(!CircuitFilter(gender: .male).matches(makeCircuit(vet: vet)))
+    }
+
+    @Test("time-of-day filter requires at least one matching slot")
+    func timeOfDayFilterRequiresMatchingSlot() {
+        let vet = Vet(id: UUID(), name: "Dr. Test", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 4.5, reviewCount: 1, photoURL: nil)
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "Asia/Kolkata")!
+        let morningSlot = ScheduleSlot(id: UUID(), dayOfWeek: 2,
+                                        startTime: calendar.date(bySettingHour: 8, minute: 0, second: 0, of: .now)!,
+                                        endTime: calendar.date(bySettingHour: 9, minute: 0, second: 0, of: .now)!)
+        let circuit = makeCircuit(vet: vet, slots: [morningSlot])
+        var filter = CircuitFilter()
+        filter.timeOfDay = .morning
+        #expect(filter.matches(circuit))
+        filter.timeOfDay = .evening
+        #expect(!filter.matches(circuit))
+    }
+
+    @Test("a circuit with no vet attached fails any vet-level filter rather than passing blindly")
+    func noVetFailsVetLevelFilter() {
+        let circuit = Circuit(id: UUID(), vetId: UUID(), vet: nil, clusterArea: "Test Area", schedule: [])
+        #expect(!CircuitFilter(minRating: 4.0).matches(circuit))
+    }
+
+    @Test("apply filters a list down to only the matches")
+    func applyFiltersList() {
+        let verifiedGoodVet = Vet(id: UUID(), name: "A", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 4.9, reviewCount: 1, photoURL: nil)
+        let lowRatedVet = Vet(id: UUID(), name: "B", licenseNumber: "VCI-2", verificationStatus: .verified, rating: 3.0, reviewCount: 1, photoURL: nil)
+        let circuits = [makeCircuit(vet: verifiedGoodVet), makeCircuit(vet: lowRatedVet)]
+        let result = CircuitFilter.apply(CircuitFilter(minRating: 4.0), to: circuits)
+        #expect(result.count == 1)
+        #expect(result.first?.vetId == verifiedGoodVet.id)
+    }
+}
+
+@Suite("CircuitSortOption")
+struct CircuitSortOptionTests {
+    @Test("topRated sorts by vet rating descending")
+    func topRatedSortsDescending() {
+        let lowVet = Vet(id: UUID(), name: "Low", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 3.5, reviewCount: 1, photoURL: nil)
+        let highVet = Vet(id: UUID(), name: "High", licenseNumber: "VCI-2", verificationStatus: .verified, rating: 4.9, reviewCount: 1, photoURL: nil)
+        let circuits = [
+            Circuit(id: UUID(), vetId: lowVet.id, vet: lowVet, clusterArea: "A", schedule: []),
+            Circuit(id: UUID(), vetId: highVet.id, vet: highVet, clusterArea: "B", schedule: []),
+        ]
+        let sorted = CircuitSortOption.sort(circuits, by: .topRated)
+        #expect(sorted.first?.vetId == highVet.id)
+    }
+
+    @Test("soonest sorts by earliest upcoming slot")
+    func soonestSortsByEarliestSlot() {
+        let vet = Vet(id: UUID(), name: "Test", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 4.0, reviewCount: 1, photoURL: nil)
+        let later = Circuit(id: UUID(), vetId: vet.id, vet: vet, clusterArea: "A",
+                             schedule: [ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(7200), endTime: .now.addingTimeInterval(10800))])
+        let sooner = Circuit(id: UUID(), vetId: vet.id, vet: vet, clusterArea: "B",
+                              schedule: [ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(1800), endTime: .now.addingTimeInterval(3600))])
+        let sorted = CircuitSortOption.sort([later, sooner], by: .soonest)
+        #expect(sorted.first?.clusterArea == "B")
+    }
+
+    @Test("previouslyBooked ranks a previously-booked vet's circuit first")
+    func previouslyBookedRanksFirst() {
+        let newVet = Vet(id: UUID(), name: "New", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 4.9, reviewCount: 1, photoURL: nil)
+        let repeatVet = Vet(id: UUID(), name: "Repeat", licenseNumber: "VCI-2", verificationStatus: .verified, rating: 4.0, reviewCount: 1, photoURL: nil)
+        let circuits = [
+            Circuit(id: UUID(), vetId: newVet.id, vet: newVet, clusterArea: "A", schedule: []),
+            Circuit(id: UUID(), vetId: repeatVet.id, vet: repeatVet, clusterArea: "B", schedule: []),
+        ]
+        let sorted = CircuitSortOption.sort(circuits, by: .previouslyBooked, previouslyBookedVetIds: [repeatVet.id])
+        #expect(sorted.first?.vetId == repeatVet.id)
+    }
+}
+
+@Suite("GetCircuitsUseCase verification filtering")
+struct GetCircuitsUseCaseVerificationTests {
+    @Test("filters out circuits whose vet isn't verified (L1/L3)")
+    func excludesUnverifiedVets() async throws {
+        let repo = MockCircuitRepository()
+        let useCase = GetCircuitsUseCase(repository: repo)
+        let circuits = try await useCase.execute(area: nil, vertical: .vet)
+        #expect(!circuits.isEmpty)
+        #expect(circuits.allSatisfy { $0.vet?.verificationStatus == .verified })
+    }
+}
+
+// MARK: - C5: vet profile / ratings histogram
+
+@Suite("GetVetProfileUseCase")
+struct GetVetProfileUseCaseTests {
+    @Test("histogram counts reviews per star and computes the average")
+    func histogramCountsAndAverages() {
+        let useCase = GetVetProfileUseCase(reviewRepository: MockReviewRepository())
+        let vetId = UUID()
+        let reviews = [5, 5, 4, 3, 5].map {
+            Review(id: UUID(), visitId: UUID(), vetId: vetId, userId: UUID(), rating: $0, comment: nil, createdAt: .now)
+        }
+        let histogram = useCase.histogram(for: reviews)
+        #expect(histogram.totalCount == 5)
+        #expect(histogram.countByStars[5] == 3)
+        #expect(histogram.countByStars[4] == 1)
+        #expect(histogram.countByStars[3] == 1)
+        #expect(abs(histogram.averageRating - 4.4) < 0.001)
+    }
+
+    @Test("an empty review list produces a zeroed histogram, not a crash")
+    func emptyReviewsProduceZeroedHistogram() {
+        let useCase = GetVetProfileUseCase(reviewRepository: MockReviewRepository())
+        let histogram = useCase.histogram(for: [])
+        #expect(histogram.totalCount == 0)
+        #expect(histogram.averageRating == 0)
+    }
+}
+
+// MARK: - C11: emergency path
+
+@Suite("ListEmergencyClinicsUseCase")
+struct ListEmergencyClinicsUseCaseTests {
+    @Test("lists the mock clinic directory")
+    func listsClinics() async throws {
+        let useCase = ListEmergencyClinicsUseCase(repository: MockEmergencyClinicRepository())
+        let clinics = try await useCase.execute()
+        #expect(!clinics.isEmpty)
+        #expect(clinics.allSatisfy { $0.isOpen24x7 })
+    }
+
+    @Test("sorts by proximity when a location is given")
+    func sortsByProximity() async throws {
+        let useCase = ListEmergencyClinicsUseCase(repository: MockEmergencyClinicRepository())
+        let near = MockData.emergencyClinics[0]
+        let clinics = try await useCase.execute(fromLatitude: near.latitude, longitude: near.longitude)
+        #expect(clinics.first?.id == near.id)
+    }
+}

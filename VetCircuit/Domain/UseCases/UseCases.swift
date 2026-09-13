@@ -5,11 +5,24 @@ import Foundation
 struct GetCircuitsUseCase {
     let repository: CircuitRepository
 
-    func execute(area: String?, vertical: Vertical = .vet) async throws -> [Circuit] {
+    /// C3/C4: `filter` narrows the fetched list, `sort` orders what's left —
+    /// both client-side over the already-fetched circuits (simpler than a
+    /// server round trip per filter change, and still correct since a
+    /// customer's whole area is a small list). `previouslyBookedVetIds`
+    /// backs the "previously booked" sort without this use case needing its
+    /// own visit-history dependency.
+    func execute(
+        area: String?, vertical: Vertical = .vet,
+        filter: CircuitFilter = CircuitFilter(), sort: CircuitSortOption? = nil,
+        catalog: [Service] = [], previouslyBookedVetIds: Set<UUID> = []
+    ) async throws -> [Circuit] {
         let circuits = try await repository.listCircuits(area: area)
-        return circuits
-            .filter { $0.vertical == vertical }
-            .sorted { $0.clusterArea < $1.clusterArea }
+        let scoped = circuits.filter { $0.vertical == vertical }
+        let filtered = CircuitFilter.apply(filter, to: scoped, catalog: catalog)
+        if let sort {
+            return CircuitSortOption.sort(filtered, by: sort, previouslyBookedVetIds: previouslyBookedVetIds)
+        }
+        return filtered.sorted { $0.clusterArea < $1.clusterArea }
     }
 }
 
@@ -482,6 +495,53 @@ struct ManageNotificationPreferencesUseCase {
 /// O7/O8: evaluated once at launch against the running app's
 /// `CFBundleShortVersionString` — the single gate `RootView` checks before
 /// showing sign-in or the tab bar.
+/// C11: fetches the emergency clinic directory, closest-first — pure
+/// straight-line distance is good enough for "which is nearest", the same
+/// tradeoff `MockAddressRepository.matchCluster` makes for geofencing.
+struct ListEmergencyClinicsUseCase {
+    let repository: EmergencyClinicRepository
+
+    func execute(fromLatitude latitude: Double? = nil, longitude: Double? = nil) async throws -> [EmergencyClinic] {
+        let clinics = try await repository.listClinics()
+        guard let latitude, let longitude else { return clinics }
+        func distanceSquared(_ clinic: EmergencyClinic) -> Double {
+            let dLat = clinic.latitude - latitude
+            let dLng = clinic.longitude - longitude
+            return dLat * dLat + dLng * dLng
+        }
+        return clinics.sorted { distanceSquared($0) < distanceSquared($1) }
+    }
+}
+
+/// C5: assembles the ratings histogram for a vet's profile from raw reviews
+/// — kept as pure domain logic so the histogram math is unit-testable
+/// without rendering a single pixel.
+struct GetVetProfileUseCase {
+    let reviewRepository: ReviewRepository
+
+    struct RatingsHistogram: Equatable {
+        /// Count of reviews per star rating, 1...5.
+        var countByStars: [Int: Int]
+        var totalCount: Int
+        var averageRating: Double
+    }
+
+    func reviews(vetId: UUID) async throws -> [Review] {
+        try await reviewRepository.reviews(vetId: vetId)
+    }
+
+    func histogram(for reviews: [Review]) -> RatingsHistogram {
+        var counts: [Int: Int] = [1: 0, 2: 0, 3: 0, 4: 0, 5: 0]
+        for review in reviews {
+            let clamped = min(5, max(1, review.rating))
+            counts[clamped, default: 0] += 1
+        }
+        let total = reviews.count
+        let average = total == 0 ? 0 : Double(reviews.map(\.rating).reduce(0, +)) / Double(total)
+        return RatingsHistogram(countByStars: counts, totalCount: total, averageRating: average)
+    }
+}
+
 struct CheckAppConfigUseCase {
     let repository: AppConfigRepository
 

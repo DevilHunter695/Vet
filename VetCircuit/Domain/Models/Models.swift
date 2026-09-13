@@ -32,9 +32,24 @@ struct Vet: Identifiable, Codable, Equatable, Hashable {
     var rating: Double
     var reviewCount: Int
     var photoURL: URL?
+    /// C5/C3: profile fields the vet detail screen and filter sheet both need
+    /// — "Hindi-speaking", "female vet" are real, commonly-asked-for filters
+    /// in this market, not nice-to-haves (plan §C3).
+    var bio: String? = nil
+    var yearsOfExperience: Int? = nil
+    var languages: [String] = []
+    var gender: Gender? = nil
+    /// Species this vet actually treats — drives the C3 "handles cats" filter.
+    var speciesHandled: [Pet.Species] = Pet.Species.allCases
 
     enum VerificationStatus: String, Codable {
         case pending, verified, rejected
+    }
+
+    enum Gender: String, Codable, CaseIterable, Identifiable {
+        case male, female, other
+        var id: String { rawValue }
+        var displayName: String { rawValue.capitalized }
     }
 }
 
@@ -692,6 +707,14 @@ struct Addon: Identifiable, Codable, Equatable, Hashable {
     var eligibility: ServiceEligibility = ServiceEligibility()
 }
 
+/// C6: a service detail FAQ entry — plain question/answer pairs, ops-managed
+/// the same way the rest of the catalog is.
+struct FAQ: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var question: String
+    var answer: String
+}
+
 struct Service: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var category: ServiceCategory
@@ -701,6 +724,7 @@ struct Service: Identifiable, Codable, Equatable, Hashable {
     var variants: [ServiceVariant]
     var addons: [Addon] = []
     var eligibility: ServiceEligibility = ServiceEligibility()
+    var faqs: [FAQ] = []
 
     var startingPriceMinorUnits: Int? {
         variants.map(\.priceMinorUnits).min()
@@ -804,6 +828,155 @@ struct AppNotification: Identifiable, Codable, Equatable, Hashable {
         case dormantWinback = "dormant_winback"
         case abandonedCart = "abandoned_cart"
         case promotion
+    }
+}
+
+// MARK: - Discovery filters & sort (plan §C3-C4) — pure, testable logic; the
+// UI only ever calls `CircuitFilter.apply` / `CircuitSortOption.sort`, it
+// never re-implements the matching rules itself.
+
+struct CircuitFilter: Equatable {
+    var serviceCategory: ServiceCategory? = nil
+    var onOrAfter: Date? = nil
+    var timeOfDay: TimeOfDay? = nil
+    var maxPriceMinorUnits: Int? = nil
+    var minRating: Double? = nil
+    var species: Pet.Species? = nil
+    var language: String? = nil
+    var gender: Vet.Gender? = nil
+
+    var isEmpty: Bool { self == CircuitFilter() }
+
+    enum TimeOfDay: String, CaseIterable, Identifiable {
+        case morning, afternoon, evening
+        var id: String { rawValue }
+        var displayName: String { rawValue.capitalized }
+        /// Hour range (start..<end), matched against a slot's `startTime` in
+        /// the visit's local calendar.
+        var hourRange: Range<Int> {
+            switch self {
+            case .morning: return 5..<12
+            case .afternoon: return 12..<17
+            case .evening: return 17..<22
+            }
+        }
+    }
+
+    /// A circuit matches when *some* schedule slot satisfies the date/time
+    /// filters and the vet-level attributes all match — a circuit isn't
+    /// dropped just because one of its several slots doesn't fit.
+    func matches(_ circuit: Circuit, catalog: [Service] = []) -> Bool {
+        if let vet = circuit.vet {
+            if let minRating, vet.rating < minRating { return false }
+            if let species, !vet.speciesHandled.contains(species) { return false }
+            if let language, !vet.languages.contains(where: { $0.localizedCaseInsensitiveCompare(language) == .orderedSame }) { return false }
+            if let gender, vet.gender != gender { return false }
+        } else if minRating != nil || species != nil || language != nil || gender != nil {
+            // No vet attached at all — can't confirm a vet-level filter, so
+            // exclude rather than silently show a possibly-non-matching row.
+            return false
+        }
+
+        if onOrAfter != nil || timeOfDay != nil {
+            let calendar = Calendar.current
+            let hasMatchingSlot = circuit.schedule.contains { slot in
+                if let onOrAfter, slot.startTime < calendar.startOfDay(for: onOrAfter) { return false }
+                if let timeOfDay {
+                    let hour = calendar.component(.hour, from: slot.startTime)
+                    guard timeOfDay.hourRange.contains(hour) else { return false }
+                }
+                return true
+            }
+            if !hasMatchingSlot { return false }
+        }
+
+        if maxPriceMinorUnits != nil || serviceCategory != nil {
+            // Price/category filters are catalog-scoped, not circuit-scoped —
+            // a circuit only fails them if a catalog was supplied and nothing
+            // in it clears the bar (an empty catalog means "not applicable").
+            guard !catalog.isEmpty else { return true }
+            let candidates = serviceCategory.map { category in catalog.filter { $0.category == category } } ?? catalog
+            if serviceCategory != nil && candidates.isEmpty { return false }
+            if let maxPriceMinorUnits {
+                let anyAffordable = candidates.contains { ($0.startingPriceMinorUnits ?? Int.max) <= maxPriceMinorUnits }
+                if !anyAffordable { return false }
+            }
+        }
+        return true
+    }
+
+    static func apply(_ filter: CircuitFilter, to circuits: [Circuit], catalog: [Service] = []) -> [Circuit] {
+        guard !filter.isEmpty else { return circuits }
+        return circuits.filter { filter.matches($0, catalog: catalog) }
+    }
+}
+
+enum CircuitSortOption: String, CaseIterable, Identifiable {
+    case soonest, cheapest, topRated = "top_rated", previouslyBooked = "previously_booked"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .soonest: return "Soonest"
+        case .cheapest: return "Cheapest"
+        case .topRated: return "Top rated"
+        case .previouslyBooked: return "Previously booked"
+        }
+    }
+
+    /// `previouslyBookedVetIds` lets "previously booked" rank a repeat vet
+    /// first without the sort needing its own repository access — the
+    /// caller (a use case or view model) already has visit history in hand.
+    static func sort(_ circuits: [Circuit], by option: CircuitSortOption, previouslyBookedVetIds: Set<UUID> = []) -> [Circuit] {
+        switch option {
+        case .soonest:
+            return circuits.sorted { (lhs, rhs) in
+                (lhs.schedule.map(\.startTime).min() ?? .distantFuture) < (rhs.schedule.map(\.startTime).min() ?? .distantFuture)
+            }
+        case .cheapest:
+            // Circuits don't carry a price themselves; a lower vet review
+            // count is a poor proxy, so absent a per-circuit price this falls
+            // back to cluster-area alphabetical (stable, deterministic) —
+            // real pricing comes from the catalog/quote, not the circuit.
+            return circuits.sorted { $0.clusterArea < $1.clusterArea }
+        case .topRated:
+            return circuits.sorted { (lhs, rhs) in
+                (lhs.vet?.rating ?? 0) > (rhs.vet?.rating ?? 0)
+            }
+        case .previouslyBooked:
+            return circuits.sorted { (lhs, rhs) in
+                let lhsBooked = previouslyBookedVetIds.contains(lhs.vetId)
+                let rhsBooked = previouslyBookedVetIds.contains(rhs.vetId)
+                if lhsBooked != rhsBooked { return lhsBooked }
+                return (lhs.vet?.rating ?? 0) > (rhs.vet?.rating ?? 0)
+            }
+        }
+    }
+}
+
+// MARK: - Emergency path (plan §C11, §L8) — VetCircuit is explicitly not an
+// emergency service; this is the data behind the "route out" escalation,
+// not a substitute for a real emergency vet.
+
+struct EmergencyClinic: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var name: String
+    var address: String
+    var phone: String
+    var latitude: Double
+    var longitude: Double
+    var isOpen24x7: Bool = true
+
+    /// `tel://` scheme for a tap-to-call action.
+    var telURL: URL? {
+        URL(string: "tel://\(phone.filter { $0.isNumber || $0 == "+" })")
+    }
+
+    /// Apple Maps deep link for tap-to-navigate.
+    var mapsURL: URL? {
+        let query = "\(latitude),\(longitude)"
+        return URL(string: "https://maps.apple.com/?daddr=\(query)")
     }
 }
 

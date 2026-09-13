@@ -33,6 +33,8 @@ final class DependencyContainer {
     let packageRepository: PackageRepository
     let notificationPreferencesRepository: NotificationPreferencesRepository
     let appConfigRepository: AppConfigRepository
+    /// C11: 24x7 emergency clinic directory.
+    let emergencyClinicRepository: EmergencyClinicRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -64,6 +66,7 @@ final class DependencyContainer {
         self.packageRepository = MockPackageRepository()
         self.notificationPreferencesRepository = MockNotificationPreferencesRepository()
         self.appConfigRepository = MockAppConfigRepository()
+        self.emergencyClinicRepository = MockEmergencyClinicRepository()
     }
 
     // MARK: Use case factories
@@ -107,4 +110,6 @@ final class DependencyContainer {
         ManageNotificationPreferencesUseCase(repository: notificationPreferencesRepository)
     }
     func checkAppConfigUseCase() -> CheckAppConfigUseCase { CheckAppConfigUseCase(repository: appConfigRepository) }
+    func listEmergencyClinicsUseCase() -> ListEmergencyClinicsUseCase { ListEmergencyClinicsUseCase(repository: emergencyClinicRepository) }
+    func getVetProfileUseCase() -> GetVetProfileUseCase { GetVetProfileUseCase(reviewRepository: reviewRepository) }
 }

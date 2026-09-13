@@ -26,9 +26,13 @@ actor MockAuthRepository: AuthRepository {
 }
 
 actor MockCircuitRepository: CircuitRepository {
+    /// L1/L3: a vet must be verified before "going live" — an unverified vet
+    /// was previously visible and bookable here, which is the real gap plan
+    /// §L1/§L3 call out, not just a missing badge on an already-safe list.
     func listCircuits(area: String?) async throws -> [Circuit] {
-        guard let area else { return MockData.circuits }
-        return MockData.circuits.filter { $0.clusterArea.localizedCaseInsensitiveContains(area) }
+        let verifiedOnly = MockData.circuits.filter { $0.vet?.verificationStatus == .verified }
+        guard let area else { return verifiedOnly }
+        return verifiedOnly.filter { $0.clusterArea.localizedCaseInsensitiveContains(area) }
     }
 
     func circuit(id: UUID) async throws -> Circuit {
@@ -429,9 +433,25 @@ actor MockChatRepository: ChatRepository {
 }
 
 actor MockReviewRepository: ReviewRepository {
+    private var submitted: [Review] = []
+
     func submit(visitId: UUID, rating: Int, comment: String?) async throws -> Review {
-        Review(id: UUID(), visitId: visitId, vetId: MockData.circuits[0].vetId, userId: MockData.user.id,
-               rating: rating, comment: comment, createdAt: .now)
+        let review = Review(id: UUID(), visitId: visitId, vetId: MockData.circuits[0].vetId, userId: MockData.user.id,
+                             rating: rating, comment: comment, createdAt: .now)
+        submitted.append(review)
+        return review
+    }
+
+    func reviews(vetId: UUID) async throws -> [Review] {
+        (MockData.reviews[vetId] ?? []) + submitted.filter { $0.vetId == vetId }
+    }
+}
+
+/// C11: mock 24x7 emergency clinic list — a handful of real Bangalore-area
+/// examples so the emergency path has something plausible to route to.
+actor MockEmergencyClinicRepository: EmergencyClinicRepository {
+    func listClinics() async throws -> [EmergencyClinic] {
+        MockData.emergencyClinics
     }
 }
 
@@ -546,19 +566,40 @@ enum MockData {
     static let vets: [Vet] = [
         Vet(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
             name: "Dr. Rohan Mehta", licenseNumber: "VCI-2024-11234",
-            verificationStatus: .verified, rating: 4.8, reviewCount: 132, photoURL: nil),
+            verificationStatus: .verified, rating: 4.8, reviewCount: 132, photoURL: nil,
+            bio: "Small-animal vet with a focus on gentle, at-home care for anxious pets.",
+            yearsOfExperience: 9, languages: ["English", "Hindi"], gender: .male,
+            speciesHandled: [.dog, .cat]),
         Vet(id: UUID(), name: "Dr. Priya Nair", licenseNumber: "VCI-2023-88213",
-            verificationStatus: .verified, rating: 4.9, reviewCount: 211, photoURL: nil),
+            verificationStatus: .verified, rating: 4.9, reviewCount: 211, photoURL: nil,
+            bio: "12 years treating dogs and cats across Bangalore, with a special interest in dermatology.",
+            yearsOfExperience: 12, languages: ["English", "Hindi", "Kannada"], gender: .female,
+            speciesHandled: [.dog, .cat, .bird]),
         Vet(id: UUID(), name: "Dr. Arjun Kapoor", licenseNumber: "VCI-2022-55021",
-            verificationStatus: .verified, rating: 4.6, reviewCount: 87, photoURL: nil),
+            verificationStatus: .verified, rating: 4.6, reviewCount: 87, photoURL: nil,
+            bio: "General practitioner focused on preventive care and vaccinations.",
+            yearsOfExperience: 6, languages: ["English", "Hindi"], gender: .male,
+            speciesHandled: [.dog, .cat, .other]),
         Vet(id: UUID(), name: "Dr. Sneha Reddy", licenseNumber: "VCI-2024-90344",
-            verificationStatus: .verified, rating: 4.7, reviewCount: 156, photoURL: nil),
+            verificationStatus: .verified, rating: 4.7, reviewCount: 156, photoURL: nil,
+            bio: "Passionate about grooming and dental care for dogs of all breeds.",
+            yearsOfExperience: 7, languages: ["English", "Telugu", "Kannada"], gender: .female,
+            speciesHandled: [.dog]),
         Vet(id: UUID(), name: "Dr. Vikram Singh", licenseNumber: "VCI-2021-67789",
-            verificationStatus: .pending, rating: 4.3, reviewCount: 29, photoURL: nil),
+            verificationStatus: .pending, rating: 4.3, reviewCount: 29, photoURL: nil,
+            bio: "Newly onboarded — verification in progress.",
+            yearsOfExperience: 4, languages: ["English", "Hindi"], gender: .male,
+            speciesHandled: [.dog, .cat]),
         Vet(id: UUID(), name: "Dr. Meera Iyer", licenseNumber: "VCI-2023-40012",
-            verificationStatus: .verified, rating: 5.0, reviewCount: 64, photoURL: nil),
+            verificationStatus: .verified, rating: 5.0, reviewCount: 64, photoURL: nil,
+            bio: "Diagnostics specialist — comfortable with everything from blood panels to X-rays at home.",
+            yearsOfExperience: 10, languages: ["English", "Tamil"], gender: .female,
+            speciesHandled: [.dog, .cat, .bird, .other]),
         Vet(id: UUID(), name: "Dr. Karthik Rao", licenseNumber: "VCI-2020-33456",
-            verificationStatus: .verified, rating: 4.5, reviewCount: 198, photoURL: nil),
+            verificationStatus: .verified, rating: 4.5, reviewCount: 198, photoURL: nil,
+            bio: "14 years of practice, with a soft spot for senior pet wellness.",
+            yearsOfExperience: 14, languages: ["English", "Kannada"], gender: .male,
+            speciesHandled: [.dog, .cat]),
     ]
 
     private static let areas = [
@@ -599,6 +640,14 @@ enum MockData {
                 Addon(id: UUID(), name: "Nail trim", priceMinorUnits: 14_900),
                 Addon(id: UUID(), name: "Deworming", priceMinorUnits: 24_900),
                 Addon(id: UUID(), name: "Blood sample pickup", priceMinorUnits: 39_900),
+            ],
+            faqs: [
+                FAQ(id: UUID(), question: "Do I need to be present for the whole visit?",
+                    answer: "Yes — an adult needs to be home to let the vet in and stay with the pet."),
+                FAQ(id: UUID(), question: "What if my pet needs a follow-up?",
+                    answer: "Follow-ups within 14 days of this visit are free — just book the \"Follow-up\" variant."),
+                FAQ(id: UUID(), question: "Can I reschedule after booking?",
+                    answer: "Yes, up to 4 hours before the slot without any fee."),
             ]
         ),
         Service(
@@ -696,6 +745,35 @@ enum MockData {
             ],
             priceMinorUnits: 99_900
         ),
+    ]
+
+    /// C5: sample reviews per vet, used to build the ratings histogram and
+    /// review list on the vet detail screen.
+    static let reviews: [UUID: [Review]] = {
+        var result: [UUID: [Review]] = [:]
+        for vet in vets where vet.reviewCount > 0 {
+            let ratings = [5, 5, 4, 5, 3, 4, 5, 2, 5, 4]
+            result[vet.id] = ratings.enumerated().map { index, rating in
+                Review(id: UUID(), visitId: UUID(), vetId: vet.id, userId: UUID(), rating: rating,
+                       comment: index % 3 == 0 ? "Very gentle with my dog, on time too." : nil,
+                       createdAt: Calendar.current.date(byAdding: .day, value: -index * 3, to: .now) ?? .now)
+            }
+        }
+        return result
+    }()
+
+    /// C11: a handful of real, well-known Bangalore 24x7 emergency clinics —
+    /// illustrative examples for the mock, not a claim of a live partnership.
+    static let emergencyClinics: [EmergencyClinic] = [
+        EmergencyClinic(id: UUID(), name: "CARE Veterinary Emergency & Referral Hospital",
+                         address: "80 Feet Road, Indiranagar, Bangalore", phone: "+918041234567",
+                         latitude: 12.9719, longitude: 77.6412, isOpen24x7: true),
+        EmergencyClinic(id: UUID(), name: "Cessna Lifeline Veterinary Hospital",
+                         address: "Sarjapur Road, Bellandur, Bangalore", phone: "+918049876543",
+                         latitude: 12.9260, longitude: 77.6762, isOpen24x7: true),
+        EmergencyClinic(id: UUID(), name: "Vet Care Corner 24x7 Clinic",
+                         address: "Koramangala 5th Block, Bangalore", phone: "+918022334455",
+                         latitude: 12.9352, longitude: 77.6146, isOpen24x7: true),
     ]
 }
 
