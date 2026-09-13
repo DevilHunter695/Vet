@@ -39,6 +39,26 @@ actor MockCircuitRepository: CircuitRepository {
     }
 }
 
+actor MockSlotHoldRepository: SlotHoldRepository {
+    private var holds: [SlotHold] = []
+
+    func placeHold(slotId: UUID, userId: UUID) async throws -> SlotHold {
+        holds.removeAll(\.isExpired)
+        let hold = SlotHold(id: UUID(), slotId: slotId, userId: userId, expiresAt: Date().addingTimeInterval(SlotHold.holdDuration))
+        holds.append(hold)
+        return hold
+    }
+
+    func releaseHold(id: UUID) async throws {
+        holds.removeAll { $0.id == id }
+    }
+
+    func activeHolds(slotId: UUID) async throws -> [SlotHold] {
+        holds.removeAll(\.isExpired)
+        return holds.filter { $0.slotId == slotId }
+    }
+}
+
 actor MockAddressRepository: AddressRepository {
     private var addresses: [Address] = [MockData.address]
 

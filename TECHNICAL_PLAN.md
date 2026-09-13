@@ -194,7 +194,7 @@ Service (Home consultation)
 | E4 | Coupon / promo code entry + validation + stacking rules | P1 | ⛔ | |
 | E5 | Wallet credits & loyalty point redemption at checkout | P1 | 🔨 | Loyalty exists; redemption doesn't |
 | E6 | **Server-authoritative quote**: `POST /quotes` returns a signed, TTL'd quote; order must reference a valid quote | **P0** | ⛔ | Prevents client price tampering entirely |
-| E7 | Slot **hold** (10 min) during checkout, auto-release | **P0** | ⛔ | Prevents the "slot taken while I was paying" disaster |
+| E7 | Slot **hold** (10 min) during checkout, auto-release | **P0** | 🔨 | Prevents the "slot taken while I was paying" disaster |
 | E8 | Payment method choice: UPI intent, cards, netbanking, wallets, **pay-after-visit (cash/UPI to vet)** | P0 | 🔨 | Cash-on-visit is table stakes in India |
 | E9 | Saved payment methods (gateway-tokenized, never stored by you) | P1 | ⛔ | |
 | E10 | Order confirmation screen + receipt email/SMS | P0 | 🔨 | |

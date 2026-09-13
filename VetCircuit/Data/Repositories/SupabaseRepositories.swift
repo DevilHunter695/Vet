@@ -77,6 +77,36 @@ final class SupabaseCircuitRepository: CircuitRepository {
     }
 }
 
+final class SupabaseSlotHoldRepository: SlotHoldRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func placeHold(slotId: UUID, userId: UUID) async throws -> SlotHold {
+        struct Insert: Encodable {
+            let slotId: UUID
+            let userId: UUID
+            let expiresAt: Date
+            enum CodingKeys: String, CodingKey { case slotId = "slot_id", userId = "user_id", expiresAt = "expires_at" }
+        }
+        let insert = Insert(slotId: slotId, userId: userId, expiresAt: Date().addingTimeInterval(SlotHold.holdDuration))
+        let rows: [SupabaseSlotHoldRow] = try await client.from("slot_holds").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func releaseHold(id: UUID) async throws {
+        try await client.from("slot_holds").delete().eq("id", value: id).execute()
+    }
+
+    func activeHolds(slotId: UUID) async throws -> [SlotHold] {
+        let rows: [SupabaseSlotHoldRow] = try await client
+            .from("slot_holds").select().eq("slot_id", value: slotId)
+            .gt("expires_at", value: ISO8601DateFormatter().string(from: Date()))
+            .execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
 final class SupabaseAddressRepository: AddressRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
@@ -236,6 +266,17 @@ private struct SupabaseCircuitRow: Decodable {
         Circuit(id: id, vetId: vetId, vet: vet?.toDomain(), clusterArea: clusterArea,
                 schedule: (schedule ?? []).map { $0.toDomain() }, vertical: Vertical(rawValue: vertical) ?? .vet)
     }
+}
+
+private struct SupabaseSlotHoldRow: Decodable {
+    let id: UUID
+    let slotId: UUID
+    let userId: UUID
+    let expiresAt: Date
+
+    enum CodingKeys: String, CodingKey { case id, slotId = "slot_id", userId = "user_id", expiresAt = "expires_at" }
+
+    func toDomain() -> SlotHold { SlotHold(id: id, slotId: slotId, userId: userId, expiresAt: expiresAt) }
 }
 
 private struct SupabaseAddressRow: Decodable {

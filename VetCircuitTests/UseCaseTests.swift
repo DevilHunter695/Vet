@@ -210,6 +210,39 @@ struct ManagePetsUseCaseTests {
     }
 }
 
+@Suite("HoldSlotUseCase")
+struct HoldSlotUseCaseTests {
+    @Test("places a hold on a slot with remaining capacity")
+    func placesHold() async throws {
+        let circuitRepo = MockCircuitRepository()
+        let holdRepo = MockSlotHoldRepository()
+        let useCase = HoldSlotUseCase(circuitRepository: circuitRepo, slotHoldRepository: holdRepo)
+        let circuit = MockData.circuits[0]
+        let slot = circuit.schedule.first { $0.isAvailable }!
+
+        let hold = try await useCase.execute(circuitId: circuit.id, slotId: slot.id, userId: UUID())
+        #expect(hold.slotId == slot.id)
+        #expect(!hold.isExpired)
+    }
+
+    @Test("rejects a hold once concurrent holds exhaust remaining capacity")
+    func rejectsWhenHoldsExhaustCapacity() async throws {
+        let circuitRepo = MockCircuitRepository()
+        let holdRepo = MockSlotHoldRepository()
+        let useCase = HoldSlotUseCase(circuitRepository: circuitRepo, slotHoldRepository: holdRepo)
+        let circuit = MockData.circuits[0]
+        let slot = circuit.schedule.first { $0.isAvailable }!
+
+        for _ in 0..<slot.remainingCapacity {
+            _ = try await useCase.execute(circuitId: circuit.id, slotId: slot.id, userId: UUID())
+        }
+
+        await #expect(throws: DomainError.slotUnavailable) {
+            _ = try await useCase.execute(circuitId: circuit.id, slotId: slot.id, userId: UUID())
+        }
+    }
+}
+
 @Suite("ManageAddressesUseCase")
 struct ManageAddressesUseCaseTests {
     @Test("rejects an address with an empty line1")

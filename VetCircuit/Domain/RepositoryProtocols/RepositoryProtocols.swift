@@ -76,6 +76,17 @@ protocol ReferralRepository: Sendable {
     func listReferrals(userId: UUID) async throws -> [Referral]
 }
 
+protocol SlotHoldRepository: Sendable {
+    /// Places a 10-minute hold on a slot's remaining capacity for this user.
+    /// Throws `.slotUnavailable` if no capacity remains once other active
+    /// holds are accounted for.
+    func placeHold(slotId: UUID, userId: UUID) async throws -> SlotHold
+    func releaseHold(id: UUID) async throws
+    /// Active (non-expired) holds against a slot — used to compute
+    /// effective remaining capacity during checkout.
+    func activeHolds(slotId: UUID) async throws -> [SlotHold]
+}
+
 protocol AddressRepository: Sendable {
     func listAddresses(ownerId: UUID) async throws -> [Address]
     func addAddress(_ address: Address) async throws -> Address

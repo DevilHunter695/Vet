@@ -145,6 +145,28 @@ struct GetLoyaltyAccountUseCase {
     }
 }
 
+struct HoldSlotUseCase {
+    let circuitRepository: CircuitRepository
+    let slotHoldRepository: SlotHoldRepository
+
+    /// E7: reserves a slot's capacity for 10 minutes during checkout so a
+    /// slot can't be sold twice while one customer is mid-payment — the
+    /// hold counts against remaining capacity the same as a confirmed
+    /// booking would.
+    func execute(circuitId: UUID, slotId: UUID, userId: UUID) async throws -> SlotHold {
+        let circuit = try await circuitRepository.circuit(id: circuitId)
+        guard let slot = circuit.schedule.first(where: { $0.id == slotId }) else {
+            throw DomainError.notFound("Slot")
+        }
+        let activeHolds = try await slotHoldRepository.activeHolds(slotId: slotId)
+        let effectiveRemaining = slot.capacity - slot.bookedCount - activeHolds.count
+        guard effectiveRemaining > 0 else {
+            throw DomainError.slotUnavailable
+        }
+        return try await slotHoldRepository.placeHold(slotId: slotId, userId: userId)
+    }
+}
+
 struct ManageAddressesUseCase {
     let addressRepository: AddressRepository
 

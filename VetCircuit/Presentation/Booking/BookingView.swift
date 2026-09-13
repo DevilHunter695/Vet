@@ -7,17 +7,61 @@ final class BookingViewModel {
     let circuit: Circuit
     var pets: [Pet] = []
     var selectedPet: Pet?
-    var selectedSlot: ScheduleSlot?
+    var selectedSlot: ScheduleSlot? {
+        didSet { if selectedSlot?.id != oldValue?.id { Task { await refreshHold() } } }
+    }
     var isLoading = false
     var errorMessage: String?
     var bookedVisit: Visit?
+    /// E7: a 10-min hold placed the moment a slot is picked, so it can't be
+    /// sold to someone else while this customer is still filling out the form.
+    private(set) var activeHold: SlotHold?
+    private(set) var holdSecondsRemaining: Int?
+    private var holdTimer: Task<Void, Never>?
+    private var currentUserId: UUID?
 
     private let bookVisitUseCase = DependencyContainer.shared.bookVisitUseCase()
     private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
+    private let holdSlotUseCase = DependencyContainer.shared.holdSlotUseCase()
+    private let slotHoldRepository = DependencyContainer.shared.slotHoldRepository
 
     init(circuit: Circuit) { self.circuit = circuit }
 
+    private func refreshHold() async {
+        holdTimer?.cancel()
+        if let previousHold = activeHold { try? await slotHoldRepository.releaseHold(id: previousHold.id) }
+        activeHold = nil
+        holdSecondsRemaining = nil
+        guard let slot = selectedSlot, let userId = currentUserId else { return }
+        do {
+            let hold = try await holdSlotUseCase.execute(circuitId: circuit.id, slotId: slot.id, userId: userId)
+            activeHold = hold
+            startCountdown(until: hold.expiresAt)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func startCountdown(until expiresAt: Date) {
+        holdTimer = Task { [weak self] in
+            while !Task.isCancelled {
+                let remaining = Int(expiresAt.timeIntervalSinceNow)
+                self?.holdSecondsRemaining = max(0, remaining)
+                if remaining <= 0 { break }
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
+    func releaseHold() {
+        holdTimer?.cancel()
+        if let hold = activeHold { Task { try? await slotHoldRepository.releaseHold(id: hold.id) } }
+        activeHold = nil
+        holdSecondsRemaining = nil
+    }
+
     func loadPets(ownerId: UUID) async {
+        currentUserId = ownerId
         do {
             pets = try await managePetsUseCase.list(ownerId: ownerId)
             selectedPet = pets.first
@@ -93,6 +137,14 @@ struct BookingView: View {
                     }
                 }
 
+                if let seconds = viewModel.holdSecondsRemaining {
+                    Label("This slot is held for you — \(seconds / 60):\(String(format: "%02d", seconds % 60))",
+                          systemImage: "clock.badge.checkmark")
+                        .font(.brandCaption)
+                        .foregroundStyle(Theme.inProgress)
+                        .transition(.opacity)
+                }
+
                 if let errorMessage = viewModel.errorMessage {
                     ErrorBanner(message: errorMessage)
                 }
@@ -108,6 +160,10 @@ struct BookingView: View {
         .task { if let user = session.currentUser { await viewModel.loadPets(ownerId: user.id) } }
         .navigationDestination(item: $viewModel.bookedVisit) { visit in
             BookingConfirmedView(visit: visit)
+        }
+        .animation(Theme.crossFade, value: viewModel.holdSecondsRemaining)
+        .onDisappear {
+            if viewModel.bookedVisit == nil { viewModel.releaseHold() }
         }
     }
 }

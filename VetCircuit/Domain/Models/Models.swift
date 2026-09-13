@@ -244,6 +244,21 @@ struct Address: Identifiable, Codable, Equatable, Hashable {
     var isServed: Bool { clusterArea != nil }
 }
 
+// MARK: - Slot holds (plan §E7) — the "slot taken while I was paying"
+// disaster is prevented by reserving a slot's capacity for a short window
+// during checkout, auto-released if checkout never completes.
+
+struct SlotHold: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var slotId: UUID
+    var userId: UUID
+    var expiresAt: Date
+
+    static let holdDuration: TimeInterval = 10 * 60
+
+    var isExpired: Bool { Date() >= expiresAt }
+}
+
 // MARK: - Service catalog (V2 plan §D) — what is actually being bought.
 // A v1 `Visit` had no concept of *what* was booked; this is the structural
 // gap everything else (cart, pricing, checkout) depends on.
