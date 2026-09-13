@@ -116,6 +116,86 @@ struct ScheduleSlot: Identifiable, Codable, Equatable, Hashable {
     var remainingCapacity: Int { max(0, capacity - bookedCount) }
 }
 
+/// F8: pure date math for buffer/travel-time aware slot offering — mirrors
+/// `RecurrenceScheduler`/`NoShowPolicy`'s "no I/O, directly unit-testable"
+/// shape. Without this a circuit's back-to-back schedule slots could offer
+/// a vet zero travel time between two stops.
+struct SlotBufferPolicy {
+    /// Minimum travel/prep gap between consecutive visits when none is
+    /// otherwise configured for the circuit.
+    static let defaultBufferMinutes = 15
+
+    /// Whether a candidate slot starting at `candidateStart` (running
+    /// `visitDurationMinutes`) can be offered given a set of already-booked
+    /// slot start times (assumed to run the same duration) on the same day
+    /// — true only if every booked visit, padded by `bufferMinutes` on both
+    /// sides, doesn't overlap the candidate.
+    static func isOfferable(
+        candidateStart: Date,
+        visitDurationMinutes: Int,
+        bookedStarts: [Date],
+        bufferMinutes: Int = defaultBufferMinutes
+    ) -> Bool {
+        let visitDuration = TimeInterval(visitDurationMinutes * 60)
+        let buffer = TimeInterval(bufferMinutes * 60)
+        let candidateEnd = candidateStart.addingTimeInterval(visitDuration)
+        for booked in bookedStarts {
+            let bookedEnd = booked.addingTimeInterval(visitDuration)
+            let paddedStart = candidateStart.addingTimeInterval(-buffer)
+            let paddedEnd = candidateEnd.addingTimeInterval(buffer)
+            if booked < paddedEnd && bookedEnd > paddedStart {
+                return false
+            }
+        }
+        return true
+    }
+
+    /// Filters a circuit's schedule (grouped by day) down to the slots that
+    /// remain offerable once already-booked slots each reserve their travel
+    /// buffer — a booked slot (`bookedCount > 0`) is never removed itself,
+    /// only other still-empty slots that fall inside its buffer window.
+    static func filterOfferableSlots(
+        _ slots: [ScheduleSlot],
+        visitDurationMinutes: Int,
+        bufferMinutes: Int = defaultBufferMinutes
+    ) -> [ScheduleSlot] {
+        let byDay = Dictionary(grouping: slots) { $0.dayOfWeek }
+        var result: [ScheduleSlot] = []
+        for (_, daySlots) in byDay {
+            let bookedStarts = daySlots.filter { $0.bookedCount > 0 }.map { $0.startTime }
+            for slot in daySlots {
+                if slot.bookedCount > 0 {
+                    result.append(slot)
+                } else if isOfferable(candidateStart: slot.startTime, visitDurationMinutes: visitDurationMinutes,
+                                       bookedStarts: bookedStarts, bufferMinutes: bufferMinutes) {
+                    result.append(slot)
+                }
+            }
+        }
+        return result
+    }
+}
+
+/// F9: a vet-declared leave/holiday window — no slot on any of the vet's
+/// circuits should be offered while one is active. Deliberately just a date
+/// range (not per-slot granularity); a half-day leave is modeled as a
+/// same-day start/end range.
+struct VetBlackout: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var vetId: UUID
+    var startDate: Date
+    var endDate: Date
+    var reason: String?
+
+    func isActive(on date: Date = .now) -> Bool {
+        date >= startDate && date <= endDate
+    }
+
+    static func isVetBlackedOut(vetId: UUID, blackouts: [VetBlackout], on date: Date = .now) -> Bool {
+        blackouts.contains { $0.vetId == vetId && $0.isActive(on: date) }
+    }
+}
+
 struct Visit: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var userId: UUID
@@ -1135,6 +1215,41 @@ struct Prescription: Identifiable, Codable, Equatable, Hashable {
     var issuedAt: Date
 }
 
+/// K3: an hour/minute-of-day, timezone-agnostic — the reminder fires at this
+/// wall-clock time every active day, matching how `UNCalendarNotificationTrigger`
+/// with `repeats: true` and a partial `DateComponents` behaves.
+struct TimeOfDay: Codable, Equatable, Hashable {
+    var hour: Int
+    var minute: Int
+
+    var displayText: String {
+        String(format: "%02d:%02d", hour, minute)
+    }
+}
+
+/// K3: a pet owner's reminder to give a medication, on a recurring
+/// time-of-day schedule within an optional date range (e.g. a 10-day course
+/// of antibiotics vs. an ongoing daily supplement with no `endDate`).
+struct MedicationReminder: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var petId: UUID
+    var medicationName: String
+    var dosage: String
+    var times: [TimeOfDay]
+    var startDate: Date
+    var endDate: Date?
+    var isActive: Bool = true
+
+    /// Whether the reminder's date range covers `date` — a course with an
+    /// `endDate` in the past shouldn't keep firing even if `isActive` was
+    /// never flipped off by hand.
+    func isInRange(on date: Date = .now, calendar: Calendar = .current) -> Bool {
+        let day = calendar.startOfDay(for: date)
+        guard day >= calendar.startOfDay(for: startDate) else { return false }
+        if let endDate { return day <= calendar.startOfDay(for: endDate) }
+        return true
+    }
+}
 
 // MARK: - Discovery filters & sort (plan §C3-C4) — pure, testable logic; the
 // UI only ever calls `CircuitFilter.apply` / `CircuitSortOption.sort`, it

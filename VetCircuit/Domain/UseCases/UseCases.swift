@@ -4,20 +4,49 @@ import Foundation
 
 struct GetCircuitsUseCase {
     let repository: CircuitRepository
+    /// F9: optional so existing call sites/tests that don't care about
+    /// blackouts keep working unchanged — when present, circuits whose vet
+    /// is currently on a blackout are excluded entirely.
+    var vetBlackoutRepository: VetBlackoutRepository? = nil
 
     /// C3/C4: `filter` narrows the fetched list, `sort` orders what's left —
     /// both client-side over the already-fetched circuits (simpler than a
     /// server round trip per filter change, and still correct since a
     /// customer's whole area is a small list). `previouslyBookedVetIds`
     /// backs the "previously booked" sort without this use case needing its
-    /// own visit-history dependency.
+    /// own visit-history dependency. `estimatedVisitDurationMinutes` +
+    /// `slotBufferMinutes` back F8: each circuit's schedule is filtered so a
+    /// still-empty slot within travel-buffer distance of an already-booked
+    /// one on the same day isn't offered.
     func execute(
         area: String?, vertical: Vertical = .vet,
         filter: CircuitFilter = CircuitFilter(), sort: CircuitSortOption? = nil,
-        catalog: [Service] = [], previouslyBookedVetIds: Set<UUID> = []
+        catalog: [Service] = [], previouslyBookedVetIds: Set<UUID> = [],
+        estimatedVisitDurationMinutes: Int = 30, slotBufferMinutes: Int = SlotBufferPolicy.defaultBufferMinutes,
+        now: Date = .now
     ) async throws -> [Circuit] {
         let circuits = try await repository.listCircuits(area: area)
-        let scoped = circuits.filter { $0.vertical == vertical }
+        var scoped = circuits.filter { $0.vertical == vertical }
+
+        // F9: drop circuits whose vet is currently on a blackout window.
+        if let vetBlackoutRepository {
+            let vetIds = Array(Set(scoped.map { $0.vetId }))
+            let blackouts = try await vetBlackoutRepository.blackouts(vetIds: vetIds)
+            if !blackouts.isEmpty {
+                scoped = scoped.filter { !VetBlackout.isVetBlackedOut(vetId: $0.vetId, blackouts: blackouts, on: now) }
+            }
+        }
+
+        // F8: within each remaining circuit, don't offer a still-empty slot
+        // that leaves the vet zero travel time after/before a booked one.
+        scoped = scoped.map { circuit in
+            var circuit = circuit
+            circuit.schedule = SlotBufferPolicy.filterOfferableSlots(
+                circuit.schedule, visitDurationMinutes: estimatedVisitDurationMinutes, bufferMinutes: slotBufferMinutes
+            )
+            return circuit
+        }
+
         let filtered = CircuitFilter.apply(filter, to: scoped, catalog: catalog)
         if let sort {
             return CircuitSortOption.sort(filtered, by: sort, previouslyBookedVetIds: previouslyBookedVetIds)
@@ -373,6 +402,69 @@ struct ManagePrescriptionsUseCase {
 
     func history(petId: UUID) async throws -> [Prescription] {
         try await repository.history(petId: petId).sorted { $0.issuedAt > $1.issuedAt }
+    }
+}
+
+/// F9: a vet's own leave/holiday windows. There's no vet-facing UI surface
+/// in this app today (known gap — see TECHNICAL_PLAN.md's F9 row), so this
+/// use case is exercised directly by tests/a future vet-side screen; its
+/// *effect* on customer-facing availability is enforced in `GetCircuitsUseCase`.
+struct ManageVetBlackoutsUseCase {
+    let repository: VetBlackoutRepository
+
+    func list(vetId: UUID) async throws -> [VetBlackout] {
+        try await repository.blackouts(vetId: vetId).sorted { $0.startDate < $1.startDate }
+    }
+
+    func add(vetId: UUID, startDate: Date, endDate: Date, reason: String?) async throws -> VetBlackout {
+        guard startDate <= endDate else {
+            throw DomainError.validation("A blackout's end date must be on or after its start date.")
+        }
+        let blackout = VetBlackout(id: UUID(), vetId: vetId, startDate: startDate, endDate: endDate, reason: reason)
+        return try await repository.create(blackout)
+    }
+
+    func remove(id: UUID) async throws {
+        try await repository.delete(id: id)
+    }
+}
+
+/// K3: medication reminders. Scheduling the actual local notifications is an
+/// App-layer concern (`PushNotificationManager`, which already owns local
+/// scheduling for renewal reminders) — this use case only owns the
+/// CRUD + validation half so it stays framework-free and testable.
+struct ManageMedicationRemindersUseCase {
+    let repository: MedicationReminderRepository
+
+    func list(petId: UUID) async throws -> [MedicationReminder] {
+        try await repository.reminders(petId: petId).sorted { $0.medicationName < $1.medicationName }
+    }
+
+    func add(petId: UUID, medicationName: String, dosage: String, times: [TimeOfDay], startDate: Date, endDate: Date?) async throws -> MedicationReminder {
+        guard !medicationName.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw DomainError.validation("Enter the medication name.")
+        }
+        guard !times.isEmpty else {
+            throw DomainError.validation("Add at least one time of day.")
+        }
+        if let endDate { guard endDate >= startDate else { throw DomainError.validation("End date must be on or after the start date.") } }
+        let reminder = MedicationReminder(id: UUID(), petId: petId, medicationName: medicationName, dosage: dosage,
+                                           times: times, startDate: startDate, endDate: endDate, isActive: true)
+        return try await repository.create(reminder)
+    }
+
+    func update(_ reminder: MedicationReminder) async throws -> MedicationReminder {
+        try await repository.update(reminder)
+    }
+
+    func setActive(_ reminder: MedicationReminder, isActive: Bool) async throws -> MedicationReminder {
+        var reminder = reminder
+        reminder.isActive = isActive
+        return try await repository.update(reminder)
+    }
+
+    func remove(id: UUID) async throws {
+        try await repository.delete(id: id)
     }
 }
 

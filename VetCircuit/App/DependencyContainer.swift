@@ -53,6 +53,10 @@ final class DependencyContainer {
     let recurringBookingRuleRepository: RecurringBookingRuleRepository
     /// F6: vet-initiated reschedule proposals.
     let rescheduleProposalRepository: RescheduleProposalRepository
+    /// F9: vet leave/holiday blackout windows.
+    let vetBlackoutRepository: VetBlackoutRepository
+    /// K3: medication reminders.
+    let medicationReminderRepository: MedicationReminderRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -100,11 +104,15 @@ final class DependencyContainer {
         self.vetServiceOverrideRepository = MockVetServiceOverrideRepository()
         self.recurringBookingRuleRepository = MockRecurringBookingRuleRepository()
         self.rescheduleProposalRepository = MockRescheduleProposalRepository()
+        self.vetBlackoutRepository = MockVetBlackoutRepository()
+        self.medicationReminderRepository = MockMedicationReminderRepository()
     }
 
     // MARK: Use case factories
 
-    func getCircuitsUseCase() -> GetCircuitsUseCase { GetCircuitsUseCase(repository: circuitRepository) }
+    func getCircuitsUseCase() -> GetCircuitsUseCase { GetCircuitsUseCase(repository: circuitRepository, vetBlackoutRepository: vetBlackoutRepository) }
+    func manageVetBlackoutsUseCase() -> ManageVetBlackoutsUseCase { ManageVetBlackoutsUseCase(repository: vetBlackoutRepository) }
+    func manageMedicationRemindersUseCase() -> ManageMedicationRemindersUseCase { ManageMedicationRemindersUseCase(repository: medicationReminderRepository) }
     func bookVisitUseCase() -> BookVisitUseCase { BookVisitUseCase(visitRepository: visitRepository) }
     func cancelVisitUseCase() -> CancelVisitUseCase { CancelVisitUseCase(visitRepository: visitRepository, refundRepository: refundRepository) }
     func rescheduleVisitUseCase() -> RescheduleVisitUseCase { RescheduleVisitUseCase(visitRepository: visitRepository) }

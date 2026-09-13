@@ -145,6 +145,27 @@ protocol PrescriptionRepository: Sendable {
     func history(petId: UUID) async throws -> [Prescription]
 }
 
+/// F9: vet-declared leave/holiday windows.
+protocol VetBlackoutRepository: Sendable {
+    func blackouts(vetId: UUID) async throws -> [VetBlackout]
+    /// Batch fetch for filtering a whole discovery page's worth of circuits
+    /// without one round trip per vet.
+    func blackouts(vetIds: [UUID]) async throws -> [VetBlackout]
+    func create(_ blackout: VetBlackout) async throws -> VetBlackout
+    func delete(id: UUID) async throws
+}
+
+/// K3: medication reminders. Household members of the pet (see
+/// `HouseholdRepository`) can manage a pet's reminders, matching the pets
+/// household-visibility grant (0020_households.sql) rather than inventing a
+/// separate sharing model.
+protocol MedicationReminderRepository: Sendable {
+    func reminders(petId: UUID) async throws -> [MedicationReminder]
+    func create(_ reminder: MedicationReminder) async throws -> MedicationReminder
+    func update(_ reminder: MedicationReminder) async throws -> MedicationReminder
+    func delete(id: UUID) async throws
+}
+
 protocol PushTokenRepository: Sendable {
     func registerDeviceToken(_ token: String, userId: UUID) async throws
 }

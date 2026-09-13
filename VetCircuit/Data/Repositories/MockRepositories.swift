@@ -639,6 +639,54 @@ actor MockPushTokenRepository: PushTokenRepository {
     func registerDeviceToken(_ token: String, userId: UUID) async throws {}
 }
 
+/// F9: no vet is on leave by default in the mock — seed a blackout in tests
+/// or via `add`/`create` to exercise the filtering effect.
+actor MockVetBlackoutRepository: VetBlackoutRepository {
+    private var blackoutsById: [UUID: VetBlackout] = [:]
+
+    func blackouts(vetId: UUID) async throws -> [VetBlackout] {
+        blackoutsById.values.filter { $0.vetId == vetId }
+    }
+
+    func blackouts(vetIds: [UUID]) async throws -> [VetBlackout] {
+        let set = Set(vetIds)
+        return blackoutsById.values.filter { set.contains($0.vetId) }
+    }
+
+    func create(_ blackout: VetBlackout) async throws -> VetBlackout {
+        blackoutsById[blackout.id] = blackout
+        return blackout
+    }
+
+    func delete(id: UUID) async throws {
+        blackoutsById.removeValue(forKey: id)
+    }
+}
+
+/// K3: medication reminders, keyed by pet.
+actor MockMedicationReminderRepository: MedicationReminderRepository {
+    private var remindersById: [UUID: MedicationReminder] = [:]
+
+    func reminders(petId: UUID) async throws -> [MedicationReminder] {
+        remindersById.values.filter { $0.petId == petId }
+    }
+
+    func create(_ reminder: MedicationReminder) async throws -> MedicationReminder {
+        remindersById[reminder.id] = reminder
+        return reminder
+    }
+
+    func update(_ reminder: MedicationReminder) async throws -> MedicationReminder {
+        guard remindersById[reminder.id] != nil else { throw DomainError.notFound("Medication reminder") }
+        remindersById[reminder.id] = reminder
+        return reminder
+    }
+
+    func delete(id: UUID) async throws {
+        remindersById.removeValue(forKey: id)
+    }
+}
+
 actor MockLiveTrackingRepository: LiveTrackingRepository {
     func currentLocation(visitId: UUID) async throws -> VetLocation? {
         // Bengaluru-ish coordinate, jittered slightly so the map shows movement.
