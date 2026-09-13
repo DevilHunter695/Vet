@@ -92,11 +92,11 @@ struct StatusBadge: View {
 
     private var color: Color {
         switch status {
-        case .requested: return .orange
+        case .requested: return Theme.warning
         case .confirmed: return Theme.primary
-        case .enRoute: return .purple
-        case .completed: return .green
-        case .cancelled: return .gray
+        case .enRoute: return Theme.inProgress
+        case .completed: return Theme.success
+        case .cancelled: return Theme.neutral
         }
     }
 
@@ -179,8 +179,8 @@ struct ErrorBanner: View {
         Label(message, systemImage: "exclamationmark.triangle.fill")
             .font(.footnote)
             .padding(10)
-            .background(Color.red.opacity(0.12))
-            .foregroundStyle(.red)
+            .background(Theme.danger.opacity(0.12))
+            .foregroundStyle(Theme.danger)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .accessibilityLabel("Error: \(message)")
             .transition(.opacity.combined(with: .move(edge: .top)))

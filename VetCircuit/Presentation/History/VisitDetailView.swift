@@ -30,7 +30,7 @@ struct VisitDetailView: View {
                     NavigationLink {
                         LiveTrackingView(visitId: visit.id)
                     } label: {
-                        ActionRow(title: "Track your vet live", systemImage: "location.fill", tint: .purple)
+                        ActionRow(title: "Track your vet live", systemImage: "location.fill", tint: Theme.inProgress)
                     }
                     .buttonStyle(PressableStyle())
                     .appearAnimation(delay: 0.05)

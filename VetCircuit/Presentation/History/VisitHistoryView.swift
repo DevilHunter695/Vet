@@ -108,7 +108,7 @@ private struct VisitRow: View {
         } label: {
             HStack(spacing: 12) {
                 if isPrimary {
-                    PulsingDot(color: visit.status == .enRoute ? .purple : Theme.primary)
+                    PulsingDot(color: visit.status == .enRoute ? Theme.inProgress : Theme.primary)
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -118,7 +118,7 @@ private struct VisitRow: View {
                         StatusBadge(status: visit.status)
                     }
                     if isPrimary, visit.status == .enRoute {
-                        Text("Vet is on the way").font(.brandCaption).foregroundStyle(.purple)
+                        Text("Vet is on the way").font(.brandCaption).foregroundStyle(Theme.inProgress)
                     }
                 }
             }
@@ -130,6 +130,7 @@ private struct VisitRow: View {
                     Haptics.warning()
                     onCancel()
                 }
+                .tint(Theme.danger)
             }
         }
     }
