@@ -63,6 +63,10 @@ final class DependencyContainer {
     let vetBlackoutRepository: VetBlackoutRepository
     /// K3: medication reminders.
     let medicationReminderRepository: MedicationReminderRepository
+    /// J8: SMS/WhatsApp fallback intent when push fails (no real gateway wired).
+    let smsFallbackRepository: SMSFallbackRepository
+    /// K6: lab test reports (read-only; uploaded ops-side).
+    let labTestReportRepository: LabTestReportRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -115,6 +119,8 @@ final class DependencyContainer {
         self.supportRefundAuditRepository = MockSupportRefundAuditRepository(refundRepository: refundRepository)
         self.vetBlackoutRepository = MockVetBlackoutRepository()
         self.medicationReminderRepository = MockMedicationReminderRepository()
+        self.smsFallbackRepository = MockSMSFallbackRepository()
+        self.labTestReportRepository = MockLabTestReportRepository()
     }
 
     // MARK: Use case factories
@@ -202,5 +208,18 @@ final class DependencyContainer {
     /// M5: business-hours-gated support number, checked via `tel:`.
     func contactSupportByCallUseCase() -> ContactSupportByCallUseCase {
         ContactSupportByCallUseCase(supportPhoneNumber: "+911800123456")
+    }
+    /// J8: decides push vs SMS-fallback vs suppressed for a transactional
+    /// notification, and records the fallback intent when one is sent.
+    func sendTransactionalNotificationUseCase() -> SendTransactionalNotificationUseCase {
+        SendTransactionalNotificationUseCase(
+            pushTokenRepository: pushTokenRepository,
+            notificationPreferencesRepository: notificationPreferencesRepository,
+            smsFallbackRepository: smsFallbackRepository
+        )
+    }
+    /// K6: lab test reports attached to a visit/pet.
+    func getLabTestReportsUseCase() -> GetLabTestReportsUseCase {
+        GetLabTestReportsUseCase(repository: labTestReportRepository)
     }
 }
