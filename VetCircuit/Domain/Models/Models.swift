@@ -451,7 +451,7 @@ struct PriceLineItem: Identifiable, Codable, Equatable, Hashable {
     enum CodingKeys: String, CodingKey { case label, amountMinorUnits }
 }
 
-struct PriceBreakdown: Codable, Equatable {
+struct PriceBreakdown: Codable, Equatable, Hashable {
     var lineItems: [PriceLineItem]
     var totalMinorUnits: Int
 }

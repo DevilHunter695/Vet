@@ -158,7 +158,7 @@ actor MockSlotHoldRepository: SlotHoldRepository {
     private var holds: [SlotHold] = []
 
     func placeHold(slotId: UUID, userId: UUID) async throws -> SlotHold {
-        holds.removeAll(\.isExpired)
+        holds.removeAll(where: \.isExpired)
         let hold = SlotHold(id: UUID(), slotId: slotId, userId: userId, expiresAt: Date().addingTimeInterval(SlotHold.holdDuration))
         holds.append(hold)
         return hold
@@ -169,7 +169,7 @@ actor MockSlotHoldRepository: SlotHoldRepository {
     }
 
     func activeHolds(slotId: UUID) async throws -> [SlotHold] {
-        holds.removeAll(\.isExpired)
+        holds.removeAll(where: \.isExpired)
         return holds.filter { $0.slotId == slotId }
     }
 }
