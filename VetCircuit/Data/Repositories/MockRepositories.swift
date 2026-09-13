@@ -138,11 +138,11 @@ actor MockQuoteRepository: QuoteRepository {
         self.walletRepository = walletRepository
     }
 
-    func createQuote(for cart: Cart, catalog: [Service], useWalletBalance: Bool) async throws -> Quote {
+    func createQuote(for cart: Cart, catalog: [Service], useWalletBalance: Bool, applyEntitlementCredit: Bool) async throws -> Quote {
         // Pre-discount/pre-wallet subtotal, computed first because coupon
         // validation (min-spend) and the wallet cap both need it.
         var preSubtotal = 0
-        for item in cart.items {
+        for (index, item) in cart.items.enumerated() {
             guard let service = catalog.first(where: { $0.id == item.serviceId }),
                   let variant = service.variants.first(where: { $0.id == item.variantId }) else {
                 throw DomainError.notFound("Service variant")
@@ -151,7 +151,10 @@ actor MockQuoteRepository: QuoteRepository {
             let input = PricingEngine.Input(
                 variant: variant, addons: addons,
                 additionalPetCount: max(0, item.petIds.count - 1),
-                travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500
+                travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500,
+                // H6: a credit pays for one visit — applied to the first
+                // line item only, never every line in a multi-item cart.
+                entitlementCreditApplied: applyEntitlementCredit && index == 0
             )
             preSubtotal += PricingEngine.quote(input).totalMinorUnits
         }
@@ -169,22 +172,24 @@ actor MockQuoteRepository: QuoteRepository {
 
         var lineItems: [PriceLineItem] = []
         var total = 0
-        for item in cart.items {
+        for (index, item) in cart.items.enumerated() {
             guard let service = catalog.first(where: { $0.id == item.serviceId }),
                   let variant = service.variants.first(where: { $0.id == item.variantId }) else {
                 throw DomainError.notFound("Service variant")
             }
             let addons = service.addons.filter { item.addonIds.contains($0.id) }
-            // Coupon/wallet apply once, against the *first* line item's
-            // computation, so a multi-item cart doesn't double-apply either —
-            // mirrors the single-total shape a real server-side quote returns.
-            let isFirst = item.id == cart.items.first?.id
+            // Coupon/wallet/entitlement all apply once, against the *first*
+            // line item's computation, so a multi-item cart doesn't
+            // double-apply any of them — mirrors the single-total shape a
+            // real server-side quote returns.
+            let isFirst = index == 0
             let input = PricingEngine.Input(
                 variant: variant, addons: addons,
                 additionalPetCount: max(0, item.petIds.count - 1),
                 travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500,
                 couponDiscountMinorUnits: isFirst ? couponDiscount : 0,
-                walletBalanceMinorUnits: isFirst ? walletBalance : 0
+                walletBalanceMinorUnits: isFirst ? walletBalance : 0,
+                entitlementCreditApplied: applyEntitlementCredit && isFirst
             )
             let breakdown = PricingEngine.quote(input)
             lineItems.append(contentsOf: breakdown.lineItems)
@@ -1076,5 +1081,56 @@ actor MockWaitlistRepository: WaitlistRepository {
 
     func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool {
         entries.contains { $0.userId == userId && $0.addressId == addressId }
+    }
+}
+
+actor MockSubscriptionEntitlementRepository: SubscriptionEntitlementRepository {
+    private var entitlements: [UUID: SubscriptionEntitlement] = [:]
+
+    /// Mock stands in for what a real deployment seeds at subscribe time
+    /// (a signup edge function creating the row with the plan's monthly
+    /// grant) — lazily seeded here on first read so `GetQuoteUseCase` sees a
+    /// real credit balance without every test having to call `consumeCredit`
+    /// first just to make one exist.
+    func currentEntitlement(subscriptionId: UUID) async throws -> SubscriptionEntitlement? {
+        seededEntitlement(for: subscriptionId)
+    }
+
+    /// Decrements, checking eligibility the same way
+    /// `EntitlementPolicy.canApplyCredit` does — the mock is not exempt from
+    /// the "server enforces, client only hints" rule its own protocol doc
+    /// comment states.
+    func consumeCredit(subscriptionId: UUID) async throws -> SubscriptionEntitlement {
+        var entitlement = seededEntitlement(for: subscriptionId)
+        if EntitlementPolicy.needsReset(entitlement: entitlement, now: .now) {
+            entitlement = EntitlementPolicy.rolledForward(entitlement: entitlement, plan: .monthly, seatCount: 1, now: .now)
+        }
+        guard entitlement.creditsRemaining > 0 else { throw DomainError.validation("No subscription credits remaining this period.") }
+        entitlement.creditsRemaining -= 1
+        entitlements[subscriptionId] = entitlement
+        return entitlement
+    }
+
+    private func seededEntitlement(for subscriptionId: UUID) -> SubscriptionEntitlement {
+        if let existing = entitlements[subscriptionId] { return existing }
+        let fresh = SubscriptionEntitlement(
+            id: UUID(), subscriptionId: subscriptionId, creditsRemaining: 1,
+            resetAt: Calendar.current.date(byAdding: .month, value: 1, to: .now) ?? .now.addingTimeInterval(30 * 86_400)
+        )
+        entitlements[subscriptionId] = fresh
+        return fresh
+    }
+}
+
+actor MockIncidentReportRepository: IncidentReportRepository {
+    private var reports: [IncidentReport] = []
+
+    func fileReport(_ report: IncidentReport) async throws -> IncidentReport {
+        reports.append(report)
+        return report
+    }
+
+    func myReports(reporterId: UUID) async throws -> [IncidentReport] {
+        reports.filter { $0.reporterId == reporterId }
     }
 }

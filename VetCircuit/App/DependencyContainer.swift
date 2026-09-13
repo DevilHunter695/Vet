@@ -45,6 +45,8 @@ final class DependencyContainer {
     let emergencyClinicRepository: EmergencyClinicRepository
     let householdRepository: HouseholdRepository
     let waitlistRepository: WaitlistRepository
+    let incidentReportRepository: IncidentReportRepository
+    let subscriptionEntitlementRepository: SubscriptionEntitlementRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -87,6 +89,8 @@ final class DependencyContainer {
         self.emergencyClinicRepository = MockEmergencyClinicRepository()
         self.householdRepository = MockHouseholdRepository()
         self.waitlistRepository = MockWaitlistRepository()
+        self.incidentReportRepository = MockIncidentReportRepository()
+        self.subscriptionEntitlementRepository = MockSubscriptionEntitlementRepository()
     }
 
     // MARK: Use case factories
@@ -121,7 +125,10 @@ final class DependencyContainer {
     func manageAddressesUseCase() -> ManageAddressesUseCase { ManageAddressesUseCase(addressRepository: addressRepository) }
     func holdSlotUseCase() -> HoldSlotUseCase { HoldSlotUseCase(circuitRepository: circuitRepository, slotHoldRepository: slotHoldRepository) }
     func manageCartUseCase() -> ManageCartUseCase { ManageCartUseCase(cartRepository: cartRepository) }
-    func getQuoteUseCase() -> GetQuoteUseCase { GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository) }
+    func getQuoteUseCase() -> GetQuoteUseCase {
+        GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository,
+                        subscriptionRepository: subscriptionRepository, entitlementRepository: subscriptionEntitlementRepository)
+    }
     func getWalletBalanceUseCase() -> GetWalletBalanceUseCase { GetWalletBalanceUseCase(walletRepository: walletRepository) }
     func applyCouponUseCase() -> ApplyCouponUseCase { ApplyCouponUseCase(couponRepository: couponRepository) }
     func tipUseCase() -> TipUseCase { TipUseCase(paymentRepository: paymentRepository) }
@@ -145,4 +152,6 @@ final class DependencyContainer {
     func searchUseCase() -> SearchUseCase { SearchUseCase(circuitRepository: circuitRepository, catalogRepository: catalogRepository) }
     func rebookLastVisitUseCase() -> RebookLastVisitUseCase { RebookLastVisitUseCase(visitRepository: visitRepository, circuitRepository: circuitRepository) }
     func joinWaitlistUseCase() -> JoinWaitlistUseCase { JoinWaitlistUseCase(waitlistRepository: waitlistRepository) }
+    func fileIncidentReportUseCase() -> FileIncidentReportUseCase { FileIncidentReportUseCase(repository: incidentReportRepository) }
+    func sosUseCase() -> SOSUseCase { SOSUseCase(incidentReportRepository: incidentReportRepository) }
 }

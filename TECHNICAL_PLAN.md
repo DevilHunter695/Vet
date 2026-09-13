@@ -130,8 +130,8 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | A7 | Export my data (JSON + PDF of records) | P1 | 🔨 | DPDP data-principal right — JSON export done, no PDF |
 | A8 | Multiple addresses (home/office/parents), default, geofence check | **P0** | ✅ | A circuit is *address-scoped* — this is core inventory logic, not a nicety |
 | A9 | Household: invite spouse/family to same pets & bookings | P1 | 🔨 | Roles: owner/member. `Household`/`HouseholdMember` + `HouseholdRepository`, `HouseholdView` linked from Profile. Pets keep `owner_id`; visibility only, via an additional RLS policy (see 0020_households.sql) — no pet-ownership model change |
-| A10 | Biometric lock on app (Face ID) | P1 | ⛔ | Medical records = sensitive |
-| A11 | Blocked/deactivated account handling | P1 | ⛔ | Graceful screen, support path |
+| A10 | Biometric lock on app (Face ID) | P1 | ✅ | `BiometricLockSetting`/`BiometricLockGateModel` (App/BiometricLock.swift), local UserDefaults toggle in Profile, gate above `MainTabView` in `RootView`. Falls back to unlocked (no lock) when biometrics aren't enrolled — never strands the user |
+| A11 | Blocked/deactivated account handling | P1 | ✅ | `User.accountStatus` (active/blocked/deactivated), admin-only column via trigger (0026_account_status.sql, mirrors `vets.verification_status`'s ownership split). `AccountBlockedView` shown from `RootView`, links to `ContactSupportView` |
 
 ### B. Pets, records & documents
 
@@ -237,7 +237,7 @@ Service (Home consultation)
 | H3 | Manage: upgrade, downgrade, **pause**, **cancel**, view next renewal | **P0** | 🔨 |
 | H4 | Renewal reminders (T-7, T-1) + receipt | P0 | 🔨 |
 | H5 | Dunning: failed renewal → retry ladder → grace → downgrade | P1 | 🔨 |
-| H6 | Subscription credits consumed by bookings (entitlement engine) | P1 | ⛔ |
+| H6 | Subscription credits consumed by bookings (entitlement engine) | P1 | ✅ | `SubscriptionEntitlement` + pure `EntitlementPolicy` (monthly/quarterly/annual = 1 credit/month, corporate = 1/seat/month), wired into `PricingEngine.Input.entitlementCreditApplied` (Appendix C's "entitlement" line) via `GetQuoteUseCase`. Client only proposes; 0028_subscription_entitlements.sql's `consume_subscription_credit()` is the real, atomic authority |
 | H7 | Corporate/RWA seat-based plan + seat assignment | P2 | 🔨 |
 
 ### I. The live visit (your trust moment)
@@ -286,8 +286,8 @@ Service (Home consultation)
 | L1 | Manual VCI registration verification before a vet goes live | P0 | 🔨 | Do this by hand, every time, forever |
 | L2 | Document-backed onboarding: degree, VCI cert, ID, police verification, photo | P0 | ⛔ | |
 | L3 | "Verified" badge + credentials visible on vet profile | P0 | ✅ | `VerifiedBadge` on `VetDetailView`, the booking-flow vet card, and the circuit list row. Also closed a real gap: `CircuitRepository.listCircuits` previously surfaced unverified vets in the booking flow at all — it now filters to `verificationStatus == .verified` server-query-side (Supabase) / actor-side (mock), per L1's "verified before going live". |
-| L4 | **SOS button + share-my-visit link** during an in-home visit | P1 | ⛔ | A stranger is inside a home. Take this seriously. |
-| L5 | Incident reporting (both directions) + vet suspension flow | P1 | ⛔ | |
+| L4 | **SOS button + share-my-visit link** during an in-home visit | P1 | ✅ | `SOSUseCase`/`ShareVisitLinkUseCase`, prominent (but confirm-gated) button in `LiveTrackingView`; reuses N7's `DeepLinkParser`/`vetcircuit://visit/<id>` link, shares via system share sheet |
+| L5 | Incident reporting (both directions) + vet suspension flow | P1 | 🔨 | `IncidentReport`/`IncidentReportRepository` + `FileIncidentReportUseCase`, customer-side "Report an incident" in `VisitDetailView` (0027_incident_reports.sql: reporter reads/writes own only). Vet-side entry point and the ops-console vet suspension action itself are out of scope for this app — known gap |
 | L6 | Review moderation (profanity, PII, defamation) | P1 | ⛔ | |
 | L7 | Professional indemnity / liability insurance requirement for vets | P1 | ⛔ | Commercial, not code — but blocks launch legally |
 | L8 | Clear "not an emergency service" disclaimer + escalation routing | **P0** | ✅ | Full disclaimer on `EmergencyView`; a brief caption version under `CircuitsListView`'s "Not sure?"/emergency entry points too, so it's not only reachable via the emergency path. |

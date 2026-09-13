@@ -184,7 +184,12 @@ protocol QuoteRepository: Sendable {
     /// `useWalletBalance` is the customer's toggle intent — the server (or
     /// the mock, standing in for it) looks up the *real* balance and applies
     /// at most that, never trusting a client-supplied amount.
-    func createQuote(for cart: Cart, catalog: [Service], useWalletBalance: Bool) async throws -> Quote
+    /// `applyEntitlementCredit` (H6) tells the server the first line item's
+    /// base price should be zeroed against the caller's subscription credit
+    /// — the server still re-derives and re-checks eligibility itself
+    /// (`GetQuoteUseCase` only decides "is it worth asking", never "is it
+    /// allowed": the client is never the source of truth for money).
+    func createQuote(for cart: Cart, catalog: [Service], useWalletBalance: Bool, applyEntitlementCredit: Bool) async throws -> Quote
 }
 
 protocol WalletRepository: Sendable {
@@ -199,6 +204,18 @@ protocol CouponRepository: Sendable {
     /// select) so codes aren't enumerable and stacking/usage limits are
     /// enforced in one place. Returns nil if the code doesn't apply.
     func validate(code: String, userId: UUID, cartTotalMinorUnits: Int) async throws -> Coupon?
+}
+
+/// H6: subscription credit balance, separate from `SubscriptionRepository`
+/// because it resets on a period boundary, not a billing-status transition.
+protocol SubscriptionEntitlementRepository: Sendable {
+    func currentEntitlement(subscriptionId: UUID) async throws -> SubscriptionEntitlement?
+    /// Persists a credit decrement (and any due rollover) atomically —
+    /// returns the entitlement after the consumption, or throws if there was
+    /// nothing left to consume (server-enforced, mirrors slot-hold capacity
+    /// checks: the client's own `EntitlementPolicy.canApplyCredit` call is
+    /// only a UI hint, not the authority).
+    func consumeCredit(subscriptionId: UUID) async throws -> SubscriptionEntitlement
 }
 
 protocol SlotHoldRepository: Sendable {
@@ -331,4 +348,12 @@ protocol WaitlistRepository: Sendable {
     /// never exposes who they are (see `waitlist_count_near` RPC).
     func countNear(latitude: Double, longitude: Double, radiusKm: Double) async throws -> Int
     func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool
+}
+
+/// L4/L5: a reporter can create and read only their own reports — ops-side
+/// listing (all reports, vet suspension) is an ops-console concern, out of
+/// scope here (see 0027_incident_reports.sql).
+protocol IncidentReportRepository: Sendable {
+    func fileReport(_ report: IncidentReport) async throws -> IncidentReport
+    func myReports(reporterId: UUID) async throws -> [IncidentReport]
 }

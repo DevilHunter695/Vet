@@ -441,19 +441,37 @@ struct ManageCartUseCase {
 struct GetQuoteUseCase {
     let quoteRepository: QuoteRepository
     let catalogRepository: CatalogRepository
+    // H6: optional so existing call sites/tests that don't care about
+    // entitlements keep working — without these, a quote is priced with no
+    // credit applied, same as before this feature existed.
+    var subscriptionRepository: SubscriptionRepository? = nil
+    var entitlementRepository: SubscriptionEntitlementRepository? = nil
 
-    /// E6: the app hands over its selections and gets back a signed,
-    /// itemized, TTL'd quote — it never assembles a rupee amount itself.
     /// `cart.couponCode` and `useWalletBalance` are the customer's *intent*;
     /// the repository (server-side in the Supabase path) is what actually
     /// re-validates the coupon and looks up the real wallet balance before
-    /// folding either into the signed total (Appendix C).
+    /// folding either into the signed total (Appendix C). H6: if the user
+    /// separately has an active subscription with a credit left this period,
+    /// the quote also comes back with the base price zeroed — this only
+    /// *asks* for that (see `QuoteRepository.createQuote`'s doc comment);
+    /// the server independently re-checks and is the one that actually
+    /// spends the credit.
     func execute(cart: Cart, useWalletBalance: Bool = false) async throws -> Quote {
         guard !cart.items.isEmpty else {
             throw DomainError.validation("Your cart is empty.")
         }
         let catalog = try await catalogRepository.listServices(vertical: nil)
-        return try await quoteRepository.createQuote(for: cart, catalog: catalog, useWalletBalance: useWalletBalance)
+        let applyCredit = await entitlementEligible(userId: cart.userId)
+        return try await quoteRepository.createQuote(for: cart, catalog: catalog, useWalletBalance: useWalletBalance, applyEntitlementCredit: applyCredit)
+    }
+
+    private func entitlementEligible(userId: UUID) async -> Bool {
+        guard let subscriptionRepository, let entitlementRepository else { return false }
+        guard let subscription = try? await subscriptionRepository.currentSubscription(userId: userId),
+              subscription.status == .active,
+              let entitlement = try? await entitlementRepository.currentEntitlement(subscriptionId: subscription.id)
+        else { return false }
+        return EntitlementPolicy.canApplyCredit(subscription: subscription, entitlement: entitlement, now: .now)
     }
 }
 
@@ -868,6 +886,68 @@ struct JoinWaitlistUseCase {
 
     func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool {
         try await waitlistRepository.hasJoined(userId: userId, addressId: addressId)
+    }
+}
+
+// MARK: - L4/L5: incident reporting + SOS
+//
+// SOS is not a separate model — pressing it files the same `IncidentReport`
+// with `type == .sos`, so it shows up in the exact same reporter-facing and
+// (eventually) ops-facing queue as a filed-after-the-fact safety concern,
+// rather than a disconnected alert nobody reviews after the moment passes.
+
+struct FileIncidentReportUseCase {
+    let repository: IncidentReportRepository
+
+    /// SOS carries no free-text requirement (someone in danger doesn't stop
+    /// to type first) — every other type does.
+    func execute(visitId: UUID, reporterId: UUID, reporterRole: IncidentReport.ReporterRole,
+                 type: IncidentReport.IncidentType, description: String) async throws -> IncidentReport {
+        let description = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        if type != .sos {
+            guard !description.isEmpty else { throw DomainError.validation("Please describe what happened.") }
+        }
+        let report = IncidentReport(id: UUID(), visitId: visitId, reporterId: reporterId, reporterRole: reporterRole,
+                                     type: type, description: description, createdAt: .now)
+        return try await repository.fileReport(report)
+    }
+
+    func myReports(reporterId: UUID) async throws -> [IncidentReport] {
+        try await repository.myReports(reporterId: reporterId)
+    }
+}
+
+/// L4: pressing SOS both logs the incident and hands back a link a trusted
+/// contact can open to see the visit's live status — two outcomes from one
+/// tap, since the plan is explicit that a stranger being in a home is not a
+/// moment to make someone fill out a form before help is on the way.
+struct SOSUseCase {
+    let incidentReportRepository: IncidentReportRepository
+
+    struct Result {
+        var report: IncidentReport
+        var shareLink: URL
+    }
+
+    func execute(visitId: UUID, reporterId: UUID, reporterRole: IncidentReport.ReporterRole) async throws -> Result {
+        let report = try await FileIncidentReportUseCase(repository: incidentReportRepository)
+            .execute(visitId: visitId, reporterId: reporterId, reporterRole: reporterRole, type: .sos, description: "")
+        let link = ShareVisitLinkUseCase.link(visitId: visitId)
+        return Result(report: report, shareLink: link)
+    }
+}
+
+/// L4: builds the `vetcircuit://visit/<id>` deep link `DeepLinkParser`
+/// already understands (N7) — reused here rather than inventing a second
+/// link format, so a trusted contact who opens it lands exactly where the
+/// existing deep-link routing sends anyone else.
+enum ShareVisitLinkUseCase {
+    static func link(visitId: UUID) -> URL {
+        URL(string: "vetcircuit://visit/\(visitId.uuidString)")!
+    }
+
+    static func shareMessage(visitId: UUID) -> String {
+        "I'm on a VetCircuit home visit right now — track it live: \(link(visitId: visitId).absoluteString)"
     }
 }
 

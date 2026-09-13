@@ -128,7 +128,7 @@ final class SupabaseQuoteRepository: QuoteRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
-    func createQuote(for cart: Cart, catalog: [Service], useWalletBalance: Bool) async throws -> Quote {
+    func createQuote(for cart: Cart, catalog: [Service], useWalletBalance: Bool, applyEntitlementCredit: Bool) async throws -> Quote {
         struct Response: Decodable {
             let id: UUID
             let cartId: UUID
@@ -141,8 +141,12 @@ final class SupabaseQuoteRepository: QuoteRepository {
                 case cartId = "cart_id", totalMinorUnits = "total_minor_units", expiresAt = "expires_at"
             }
         }
+        // H6: the edge function re-derives and re-checks entitlement
+        // eligibility itself (see the protocol doc comment) — this flag is
+        // only "the client thinks a credit applies here," never authority.
         let response: Response = try await client.functions.invoke("create-quote", options: .init(body: [
             "cart_id": cart.id.uuidString, "use_wallet_balance": useWalletBalance,
+            "apply_entitlement_credit": applyEntitlementCredit,
         ] as [String: Any])).value
         return Quote(id: response.id, cartId: response.cartId, breakdown: response.breakdown,
                      signature: response.signature, expiresAt: response.expiresAt)
@@ -648,11 +652,19 @@ private struct SupabaseUserRow: Decodable {
     let email: String?
     let createdAt: Date
     let pets: [SupabasePetRow]?
+    // A11: admin/trusted-function-set only (see 0026 migration) — decoded
+    // read-only, never sent back on any client update to this row.
+    let accountStatus: String?
 
-    enum CodingKeys: String, CodingKey { case id, phone, name, email, createdAt = "created_at", pets }
+    enum CodingKeys: String, CodingKey {
+        case id, phone, name, email, createdAt = "created_at", pets
+        case accountStatus = "account_status"
+    }
 
     func toDomain() -> User {
-        User(id: id, phone: phone, name: name, email: email, createdAt: createdAt, pets: (pets ?? []).map { $0.toDomain() })
+        User(id: id, phone: phone, name: name, email: email, createdAt: createdAt,
+             pets: (pets ?? []).map { $0.toDomain() },
+             accountStatus: User.AccountStatus(rawValue: accountStatus ?? "active") ?? .active)
     }
 }
 
@@ -1770,6 +1782,94 @@ private struct SupabaseAppNotificationRow: Decodable {
     func toDomain() -> AppNotification {
         AppNotification(id: id, userId: userId, category: AppNotification.Category(rawValue: category) ?? .promotion,
                          title: title, body: body, sentAt: sentAt, createdAt: createdAt, readAt: readAt)
+    }
+}
+
+final class SupabaseSubscriptionEntitlementRepository: SubscriptionEntitlementRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func currentEntitlement(subscriptionId: UUID) async throws -> SubscriptionEntitlement? {
+        let rows: [SupabaseEntitlementRow] = try await client.from("subscription_entitlements")
+            .select().eq("subscription_id", value: subscriptionId).execute().value
+        return rows.first?.toDomain()
+    }
+
+    /// Server-side function (0028_subscription_entitlements.sql) does the
+    /// rollover + decrement atomically so two concurrent bookings can't both
+    /// read "1 credit left" and both spend it.
+    func consumeCredit(subscriptionId: UUID) async throws -> SubscriptionEntitlement {
+        struct Params: Encodable { let p_subscription_id: UUID }
+        let row: SupabaseEntitlementRow = try await client
+            .rpc("consume_subscription_credit", params: Params(p_subscription_id: subscriptionId))
+            .execute().value
+        return row.toDomain()
+    }
+}
+
+private struct SupabaseEntitlementRow: Decodable {
+    let id: UUID
+    let subscriptionId: UUID
+    let creditsRemaining: Int
+    let resetAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case subscriptionId = "subscription_id", creditsRemaining = "credits_remaining", resetAt = "reset_at"
+    }
+
+    func toDomain() -> SubscriptionEntitlement {
+        SubscriptionEntitlement(id: id, subscriptionId: subscriptionId, creditsRemaining: creditsRemaining, resetAt: resetAt)
+    }
+}
+
+final class SupabaseIncidentReportRepository: IncidentReportRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func fileReport(_ report: IncidentReport) async throws -> IncidentReport {
+        struct Insert: Encodable {
+            let id: UUID, visitId: UUID, reporterId: UUID, reporterRole: String, type: String, description: String
+            enum CodingKeys: String, CodingKey {
+                case id, description, type
+                case visitId = "visit_id", reporterId = "reporter_id", reporterRole = "reporter_role"
+            }
+        }
+        let insert = Insert(id: report.id, visitId: report.visitId, reporterId: report.reporterId,
+                             reporterRole: report.reporterRole.rawValue, type: report.type.rawValue, description: report.description)
+        let rows: [SupabaseIncidentReportRow] = try await client.from("incident_reports")
+            .insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func myReports(reporterId: UUID) async throws -> [IncidentReport] {
+        let rows: [SupabaseIncidentReportRow] = try await client.from("incident_reports")
+            .select().eq("reporter_id", value: reporterId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+private struct SupabaseIncidentReportRow: Decodable {
+    let id: UUID
+    let visitId: UUID
+    let reporterId: UUID
+    let reporterRole: String
+    let type: String
+    let description: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, description
+        case visitId = "visit_id", reporterId = "reporter_id", reporterRole = "reporter_role"
+        case type, createdAt = "created_at"
+    }
+
+    func toDomain() -> IncidentReport {
+        IncidentReport(id: id, visitId: visitId, reporterId: reporterId,
+                        reporterRole: IncidentReport.ReporterRole(rawValue: reporterRole) ?? .customer,
+                        type: IncidentReport.IncidentType(rawValue: type) ?? .other,
+                        description: description, createdAt: createdAt)
     }
 }
 

@@ -9,6 +9,7 @@ struct VisitDetailView: View {
     @State private var callErrorMessage: String?
     @State private var visitOTP: VisitOTP?
     @State private var showingReportProblem = false
+    @State private var showingIncidentReport = false
     @State private var followUpService: Service?
     @State private var followUpPet: Pet?
     @State private var showingTip = false
@@ -95,6 +96,20 @@ struct VisitDetailView: View {
                 }
                 .buttonStyle(PressableStyle())
                 .appearAnimation(delay: 0.1)
+
+                // L5: safety-specific, separate from "Report a problem with
+                // this visit" below (a billing/service dispute) — see the
+                // doc comment on IncidentReport. Available at any visit
+                // status, not just completed, since a safety concern can
+                // arise at any point in the visit's lifecycle.
+                Button {
+                    Haptics.tap()
+                    showingIncidentReport = true
+                } label: {
+                    ActionRow(title: "Report an incident", systemImage: "shield.lefthalf.filled", tint: Theme.danger)
+                }
+                .buttonStyle(PressableStyle())
+                .appearAnimation(delay: 0.11)
 
                 if visit.status == .requested || visit.status == .confirmed {
                     Button {
@@ -185,6 +200,9 @@ struct VisitDetailView: View {
         }
         .sheet(isPresented: $showingReportProblem) {
             ContactSupportView(visitId: visit.id, subjectPlaceholder: "Problem with visit on \(visit.scheduledAt.formatted(date: .abbreviated, time: .omitted))")
+        }
+        .sheet(isPresented: $showingIncidentReport) {
+            IncidentReportView(visitId: visit.id)
         }
         .sheet(item: $followUpService) { service in
             NavigationStack {
