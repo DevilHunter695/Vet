@@ -44,8 +44,21 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SUPABASE_URL: ""
         SUPABASE_ANON_KEY: ""
+    # N6: shared App Group so the widget extension can read the
+    # `SharedVisitSummary` the main app writes on refresh — see
+    # VetCircuit/Data/WidgetData/WidgetDataBridge.swift.
+    entitlements:
+      path: VetCircuit/VetCircuit.entitlements
+      properties:
+        com.apple.developer.applesignin:
+          - Default
+        com.apple.security.application-groups:
+          - group.com.vetcircuit.app
     dependencies:
       - package: Supabase
+      - target: VetCircuitWidgetExtension
+        embed: true
+        codeSignOnCopy: true
     scheme:
       testTargets:
         - VetCircuitTests
@@ -57,3 +70,25 @@ targets:
       - path: VetCircuitTests
     dependencies:
       - target: VetCircuit
+  VetCircuitWidgetExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: VetCircuitWidget
+    info:
+      path: VetCircuitWidget/Info.plist
+      properties:
+        CFBundleDisplayName: VetCircuit Widget
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: VetCircuitWidget/VetCircuitWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.vetcircuit.app
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vetcircuit.app.widget
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: "YES"
+        GENERATE_INFOPLIST_FILE: "NO"
