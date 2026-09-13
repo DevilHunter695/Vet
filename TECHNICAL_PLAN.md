@@ -237,7 +237,7 @@ Service (Home consultation)
 | H3 | Manage: upgrade, downgrade, **pause**, **cancel**, view next renewal | **P0** | 🔨 |
 | H4 | Renewal reminders (T-7, T-1) + receipt | P0 | 🔨 |
 | H5 | Dunning: failed renewal → retry ladder → grace → downgrade | P1 | 🔨 |
-| H6 | Subscription credits consumed by bookings (entitlement engine) | P1 | ⛔ |
+| H6 | Subscription credits consumed by bookings (entitlement engine) | P1 | ✅ | `SubscriptionEntitlement` + pure `EntitlementPolicy` (monthly/quarterly/annual = 1 credit/month, corporate = 1/seat/month), wired into `PricingEngine.Input.entitlementCreditApplied` (Appendix C's "entitlement" line) via `GetQuoteUseCase`. Client only proposes; 0028_subscription_entitlements.sql's `consume_subscription_credit()` is the real, atomic authority |
 | H7 | Corporate/RWA seat-based plan + seat assignment | P2 | 🔨 |
 
 ### I. The live visit (your trust moment)

@@ -580,6 +580,99 @@ struct CartAndQuoteUseCaseTests {
         #expect(!quote.isExpired)
         #expect(quote.breakdown.totalMinorUnits > 0)
     }
+
+    @Test("an active subscriber with a credit gets the base price zeroed")
+    func appliesEntitlementCreditWhenAvailable() async throws {
+        let cartRepo = MockCartRepository()
+        let cartUseCase = ManageCartUseCase(cartRepository: cartRepo)
+        let subscriptionRepo = MockSubscriptionRepository()
+        let entitlementRepo = MockSubscriptionEntitlementRepository()
+        let quoteUseCase = GetQuoteUseCase(quoteRepository: MockQuoteRepository(), catalogRepository: MockCatalogRepository(),
+                                           subscriptionRepository: subscriptionRepo, entitlementRepository: entitlementRepo)
+
+        let service = MockData.services[0]
+        let userId = UUID()
+        let subscription = try await subscriptionRepo.subscribe(userId: userId, plan: .monthly)
+        var cart = try await cartUseCase.current(userId: userId)
+        let item = CartItem(id: UUID(), serviceId: service.id, variantId: service.variants[0].id, petIds: [UUID()])
+        cart = try await cartUseCase.addItem(item, to: cart)
+
+        // A fresh subscription's entitlement is lazily seeded with 1 credit
+        // (mirrors a signup edge function granting one server-side) — the
+        // quote flow should find and apply it without the caller ever
+        // touching consumeCredit directly.
+        let creditedQuote = try await quoteUseCase.execute(cart: cart)
+        #expect(creditedQuote.breakdown.lineItems.contains { $0.amountMinorUnits == 0 && $0.label.contains(service.variants[0].name) })
+
+        // Once the credit is actually spent, the next quote is priced normally.
+        _ = try await entitlementRepo.consumeCredit(subscriptionId: subscription.id)
+        let noCreditQuote = try await quoteUseCase.execute(cart: cart)
+        #expect(noCreditQuote.breakdown.lineItems.first?.label == service.variants[0].name)
+
+        // Without a subscription/entitlement wired at all, no credit applies either.
+        let plainQuoteUseCase = GetQuoteUseCase(quoteRepository: MockQuoteRepository(), catalogRepository: MockCatalogRepository())
+        let plainQuote = try await plainQuoteUseCase.execute(cart: cart)
+        #expect(plainQuote.breakdown.lineItems.first?.label == service.variants[0].name)
+    }
+}
+
+@Suite("EntitlementPolicy")
+struct EntitlementPolicyTests {
+    @Test("monthly/quarterly/annual each grant one credit per month")
+    func individualPlansGrantOneCreditPerMonth() {
+        #expect(EntitlementPolicy.creditsGrantedPerPeriod(plan: .monthly, seatCount: 1) == 1)
+        #expect(EntitlementPolicy.creditsGrantedPerPeriod(plan: .quarterly, seatCount: 1) == 1)
+        #expect(EntitlementPolicy.creditsGrantedPerPeriod(plan: .annual, seatCount: 1) == 1)
+    }
+
+    @Test("corporate grants one credit per seat")
+    func corporateGrantsOneCreditPerSeat() {
+        #expect(EntitlementPolicy.creditsGrantedPerPeriod(plan: .corporate, seatCount: 12) == 12)
+    }
+
+    @Test("a paused/cancelled subscription never gets a credit applied")
+    func inactiveSubscriptionNeverGetsCredit() {
+        var subscription = Subscription(id: UUID(), userId: UUID(), planType: .monthly, status: .paused, renewalDate: .now)
+        let entitlement = SubscriptionEntitlement(id: UUID(), subscriptionId: subscription.id, creditsRemaining: 5, resetAt: .now.addingTimeInterval(86_400))
+        #expect(EntitlementPolicy.canApplyCredit(subscription: subscription, entitlement: entitlement, now: .now) == false)
+
+        subscription.status = .active
+        #expect(EntitlementPolicy.canApplyCredit(subscription: subscription, entitlement: entitlement, now: .now) == true)
+    }
+
+    @Test("zero credits remaining and no reset due means no credit applies")
+    func zeroCreditsNoResetDueMeansNoCredit() {
+        let subscription = Subscription(id: UUID(), userId: UUID(), planType: .monthly, status: .active, renewalDate: .now)
+        let entitlement = SubscriptionEntitlement(id: UUID(), subscriptionId: subscription.id, creditsRemaining: 0, resetAt: .now.addingTimeInterval(86_400))
+        #expect(EntitlementPolicy.canApplyCredit(subscription: subscription, entitlement: entitlement, now: .now) == false)
+    }
+
+    @Test("a due reset rolls credits forward before the eligibility check")
+    func dueResetRollsForwardBeforeCheck() {
+        let subscription = Subscription(id: UUID(), userId: UUID(), planType: .monthly, status: .active, renewalDate: .now)
+        let pastDue = SubscriptionEntitlement(id: UUID(), subscriptionId: subscription.id, creditsRemaining: 0, resetAt: .now.addingTimeInterval(-3600))
+        #expect(EntitlementPolicy.canApplyCredit(subscription: subscription, entitlement: pastDue, now: .now) == true)
+
+        let rolled = EntitlementPolicy.rolledForward(entitlement: pastDue, plan: subscription.planType, seatCount: subscription.seatCount, now: .now)
+        #expect(rolled.creditsRemaining == 1)
+        #expect(rolled.resetAt > .now)
+    }
+}
+
+@Suite("PricingEngine entitlement credit")
+struct PricingEngineEntitlementTests {
+    @Test("an applied credit zeroes the base price but not add-ons")
+    func creditZeroesBaseOnly() {
+        let variant = MockData.services[0].variants[0]
+        let addon = MockData.services[0].addons.first
+        let input = PricingEngine.Input(variant: variant, addons: addon.map { [$0] } ?? [], additionalPetCount: 0,
+                                        travelFeeMinorUnits: 0, entitlementCreditApplied: true)
+        let breakdown = PricingEngine.quote(input)
+        #expect(breakdown.lineItems.contains { $0.amountMinorUnits == 0 && $0.label.contains(variant.name) })
+        if let addon {
+            #expect(breakdown.lineItems.contains { $0.label == addon.name && $0.amountMinorUnits == addon.priceMinorUnits })
+        }
+    }
 }
 
 @Suite("HoldSlotUseCase")

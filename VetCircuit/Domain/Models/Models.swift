@@ -304,6 +304,64 @@ struct SubscriptionManagementPolicy {
     }
 }
 
+// MARK: - H6: subscription entitlement engine — a subscription grants a
+// monthly allowance of free-visit credits, tracked separately from billing
+// state (`Subscription.status`) because a credit balance resets on a period
+// boundary, not on a plan-status transition.
+
+struct SubscriptionEntitlement: Identifiable, Codable, Equatable, Hashable {
+    var id: UUID
+    var subscriptionId: UUID
+    var creditsRemaining: Int
+    var resetAt: Date
+}
+
+/// Pure — no I/O, no clock injected beyond the `Date` passed in — so the
+/// credits-per-period rule and the reset/consume decisions are directly
+/// testable. `GetQuoteUseCase` calls `apply` to decide whether a quote gets
+/// a credit; the repository is responsible for persisting the result.
+enum EntitlementPolicy {
+    /// Monthly/quarterly/annual all grant one visit credit per month —
+    /// quarterly/annual just accrue it monthly instead of handing over 3 or
+    /// 12 at signup, so a cancelled quarterly/annual plan hasn't already
+    /// spent credits for months it won't see. Corporate is seat-based: one
+    /// credit per seat per month (a bulk RWA plan is buying capacity for N
+    /// households, not one).
+    static func creditsGrantedPerPeriod(plan: Subscription.PlanType, seatCount: Int) -> Int {
+        switch plan {
+        case .monthly, .quarterly, .annual: return 1
+        case .corporate: return max(1, seatCount)
+        }
+    }
+
+    /// Whether `entitlement` needs its monthly reset applied before use —
+    /// pure date comparison, no side effects.
+    static func needsReset(entitlement: SubscriptionEntitlement, now: Date) -> Bool {
+        now >= entitlement.resetAt
+    }
+
+    /// Returns the entitlement as it should be *after* rolling forward any
+    /// due reset(s) — callers persist this before consuming a credit. Uses
+    /// a calendar month step so "reset monthly" means a calendar month, not
+    /// a rolling 30-day window that drifts.
+    static func rolledForward(entitlement: SubscriptionEntitlement, plan: Subscription.PlanType, seatCount: Int, now: Date, calendar: Calendar = .current) -> SubscriptionEntitlement {
+        guard needsReset(entitlement: entitlement, now: now) else { return entitlement }
+        var result = entitlement
+        result.creditsRemaining = creditsGrantedPerPeriod(plan: plan, seatCount: seatCount)
+        result.resetAt = calendar.date(byAdding: .month, value: 1, to: max(entitlement.resetAt, now)) ?? now.addingTimeInterval(30 * 86_400)
+        return result
+    }
+
+    /// Whether a credit can be applied to zero a quote's base price right
+    /// now — active subscription (H3's pause/cancel states never earn a
+    /// credit) with at least one credit remaining after rollover.
+    static func canApplyCredit(subscription: Subscription, entitlement: SubscriptionEntitlement, now: Date) -> Bool {
+        guard subscription.status == .active else { return false }
+        let current = rolledForward(entitlement: entitlement, plan: subscription.planType, seatCount: subscription.seatCount, now: now)
+        return current.creditsRemaining > 0
+    }
+}
+
 struct Payment: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var visitId: UUID?

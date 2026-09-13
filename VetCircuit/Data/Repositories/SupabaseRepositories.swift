@@ -128,7 +128,7 @@ final class SupabaseQuoteRepository: QuoteRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
-    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote {
+    func createQuote(for cart: Cart, catalog: [Service], applyEntitlementCredit: Bool) async throws -> Quote {
         struct Response: Decodable {
             let id: UUID
             let cartId: UUID
@@ -141,7 +141,12 @@ final class SupabaseQuoteRepository: QuoteRepository {
                 case cartId = "cart_id", totalMinorUnits = "total_minor_units", expiresAt = "expires_at"
             }
         }
-        let response: Response = try await client.functions.invoke("create-quote", options: .init(body: ["cart_id": cart.id.uuidString])).value
+        // H6: the edge function re-derives and re-checks entitlement
+        // eligibility itself (see the protocol doc comment) — this flag is
+        // only "the client thinks a credit applies here," never authority.
+        let response: Response = try await client.functions.invoke("create-quote", options: .init(
+            body: ["cart_id": cart.id.uuidString, "apply_entitlement_credit": applyEntitlementCredit]
+        )).value
         return Quote(id: response.id, cartId: response.cartId, breakdown: response.breakdown,
                      signature: response.signature, expiresAt: response.expiresAt)
     }
@@ -1694,6 +1699,44 @@ private struct SupabaseAppNotificationRow: Decodable {
     func toDomain() -> AppNotification {
         AppNotification(id: id, userId: userId, category: AppNotification.Category(rawValue: category) ?? .promotion,
                          title: title, body: body, sentAt: sentAt, createdAt: createdAt, readAt: readAt)
+    }
+}
+
+final class SupabaseSubscriptionEntitlementRepository: SubscriptionEntitlementRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func currentEntitlement(subscriptionId: UUID) async throws -> SubscriptionEntitlement? {
+        let rows: [SupabaseEntitlementRow] = try await client.from("subscription_entitlements")
+            .select().eq("subscription_id", value: subscriptionId).execute().value
+        return rows.first?.toDomain()
+    }
+
+    /// Server-side function (0028_subscription_entitlements.sql) does the
+    /// rollover + decrement atomically so two concurrent bookings can't both
+    /// read "1 credit left" and both spend it.
+    func consumeCredit(subscriptionId: UUID) async throws -> SubscriptionEntitlement {
+        struct Params: Encodable { let p_subscription_id: UUID }
+        let row: SupabaseEntitlementRow = try await client
+            .rpc("consume_subscription_credit", params: Params(p_subscription_id: subscriptionId))
+            .execute().value
+        return row.toDomain()
+    }
+}
+
+private struct SupabaseEntitlementRow: Decodable {
+    let id: UUID
+    let subscriptionId: UUID
+    let creditsRemaining: Int
+    let resetAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case subscriptionId = "subscription_id", creditsRemaining = "credits_remaining", resetAt = "reset_at"
+    }
+
+    func toDomain() -> SubscriptionEntitlement {
+        SubscriptionEntitlement(id: id, subscriptionId: subscriptionId, creditsRemaining: creditsRemaining, resetAt: resetAt)
     }
 }
 

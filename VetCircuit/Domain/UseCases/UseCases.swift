@@ -441,15 +441,35 @@ struct ManageCartUseCase {
 struct GetQuoteUseCase {
     let quoteRepository: QuoteRepository
     let catalogRepository: CatalogRepository
+    // H6: optional so existing call sites/tests that don't care about
+    // entitlements keep working — without these, a quote is priced with no
+    // credit applied, same as before this feature existed.
+    var subscriptionRepository: SubscriptionRepository? = nil
+    var entitlementRepository: SubscriptionEntitlementRepository? = nil
 
     /// E6: the app hands over its selections and gets back a signed,
     /// itemized, TTL'd quote — it never assembles a rupee amount itself.
+    /// H6: if the user has an active subscription with a credit left this
+    /// period, the quote comes back with the base price zeroed — this only
+    /// *asks* for that (see `QuoteRepository.createQuote`'s doc comment);
+    /// the server independently re-checks and is the one that actually
+    /// spends the credit.
     func execute(cart: Cart) async throws -> Quote {
         guard !cart.items.isEmpty else {
             throw DomainError.validation("Your cart is empty.")
         }
         let catalog = try await catalogRepository.listServices(vertical: nil)
-        return try await quoteRepository.createQuote(for: cart, catalog: catalog)
+        let applyCredit = await entitlementEligible(userId: cart.userId)
+        return try await quoteRepository.createQuote(for: cart, catalog: catalog, applyEntitlementCredit: applyCredit)
+    }
+
+    private func entitlementEligible(userId: UUID) async -> Bool {
+        guard let subscriptionRepository, let entitlementRepository else { return false }
+        guard let subscription = try? await subscriptionRepository.currentSubscription(userId: userId),
+              subscription.status == .active,
+              let entitlement = try? await entitlementRepository.currentEntitlement(subscriptionId: subscription.id)
+        else { return false }
+        return EntitlementPolicy.canApplyCredit(subscription: subscription, entitlement: entitlement, now: .now)
     }
 }
 

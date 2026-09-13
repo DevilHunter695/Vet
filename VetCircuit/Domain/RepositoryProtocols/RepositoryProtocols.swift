@@ -177,7 +177,24 @@ protocol CartRepository: Sendable {
 protocol QuoteRepository: Sendable {
     /// E6: the only source of a rupee amount the app is ever allowed to
     /// display or reference in an order. Pricing happens entirely server-side.
-    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote
+    /// `applyEntitlementCredit` (H6) tells the server the first line item's
+    /// base price should be zeroed against the caller's subscription credit
+    /// — the server still re-derives and re-checks eligibility itself
+    /// (`GetQuoteUseCase` only decides "is it worth asking", never "is it
+    /// allowed": the client is never the source of truth for money).
+    func createQuote(for cart: Cart, catalog: [Service], applyEntitlementCredit: Bool) async throws -> Quote
+}
+
+/// H6: subscription credit balance, separate from `SubscriptionRepository`
+/// because it resets on a period boundary, not a billing-status transition.
+protocol SubscriptionEntitlementRepository: Sendable {
+    func currentEntitlement(subscriptionId: UUID) async throws -> SubscriptionEntitlement?
+    /// Persists a credit decrement (and any due rollover) atomically —
+    /// returns the entitlement after the consumption, or throws if there was
+    /// nothing left to consume (server-enforced, mirrors slot-hold capacity
+    /// checks: the client's own `EntitlementPolicy.canApplyCredit` call is
+    /// only a UI hint, not the authority).
+    func consumeCredit(subscriptionId: UUID) async throws -> SubscriptionEntitlement
 }
 
 protocol SlotHoldRepository: Sendable {

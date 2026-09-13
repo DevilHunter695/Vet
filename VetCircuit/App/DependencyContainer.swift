@@ -44,6 +44,7 @@ final class DependencyContainer {
     let householdRepository: HouseholdRepository
     let waitlistRepository: WaitlistRepository
     let incidentReportRepository: IncidentReportRepository
+    let subscriptionEntitlementRepository: SubscriptionEntitlementRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -85,6 +86,7 @@ final class DependencyContainer {
         self.householdRepository = MockHouseholdRepository()
         self.waitlistRepository = MockWaitlistRepository()
         self.incidentReportRepository = MockIncidentReportRepository()
+        self.subscriptionEntitlementRepository = MockSubscriptionEntitlementRepository()
     }
 
     // MARK: Use case factories
@@ -119,7 +121,10 @@ final class DependencyContainer {
     func manageAddressesUseCase() -> ManageAddressesUseCase { ManageAddressesUseCase(addressRepository: addressRepository) }
     func holdSlotUseCase() -> HoldSlotUseCase { HoldSlotUseCase(circuitRepository: circuitRepository, slotHoldRepository: slotHoldRepository) }
     func manageCartUseCase() -> ManageCartUseCase { ManageCartUseCase(cartRepository: cartRepository) }
-    func getQuoteUseCase() -> GetQuoteUseCase { GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository) }
+    func getQuoteUseCase() -> GetQuoteUseCase {
+        GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository,
+                        subscriptionRepository: subscriptionRepository, entitlementRepository: subscriptionEntitlementRepository)
+    }
     func browsePackagesUseCase() -> BrowsePackagesUseCase { BrowsePackagesUseCase(packageRepository: packageRepository) }
     func buyPackageUseCase() -> BuyPackageUseCase {
         BuyPackageUseCase(packageRepository: packageRepository, catalogRepository: catalogRepository, cartRepository: cartRepository)
