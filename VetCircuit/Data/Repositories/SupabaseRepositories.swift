@@ -416,20 +416,14 @@ final class SupabaseRefundRepository: RefundRepository {
     init(client: SupabaseClient) { self.client = client }
 
     func issueRefund(visitId: UUID, paymentId: UUID, amountMinorUnits: Int, reason: String, initiatedByOpsUserId: UUID?) async throws -> Refund {
-        // Real refund issuance calls the gateway (Razorpay refund API) from a
-        // trusted Edge Function, then writes this row — the client only ever
-        // triggers the request and reads the result, per plan §6.2.
-        struct Insert: Encodable {
-            let visitId: UUID, paymentId: UUID, amountMinorUnits: Int, reason: String, initiatedByOpsUserId: UUID?
-            enum CodingKeys: String, CodingKey {
-                case visitId = "visit_id", paymentId = "payment_id", amountMinorUnits = "amount_minor_units"
-                case reason, initiatedByOpsUserId = "initiated_by_ops_user_id"
-            }
-        }
-        let rows: [SupabaseRefundRow] = try await client.from("refunds")
-            .insert(Insert(visitId: visitId, paymentId: paymentId, amountMinorUnits: amountMinorUnits, reason: reason, initiatedByOpsUserId: initiatedByOpsUserId))
-            .select().execute().value
-        guard let row = rows.first else { throw DomainError.unknown }
+        // Refunds are money creation (plan §6.2) — the refunds table is
+        // select-only under RLS for every client role, customer or admin.
+        // This calls the issue-refund Edge Function, the only writer,
+        // instead of inserting directly (which RLS would reject outright).
+        let row: SupabaseRefundRow = try await client.functions.invoke("issue-refund", options: .init(body: [
+            "visit_id": visitId.uuidString, "payment_id": paymentId.uuidString,
+            "amount_minor_units": amountMinorUnits, "reason": reason,
+        ])).value
         return row.toDomain()
     }
 
