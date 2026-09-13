@@ -506,3 +506,43 @@ struct CheckAppConfigUseCase {
         return .ok
     }
 }
+
+// MARK: - Help centre, support tickets & notification centre (plan §M, §J7)
+
+struct GetHelpArticlesUseCase {
+    let repository: HelpRepository
+
+    func execute() async throws -> [HelpArticle] {
+        try await repository.listArticles()
+    }
+}
+
+struct ContactSupportUseCase {
+    let repository: SupportRepository
+
+    /// M2/K8: a ticket must actually say something — an empty subject/body
+    /// reaches the ops queue as noise a human then has to triage away.
+    func execute(userId: UUID, visitId: UUID?, subject: String, body: String) async throws -> SupportTicket {
+        let subject = subject.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !subject.isEmpty else { throw DomainError.validation("Please add a subject.") }
+        guard !body.isEmpty else { throw DomainError.validation("Please describe what happened.") }
+        return try await repository.createTicket(userId: userId, visitId: visitId, subject: subject, body: body)
+    }
+
+    func myTickets(userId: UUID) async throws -> [SupportTicket] {
+        try await repository.myTickets(userId: userId)
+    }
+}
+
+struct GetNotificationCenterUseCase {
+    let repository: AppNotificationRepository
+
+    func execute(userId: UUID) async throws -> [AppNotification] {
+        try await repository.notifications(userId: userId)
+    }
+
+    func markRead(id: UUID) async throws {
+        try await repository.markRead(id: id)
+    }
+}

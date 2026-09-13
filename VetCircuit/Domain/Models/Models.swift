@@ -795,6 +795,12 @@ struct AppNotification: Identifiable, Codable, Equatable, Hashable {
     var title: String
     var body: String
     var sentAt: Date?
+    var createdAt: Date = .now
+    /// J7: notification centre read/unread state — nil until the customer
+    /// opens `NotificationCenterView` and views this row.
+    var readAt: Date?
+
+    var isRead: Bool { readAt != nil }
 
     enum Category: String, Codable {
         case bookingUpdate = "booking_update"
@@ -804,6 +810,73 @@ struct AppNotification: Identifiable, Codable, Equatable, Hashable {
         case dormantWinback = "dormant_winback"
         case abandonedCart = "abandoned_cart"
         case promotion
+    }
+}
+
+// MARK: - Help centre / FAQ (plan §M1) — remote content so answers can change
+// without an app-store release.
+
+struct HelpArticle: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var category: Category
+    var question: String
+    var answer: String
+
+    enum Category: String, Codable, CaseIterable {
+        case booking, cancellation, payment, pets, account, visits
+
+        var displayName: String {
+            switch self {
+            case .booking: return "Booking"
+            case .cancellation: return "Cancellation & rescheduling"
+            case .payment: return "Payment & refunds"
+            case .pets: return "Pets & records"
+            case .account: return "Account & privacy"
+            case .visits: return "During a visit"
+            }
+        }
+    }
+}
+
+// MARK: - Support tickets & disputes (plan §M2, §K8) — one model serves both
+// "Contact support" and "Report a problem with this visit": a dispute is
+// just a ticket with `visitId` set, so it inherits the same queue, status
+// tracking and audit trail rather than needing a parallel table.
+
+struct SupportTicket: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var visitId: UUID?
+    var subject: String
+    var body: String
+    var status: Status
+    var createdAt: Date
+
+    enum Status: String, Codable, CaseIterable {
+        case open, inProgress = "in_progress", resolved
+
+        var displayName: String {
+            switch self {
+            case .open: return "Open"
+            case .inProgress: return "In progress"
+            case .resolved: return "Resolved"
+            }
+        }
+    }
+}
+
+// MARK: - Chat auto-close (plan §J5) — prevents unpaid consulting over chat
+// once a visit is long done; pure policy so it's testable without a clock
+// dependency injected anywhere but here.
+
+struct ChatPolicy {
+    static let openWindow: TimeInterval = 48 * 3600
+
+    /// Chat stays open for any non-completed visit (there's still an active
+    /// booking to discuss); once completed, it closes 48h after `completedAt`.
+    static func isOpen(visit: Visit, now: Date = .now) -> Bool {
+        guard visit.status == .completed, let completedAt = visit.completedAt else { return true }
+        return now.timeIntervalSince(completedAt) < openWindow
     }
 }
 

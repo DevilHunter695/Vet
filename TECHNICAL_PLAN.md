@@ -261,9 +261,9 @@ Service (Home consultation)
 | J2 | Chat attachments (photo of the symptom) | **P0** | 🔨 | Pet owners send photos. Always. |
 | J3 | Read receipts, typing, unread badge | P1 | 🔨 | |
 | J4 | **Masked voice calling** (Exotel/Twilio proxy — real numbers never exposed) | **P0** | 🔨 | Privacy + safety + "vet can't find the gate" reality |
-| J5 | Chat auto-closes 48h post-visit, with escalation to support | P1 | ⛔ | Prevents unpaid consulting over chat |
+| J5 | Chat auto-closes 48h post-visit, with escalation to support | P1 | ✅ | `ChatPolicy.isOpen` (domain, tested) gates `ChatView`'s input bar and shows a "chat has closed — contact support" banner |
 | J6 | Video consult | P2 | 🔨 (stub) | |
-| J7 | Notification centre in-app + per-channel preferences | P1 | ⛔ | |
+| J7 | Notification centre in-app + per-channel preferences | P1 | ✅ | Per-channel toggles were already ✅ (`NotificationPreferencesView`); this adds `NotificationCenterView`, reading the `notifications` table (extended with `read_at` in 0020) via a new `AppNotificationRepository` |
 | J8 | Transactional SMS/WhatsApp fallback when push fails | P1 | ⛔ | Android-less households, push disabled |
 
 ### K. Post-visit care
@@ -277,7 +277,7 @@ Service (Home consultation)
 | K5 | Follow-up booking in 1 tap (free follow-up window) | P1 | ⛔ |
 | K6 | Lab test ordering + report delivery | P2 | ⛔ |
 | K7 | Rate & review (stars + tags + optional photo) | P0 | ✅ |
-| K8 | Report a problem with this visit → dispute ticket | **P0** | ⛔ |
+| K8 | Report a problem with this visit → dispute ticket | **P0** | ✅ | Uses the same `SupportTicket` model as M2, with `visitId` set — "Report a problem with this visit" button on completed visits in `VisitDetailView` opens `ContactSupportView` pre-filled |
 
 ### L. Trust, safety & emergency
 
@@ -296,8 +296,8 @@ Service (Home consultation)
 
 | # | Capability | Pri | Status |
 |---|---|---|---|
-| M1 | Help centre / FAQ (remote content, not app-updated) | P0 | ⛔ |
-| M2 | In-app "Contact support" → ticket with visit context attached | P0 | ⛔ |
+| M1 | Help centre / FAQ (remote content, not app-updated) | P0 | ✅ | `HelpCenterView` (grouped by category, searchable) + `HelpRepository`, backed by public-read `help_articles` (migration 0020); Mock repo ships ~10 FAQ entries |
+| M2 | In-app "Contact support" → ticket with visit context attached | P0 | ✅ | `ContactSupportView`/`MyTicketsView` + `SupportRepository` against `support_tickets` (0020) — owner read/insert, no client update, mirroring `refunds` |
 | M3 | Ops ticket queue + SLA + canned responses | P0 | 🔨 |
 | M4 | Refund/credit issuance from a ticket, with audit trail | P0 | ⛔ |
 | M5 | Call support (business hours) | P1 | ⛔ |
@@ -310,7 +310,7 @@ Service (Home consultation)
 | N2 | Coupon campaigns (first-visit, win-back, cluster-launch) | P1 | ⛔ |
 | N3 | Lifecycle pushes: vaccination due, renewal, dormant 60d, abandoned cart | P1 | 🔨 | Detection + queueing done (`lifecycle-notifications` Edge Function, `notifications` table); actual push-send job to drain the queue is a separate, still-missing piece |
 | N4 | Loyalty points & tiers | P2 | ✅ |
-| N5 | In-app rating prompt (SKStoreReviewController, after a 5★ visit only) | P1 | ⛔ |
+| N5 | In-app rating prompt (SKStoreReviewController, after a 5★ visit only) | P1 | ✅ | `ReviewView` calls `SKStoreReviewController.requestReview` only on a 5★ submit, gated to once per app version via `UserDefaults` (StoreKit's own throttling is a separate, opaque layer on top) |
 | N6 | Home Screen widget: next visit / vaccination due | P2 | ⛔ |
 | N7 | Deep links + universal links for every campaign target | P1 | ⛔ |
 
@@ -323,7 +323,7 @@ Service (Home consultation)
 | O3 | Appearance light/dark/system | P0 | ✅ |
 | O4 | Accessibility: Dynamic Type to AX5, VoiceOver, Reduce Motion | P0 | 🔨 |
 | O5 | **Consent dashboard**: what you collect, why, withdraw consent | P0 (DPDP) | ✅ |
-| O6 | Privacy policy + T&C in-app and on web | P0 | ⛔ |
+| O6 | Privacy policy + T&C in-app and on web | P0 | 🔨 | In-app done: static `PrivacyPolicyView`/`TermsOfServiceView`, linked from Profile and from `LiabilityWaiverView`. Web (public-web) is a separate workstream, not touched here — best-effort draft text, not legal advice |
 | O7 | **Force-upgrade gate** (server-driven minimum version) | **P0** | ✅ | Your only true rollback lever for a shipped binary |
 | O8 | Maintenance mode screen (server flag) | P0 | ✅ | Shares `ForceUpdateView` with O7 — one blocking screen, two states |
 

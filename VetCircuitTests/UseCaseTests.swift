@@ -1025,3 +1025,99 @@ struct DunningPolicyTests {
         #expect(!DunningPolicy.shouldAutoDowngrade(state: state, now: .now.addingTimeInterval(86400 * 30)))
     }
 }
+
+@Suite("ChatPolicy")
+struct ChatPolicyTests {
+    private func makeVisit(status: Visit.VisitStatus, completedAt: Date?) -> Visit {
+        Visit(id: UUID(), userId: UUID(), petId: UUID(), vetId: UUID(), circuitId: UUID(),
+              status: status, scheduledAt: .now, completedAt: completedAt, notes: nil, paymentId: nil)
+    }
+
+    @Test("chat stays open for a non-completed visit regardless of time")
+    func openWhileNotCompleted() {
+        let visit = makeVisit(status: .enRoute, completedAt: nil)
+        #expect(ChatPolicy.isOpen(visit: visit, now: .now.addingTimeInterval(86400 * 365)))
+    }
+
+    @Test("chat is open just under 48h after completion")
+    func openJustUnder48h() {
+        let completedAt = Date()
+        let visit = makeVisit(status: .completed, completedAt: completedAt)
+        let now = completedAt.addingTimeInterval(48 * 3600 - 1)
+        #expect(ChatPolicy.isOpen(visit: visit, now: now))
+    }
+
+    @Test("chat is closed exactly at the 48h boundary")
+    func closedAtBoundary() {
+        let completedAt = Date()
+        let visit = makeVisit(status: .completed, completedAt: completedAt)
+        let now = completedAt.addingTimeInterval(48 * 3600)
+        #expect(!ChatPolicy.isOpen(visit: visit, now: now))
+    }
+
+    @Test("chat is closed well after the 48h window")
+    func closedLongAfter() {
+        let completedAt = Date().addingTimeInterval(-86400 * 10)
+        let visit = makeVisit(status: .completed, completedAt: completedAt)
+        #expect(!ChatPolicy.isOpen(visit: visit, now: .now))
+    }
+
+    @Test("a completed visit with no completedAt timestamp defaults to open")
+    func completedWithoutTimestampStaysOpen() {
+        // Defensive default: missing data should never silently lock a
+        // customer out of a chat they're entitled to.
+        let visit = makeVisit(status: .completed, completedAt: nil)
+        #expect(ChatPolicy.isOpen(visit: visit, now: .now))
+    }
+}
+
+@Suite("ContactSupportUseCase")
+struct ContactSupportUseCaseTests {
+    @Test("rejects an empty subject")
+    func rejectsEmptySubject() async {
+        let useCase = ContactSupportUseCase(repository: MockSupportRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(userId: UUID(), visitId: nil, subject: "   ", body: "It broke")
+        }
+    }
+
+    @Test("rejects an empty body")
+    func rejectsEmptyBody() async {
+        let useCase = ContactSupportUseCase(repository: MockSupportRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(userId: UUID(), visitId: nil, subject: "Refund", body: "")
+        }
+    }
+
+    @Test("creates a ticket with trimmed subject/body and open status")
+    func createsTicket() async throws {
+        let useCase = ContactSupportUseCase(repository: MockSupportRepository())
+        let userId = UUID()
+        let ticket = try await useCase.execute(userId: userId, visitId: nil, subject: "  Refund  ", body: "  Payment charged twice  ")
+        #expect(ticket.subject == "Refund")
+        #expect(ticket.body == "Payment charged twice")
+        #expect(ticket.status == .open)
+        #expect(ticket.userId == userId)
+    }
+
+    @Test("a ticket opened from a visit carries that visit's id — this is how disputes are filed")
+    func ticketCarriesVisitContext() async throws {
+        let useCase = ContactSupportUseCase(repository: MockSupportRepository())
+        let visitId = UUID()
+        let ticket = try await useCase.execute(userId: UUID(), visitId: visitId, subject: "Vet arrived late", body: "40 minutes late, no notice")
+        #expect(ticket.visitId == visitId)
+    }
+
+    @Test("myTickets only returns the calling user's tickets")
+    func myTicketsScopedToUser() async throws {
+        let repo = MockSupportRepository()
+        let useCase = ContactSupportUseCase(repository: repo)
+        let userA = UUID(), userB = UUID()
+        _ = try await useCase.execute(userId: userA, visitId: nil, subject: "A", body: "A's issue")
+        _ = try await useCase.execute(userId: userB, visitId: nil, subject: "B", body: "B's issue")
+
+        let ticketsForA = try await useCase.myTickets(userId: userA)
+        #expect(ticketsForA.count == 1)
+        #expect(ticketsForA.first?.userId == userA)
+    }
+}

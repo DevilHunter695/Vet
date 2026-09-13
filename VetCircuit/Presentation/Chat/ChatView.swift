@@ -8,10 +8,14 @@ final class ChatViewModel {
     var messages: [ChatMessage] = []
     var draft: String = ""
     var errorMessage: String?
+    /// J5: nil while the visit is still loading; once known, gates the
+    /// input bar and shows the "chat has closed" banner.
+    var isChatOpen: Bool = true
     private var subscriptionToken: AnyObject?
 
     private let sendChatMessageUseCase = DependencyContainer.shared.sendChatMessageUseCase()
     private let chatRepository = DependencyContainer.shared.chatRepository
+    private let visitRepository = DependencyContainer.shared.visitRepository
 
     init(visitId: UUID) { self.visitId = visitId }
 
@@ -20,6 +24,9 @@ final class ChatViewModel {
             messages = try await chatRepository.history(visitId: visitId)
         } catch {
             errorMessage = error.localizedDescription
+        }
+        if let visit = try? await visitRepository.visit(id: visitId) {
+            isChatOpen = ChatPolicy.isOpen(visit: visit)
         }
         subscriptionToken = chatRepository.subscribe(visitId: visitId) { [weak self] message in
             Task { @MainActor in
@@ -57,6 +64,7 @@ struct ChatView: View {
     @Environment(SessionStore.self) private var session
     @State private var viewModel: ChatViewModel
     @State private var photoPickerItem: PhotosPickerItem?
+    @State private var showingContactSupport = false
 
     init(visitId: UUID) { _viewModel = State(initialValue: ChatViewModel(visitId: visitId)) }
 
@@ -85,6 +93,22 @@ struct ChatView: View {
                 ErrorBanner(message: errorMessage).padding(.horizontal)
             }
 
+            if !viewModel.isChatOpen {
+                // J5: chat auto-closes 48h post-visit — this stops unpaid
+                // consulting over chat and routes anything real to support.
+                Button {
+                    Haptics.tap()
+                    showingContactSupport = true
+                } label: {
+                    Label("This chat has closed — need help? Contact support", systemImage: "lock.fill")
+                        .font(.brandCaption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .padding(12)
+                .background(Color(.secondarySystemBackground))
+            }
+
             HStack(spacing: 10) {
                 PhotosPicker(selection: $photoPickerItem, matching: .images) {
                     Image(systemName: "camera.fill")
@@ -94,14 +118,16 @@ struct ChatView: View {
                         .background(Theme.primary.opacity(0.1), in: Circle())
                 }
                 .accessibilityLabel("Attach a photo")
+                .disabled(!viewModel.isChatOpen)
 
                 TextField("Message", text: $viewModel.draft, axis: .vertical)
                     .font(.brandBody)
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .background(Color(.secondarySystemBackground), in: Capsule())
                     .accessibilityLabel("Message input")
+                    .disabled(!viewModel.isChatOpen)
 
-                let canSend = !viewModel.draft.trimmingCharacters(in: .whitespaces).isEmpty
+                let canSend = viewModel.isChatOpen && !viewModel.draft.trimmingCharacters(in: .whitespaces).isEmpty
                 Button {
                     Haptics.tap()
                     Task { await viewModel.send() }
@@ -124,6 +150,9 @@ struct ChatView: View {
         .navigationTitle("Chat")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load() }
+        .sheet(isPresented: $showingContactSupport) {
+            ContactSupportView(visitId: viewModel.visitId)
+        }
         .onChange(of: photoPickerItem) { _, newItem in
             Task {
                 guard let newItem, let data = try? await newItem.loadTransferable(type: Data.self) else { return }

@@ -717,3 +717,77 @@ actor MockAppConfigRepository: AppConfigRepository {
 
     func fetchConfig() async throws -> RemoteAppConfig { config }
 }
+
+// MARK: - Help centre, support & notification centre (plan §M, §J7)
+
+actor MockHelpRepository: HelpRepository {
+    /// ~8-10 realistic entries covering booking/cancellation/payment/pets —
+    /// enough to make search and category grouping in `HelpCenterView`
+    /// meaningful without a backend.
+    private let articles: [HelpArticle] = [
+        HelpArticle(id: UUID(), category: .booking, question: "How do I book a visit?",
+                    answer: "Pick your address, choose a service and pet, then a slot from your circuit vet's schedule. You'll see the full price before you pay."),
+        HelpArticle(id: UUID(), category: .booking, question: "Can I book for more than one pet in the same visit?",
+                    answer: "Yes — add each pet on the service screen. The second pet onward is priced at a reduced additional-pet fee, shown in the breakdown."),
+        HelpArticle(id: UUID(), category: .cancellation, question: "What's the cancellation policy?",
+                    answer: "Cancel more than 4 hours before your slot for a full refund. Inside 4 hours, 50% is refunded. A no-show is charged in full — the vet has already blocked that slot for you."),
+        HelpArticle(id: UUID(), category: .cancellation, question: "How do I reschedule instead of cancelling?",
+                    answer: "Open the visit from the Visits tab and tap \"Reschedule this visit\" — you keep the same booking and chat history, just a new slot."),
+        HelpArticle(id: UUID(), category: .payment, question: "How long do refunds take?",
+                    answer: "Refunds are issued to your original payment method and typically reflect in 5-7 business days, depending on your bank/UPI app."),
+        HelpArticle(id: UUID(), category: .payment, question: "Can I pay the vet in cash or UPI at the visit?",
+                    answer: "Where available for your circuit, yes — choose \"Pay after visit\" at checkout instead of paying online."),
+        HelpArticle(id: UUID(), category: .payment, question: "Where can I find my invoice?",
+                    answer: "Every completed visit has a GST invoice attached in Visits → Visit detail."),
+        HelpArticle(id: UUID(), category: .pets, question: "How do I add or edit a pet's details?",
+                    answer: "Go to Profile → Pets to add a pet, or tap a pet to edit its details. Removing a pet keeps its past visit history intact."),
+        HelpArticle(id: UUID(), category: .pets, question: "Will I get reminders when a vaccination is due?",
+                    answer: "Yes, once your vet logs a vaccination during a visit, we schedule a reminder ahead of its next-due date."),
+        HelpArticle(id: UUID(), category: .visits, question: "What is the code my vet asks me to read out?",
+                    answer: "That's your start-of-visit OTP — reading it to the vet confirms the visit actually started. It's shown only to you, once, when the vet arrives."),
+        HelpArticle(id: UUID(), category: .account, question: "How do I delete my account and data?",
+                    answer: "Profile → Privacy & consent → Delete account. There's a 30-day window to change your mind before it's permanently purged (financial records are retained as required by law)."),
+    ]
+
+    func listArticles() async throws -> [HelpArticle] { articles }
+}
+
+actor MockSupportRepository: SupportRepository {
+    private var tickets: [SupportTicket] = []
+
+    func createTicket(userId: UUID, visitId: UUID?, subject: String, body: String) async throws -> SupportTicket {
+        let ticket = SupportTicket(id: UUID(), userId: userId, visitId: visitId, subject: subject, body: body, status: .open, createdAt: .now)
+        tickets.append(ticket)
+        return ticket
+    }
+
+    func myTickets(userId: UUID) async throws -> [SupportTicket] {
+        tickets.filter { $0.userId == userId }.sorted { $0.createdAt > $1.createdAt }
+    }
+}
+
+actor MockAppNotificationRepository: AppNotificationRepository {
+    private var stored: [AppNotification] = []
+    private var seeded = false
+
+    private func seedIfNeeded(userId: UUID) {
+        guard !seeded else { return }
+        seeded = true
+        stored = [
+            AppNotification(id: UUID(), userId: userId, category: .bookingUpdate, title: "Visit confirmed",
+                             body: "Your vet visit is confirmed for this week.", sentAt: .now.addingTimeInterval(-3600 * 26), createdAt: .now.addingTimeInterval(-3600 * 26), readAt: .now.addingTimeInterval(-3600 * 25)),
+            AppNotification(id: UUID(), userId: userId, category: .vaccinationDue, title: "Vaccination due soon",
+                             body: "Bruno's next vaccination is due in 7 days — book a slot to stay on schedule.", sentAt: .now.addingTimeInterval(-3600 * 3), createdAt: .now.addingTimeInterval(-3600 * 3), readAt: nil),
+        ]
+    }
+
+    func notifications(userId: UUID) async throws -> [AppNotification] {
+        seedIfNeeded(userId: userId)
+        return stored.filter { $0.userId == userId }.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func markRead(id: UUID) async throws {
+        guard let index = stored.firstIndex(where: { $0.id == id }) else { return }
+        stored[index].readAt = .now
+    }
+}

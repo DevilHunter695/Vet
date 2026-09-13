@@ -33,6 +33,9 @@ final class DependencyContainer {
     let packageRepository: PackageRepository
     let notificationPreferencesRepository: NotificationPreferencesRepository
     let appConfigRepository: AppConfigRepository
+    let helpRepository: HelpRepository
+    let supportRepository: SupportRepository
+    let appNotificationRepository: AppNotificationRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -64,6 +67,9 @@ final class DependencyContainer {
         self.packageRepository = MockPackageRepository()
         self.notificationPreferencesRepository = MockNotificationPreferencesRepository()
         self.appConfigRepository = MockAppConfigRepository()
+        self.helpRepository = MockHelpRepository()
+        self.supportRepository = MockSupportRepository()
+        self.appNotificationRepository = MockAppNotificationRepository()
     }
 
     // MARK: Use case factories
@@ -107,4 +113,7 @@ final class DependencyContainer {
         ManageNotificationPreferencesUseCase(repository: notificationPreferencesRepository)
     }
     func checkAppConfigUseCase() -> CheckAppConfigUseCase { CheckAppConfigUseCase(repository: appConfigRepository) }
+    func getHelpArticlesUseCase() -> GetHelpArticlesUseCase { GetHelpArticlesUseCase(repository: helpRepository) }
+    func contactSupportUseCase() -> ContactSupportUseCase { ContactSupportUseCase(repository: supportRepository) }
+    func getNotificationCenterUseCase() -> GetNotificationCenterUseCase { GetNotificationCenterUseCase(repository: appNotificationRepository) }
 }

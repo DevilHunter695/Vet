@@ -205,3 +205,26 @@ protocol AppConfigRepository: Sendable {
     /// on a killed binary still needs to be told to update.
     func fetchConfig() async throws -> RemoteAppConfig
 }
+
+// MARK: - Support, help & notifications (plan §M, §J7)
+
+protocol HelpRepository: Sendable {
+    /// M1: remote FAQ content — no app-store release needed to fix an answer.
+    func listArticles() async throws -> [HelpArticle]
+}
+
+protocol SupportRepository: Sendable {
+    /// M2/K8: a ticket, optionally carrying visit context (a dispute is just
+    /// a ticket with `visitId` set). No update method on purpose — once
+    /// submitted, only ops can change its status (mirrors `refunds`: the
+    /// client reads state, never writes it after creation).
+    func createTicket(userId: UUID, visitId: UUID?, subject: String, body: String) async throws -> SupportTicket
+    func myTickets(userId: UUID) async throws -> [SupportTicket]
+}
+
+protocol AppNotificationRepository: Sendable {
+    /// J7: the in-app notification centre/history — distinct from
+    /// `NotificationPreferencesRepository`'s per-channel opt-in/out toggles.
+    func notifications(userId: UUID) async throws -> [AppNotification]
+    func markRead(id: UUID) async throws
+}

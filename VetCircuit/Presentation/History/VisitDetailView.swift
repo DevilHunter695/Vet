@@ -8,6 +8,7 @@ struct VisitDetailView: View {
     @State private var activeCallSession: CallSession?
     @State private var callErrorMessage: String?
     @State private var visitOTP: VisitOTP?
+    @State private var showingReportProblem = false
 
     private let startCallUseCase = DependencyContainer.shared.startCallUseCase()
     private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
@@ -125,6 +126,17 @@ struct VisitDetailView: View {
                 if visit.status == .completed {
                     PrimaryButton(title: "Rate this visit") { showingReview = true }
                         .appearAnimation(delay: 0.1)
+
+                    // K8 (P0): a dispute is just a support ticket carrying
+                    // this visit's id — same queue, same audit trail.
+                    Button {
+                        Haptics.tap()
+                        showingReportProblem = true
+                    } label: {
+                        ActionRow(title: "Report a problem with this visit", systemImage: "exclamationmark.bubble.fill", tint: Theme.danger)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .appearAnimation(delay: 0.12)
                 }
             }
             .padding()
@@ -137,6 +149,9 @@ struct VisitDetailView: View {
         }
         .sheet(isPresented: $showingReschedule) {
             RescheduleVisitView(visit: visit)
+        }
+        .sheet(isPresented: $showingReportProblem) {
+            ContactSupportView(visitId: visit.id, subjectPlaceholder: "Problem with visit on \(visit.scheduledAt.formatted(date: .abbreviated, time: .omitted))")
         }
         .task {
             guard visit.status == .arrived else { return }

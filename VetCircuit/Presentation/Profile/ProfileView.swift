@@ -171,6 +171,27 @@ struct ProfileView: View {
                     NavigationLink("Privacy & consent") {
                         PrivacyConsentView()
                     }
+                    NavigationLink("Notifications centre") {
+                        NotificationCenterView()
+                    }
+                }
+
+                Section("Support & legal") {
+                    NavigationLink("Help centre") {
+                        HelpCenterView()
+                    }
+                    NavigationLink("Contact support") {
+                        ContactSupportView()
+                    }
+                    NavigationLink("My tickets") {
+                        MyTicketsView()
+                    }
+                    NavigationLink("Privacy Policy") {
+                        PrivacyPolicyView()
+                    }
+                    NavigationLink("Terms of Service") {
+                        TermsOfServiceView()
+                    }
                 }
 
                 Section("Pets") {

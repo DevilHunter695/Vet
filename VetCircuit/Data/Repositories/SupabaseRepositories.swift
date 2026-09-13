@@ -1046,4 +1046,108 @@ private struct SupabaseAppConfigRow: Decodable {
     }
 }
 
+// MARK: - Help centre, support tickets & notification centre (plan §M, §J7)
+
+final class SupabaseHelpRepository: HelpRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func listArticles() async throws -> [HelpArticle] {
+        // Public-read (M1: "remote content, not app-updated") — anyone can
+        // browse FAQs before signing in, mirroring the catalog tables.
+        let rows: [SupabaseHelpArticleRow] = try await client.from("help_articles").select().execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+final class SupabaseSupportRepository: SupportRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func createTicket(userId: UUID, visitId: UUID?, subject: String, body: String) async throws -> SupportTicket {
+        struct Insert: Encodable {
+            let userId: UUID, visitId: UUID?, subject: String, body: String
+            enum CodingKeys: String, CodingKey { case userId = "user_id", visitId = "visit_id", subject, body }
+        }
+        let rows: [SupabaseSupportTicketRow] = try await client.from("support_tickets")
+            .insert(Insert(userId: userId, visitId: visitId, subject: subject, body: body)).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func myTickets(userId: UUID) async throws -> [SupportTicket] {
+        let rows: [SupabaseSupportTicketRow] = try await client.from("support_tickets")
+            .select().eq("user_id", value: userId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+}
+
+final class SupabaseAppNotificationRepository: AppNotificationRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func notifications(userId: UUID) async throws -> [AppNotification] {
+        let rows: [SupabaseAppNotificationRow] = try await client.from("notifications")
+            .select().eq("user_id", value: userId).order("created_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func markRead(id: UUID) async throws {
+        try await client.from("notifications").update(["read_at": ISO8601DateFormatter().string(from: Date())])
+            .eq("id", value: id).execute()
+    }
+}
+
+private struct SupabaseHelpArticleRow: Decodable {
+    let id: UUID
+    let category: String
+    let question: String
+    let answer: String
+
+    func toDomain() -> HelpArticle {
+        HelpArticle(id: id, category: HelpArticle.Category(rawValue: category) ?? .account, question: question, answer: answer)
+    }
+}
+
+private struct SupabaseSupportTicketRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let visitId: UUID?
+    let subject: String
+    let body: String
+    let status: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, subject, body, status
+        case userId = "user_id", visitId = "visit_id", createdAt = "created_at"
+    }
+
+    func toDomain() -> SupportTicket {
+        SupportTicket(id: id, userId: userId, visitId: visitId, subject: subject, body: body,
+                       status: SupportTicket.Status(rawValue: status) ?? .open, createdAt: createdAt)
+    }
+}
+
+private struct SupabaseAppNotificationRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let category: String
+    let title: String
+    let body: String
+    let sentAt: Date?
+    let createdAt: Date
+    let readAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, category, title, body
+        case userId = "user_id", sentAt = "sent_at", createdAt = "created_at", readAt = "read_at"
+    }
+
+    func toDomain() -> AppNotification {
+        AppNotification(id: id, userId: userId, category: AppNotification.Category(rawValue: category) ?? .promotion,
+                         title: title, body: body, sentAt: sentAt, createdAt: createdAt, readAt: readAt)
+    }
+}
+
 #endif
