@@ -191,14 +191,14 @@ Service (Home consultation)
 | E1 | **Cart**: multiple services/pets/add-ons in one booking | **P0** | 🔨 | Add / **remove** / change quantity / clear |
 | E2 | Cart persistence across devices + restore on relaunch | P0 | ✅ | Server-side cart, not local only |
 | E3 | **Transparent price breakdown**: subtotal · per-pet · travel fee · peak · discount · GST · total | **P0** | ✅ | Non-negotiable for trust |
-| E4 | Coupon / promo code entry + validation + stacking rules | P1 | ⛔ | |
+| E4 | Coupon / promo code entry + validation + stacking rules | P1 | 🔨 | `validate_coupon()` RPC + CartView promo field wired into the quote; PricingEngine already had the discount term |
 | E5 | Wallet credits & loyalty point redemption at checkout | P1 | 🔨 | Loyalty exists; redemption doesn't |
 | E6 | **Server-authoritative quote**: `POST /quotes` returns a signed, TTL'd quote; order must reference a valid quote | **P0** | 🔨 | Prevents client price tampering entirely |
 | E7 | Slot **hold** (10 min) during checkout, auto-release | **P0** | 🔨 | Prevents the "slot taken while I was paying" disaster |
 | E8 | Payment method choice: UPI intent, cards, netbanking, wallets, **pay-after-visit (cash/UPI to vet)** | P0 | 🔨 | Cash-on-visit is table stakes in India |
 | E9 | Saved payment methods (gateway-tokenized, never stored by you) | P1 | ⛔ | |
 | E10 | Order confirmation screen + receipt email/SMS | P0 | 🔨 | |
-| E11 | Tip the vet after visit | P2 | ⛔ | |
+| E11 | Tip the vet after visit | P2 | 🔨 | Preset/custom tip UI + `TipUseCase`; credited 100% to the vet via a new trigger on `payments.kind = 'tip'` (0028_tips.sql) |
 
 ### F. Scheduling & booking lifecycle
 
@@ -223,7 +223,7 @@ Service (Home consultation)
 | G3 | Payment retry on failure + clear failure states | P0 | 🔨 | |
 | G4 | **Refunds** (full/partial), initiated by ops, tracked to gateway | **P0** | 🔨 | You cannot launch without a refund path |
 | G5 | GST-compliant invoice PDF per order | **P0** | 🔨 | Legal requirement once registered |
-| G6 | Wallet + double-entry ledger | P1 | ⛔ | Credits, compensation, refund-to-wallet |
+| G6 | Wallet + double-entry ledger | P1 | 🔨 | `wallet_ledger` (append-only, mirrors `vet_ledger`) + balance view + CartView "use wallet balance" toggle; nothing yet writes the debit when a wallet-funded booking completes — checkout/payment-capture is still open |
 | G7 | **Vet payouts**: earnings view, weekly payout run, reconciliation | **P0 (partner)** | 🔨 | Vets quit over late/unclear pay faster than over anything else |
 | G8 | Daily reconciliation job: gateway settlements vs your ledger | P1 | ⛔ | |
 | G9 | Chargeback/dispute handling from gateway | P2 | ⛔ | |
@@ -307,7 +307,7 @@ Service (Home consultation)
 | # | Capability | Pri | Status |
 |---|---|---|---|
 | N1 | Referral code + share sheet + attribution + fraud guard | P1 | 🔨 |
-| N2 | Coupon campaigns (first-visit, win-back, cluster-launch) | P1 | ⛔ |
+| N2 | Coupon campaigns (first-visit, win-back, cluster-launch) | P1 | 🔨 | Seed campaigns (FIRSTVISIT, WINBACK100) in 0027_coupons.sql, validated via the same E4 RPC |
 | N3 | Lifecycle pushes: vaccination due, renewal, dormant 60d, abandoned cart | P1 | 🔨 | Detection + queueing done (`lifecycle-notifications` Edge Function, `notifications` table); actual push-send job to drain the queue is a separate, still-missing piece |
 | N4 | Loyalty points & tiers | P2 | ✅ |
 | N5 | In-app rating prompt (SKStoreReviewController, after a 5★ visit only) | P1 | ✅ | `ReviewView` calls `SKStoreReviewController.requestReview` only on a 5★ submit, gated to once per app version via `UserDefaults` (StoreKit's own throttling is a separate, opaque layer on top) |

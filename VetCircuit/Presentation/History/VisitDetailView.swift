@@ -11,6 +11,8 @@ struct VisitDetailView: View {
     @State private var showingReportProblem = false
     @State private var followUpService: Service?
     @State private var followUpPet: Pet?
+    @State private var showingTip = false
+    @State private var hasTipped = false
 
     private let startCallUseCase = DependencyContainer.shared.startCallUseCase()
     private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
@@ -131,6 +133,18 @@ struct VisitDetailView: View {
                     PrimaryButton(title: "Rate this visit") { showingReview = true }
                         .appearAnimation(delay: 0.1)
 
+                    // E11: shown once per completed visit — 100% to the vet.
+                    if !hasTipped {
+                        Button {
+                            Haptics.tap()
+                            showingTip = true
+                        } label: {
+                            ActionRow(title: "Add a tip for your vet", systemImage: "heart.fill", tint: Theme.accent)
+                        }
+                        .buttonStyle(PressableStyle())
+                        .appearAnimation(delay: 0.11)
+                    }
+
                     // K8 (P0): a dispute is just a support ticket carrying
                     // this visit's id — same queue, same audit trail.
                     Button {
@@ -162,6 +176,9 @@ struct VisitDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingReview) {
             ReviewView(visitId: visit.id)
+        }
+        .sheet(isPresented: $showingTip) {
+            TipVetView(visitId: visit.id) { hasTipped = true }
         }
         .sheet(isPresented: $showingReschedule) {
             RescheduleVisitView(visit: visit)
