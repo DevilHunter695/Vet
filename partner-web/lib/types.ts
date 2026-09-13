@@ -1,7 +1,13 @@
 // Mirrors VetCircuit/Domain/Models/Models.swift — kept in sync by hand since
 // this is a separate app talking to the same Postgres schema.
 
-export type VisitStatus = "requested" | "confirmed" | "en_route" | "completed" | "cancelled";
+// Appendix B's 8-state machine (up from the original 5) — kept in sync with
+// VetCircuit/Domain/Models/Models.swift and the legal_visit_transitions
+// table in backend/supabase/migrations/0010_visit_otp_and_consent.sql.
+export type VisitStatus =
+  | "requested" | "confirmed" | "assigned" | "en_route" | "arrived" | "in_progress"
+  | "completed" | "cancelled_by_user" | "cancelled_by_vet" | "no_show_user" | "no_show_vet"
+  | "disputed" | "resolved";
 
 export interface ScheduleSlot {
   id: string;
@@ -31,6 +37,27 @@ export interface Visit {
   notes: string | null;
   payment_id: string | null;
   pets?: { name: string; species: string };
+}
+
+export interface VetLedgerEntry {
+  id: string;
+  vet_id: string;
+  visit_id: string | null;
+  amount_minor_units: number;
+  description: string;
+  payout_id: string | null;
+  created_at: string;
+}
+
+export interface Payout {
+  id: string;
+  vet_id: string;
+  period_start: string;
+  period_end: string;
+  amount_minor_units: number;
+  status: "pending" | "paid" | "failed";
+  gateway_reference: string | null;
+  paid_at: string | null;
 }
 
 export interface Vet {

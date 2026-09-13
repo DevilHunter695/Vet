@@ -8,6 +8,7 @@ const TABS = [
   { href: "/vets", label: "Vets" },
   { href: "/circuits", label: "Circuits" },
   { href: "/disputes", label: "Disputes" },
+  { href: "/payouts", label: "Payouts" },
 ];
 
 export default function NavTabs() {

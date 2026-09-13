@@ -224,7 +224,7 @@ Service (Home consultation)
 | G4 | **Refunds** (full/partial), initiated by ops, tracked to gateway | **P0** | 🔨 | You cannot launch without a refund path |
 | G5 | GST-compliant invoice PDF per order | **P0** | 🔨 | Legal requirement once registered |
 | G6 | Wallet + double-entry ledger | P1 | ⛔ | Credits, compensation, refund-to-wallet |
-| G7 | **Vet payouts**: earnings view, weekly payout run, reconciliation | **P0 (partner)** | ⛔ | Vets quit over late/unclear pay faster than over anything else |
+| G7 | **Vet payouts**: earnings view, weekly payout run, reconciliation | **P0 (partner)** | 🔨 | Vets quit over late/unclear pay faster than over anything else |
 | G8 | Daily reconciliation job: gateway settlements vs your ledger | P1 | ⛔ | |
 | G9 | Chargeback/dispute handling from gateway | P2 | ⛔ | |
 

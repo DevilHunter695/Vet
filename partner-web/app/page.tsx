@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import VisitsBoard from "@/components/VisitsBoard";
@@ -53,7 +54,10 @@ export default async function DashboardPage() {
             {vet.rating.toFixed(1)}★ ({vet.review_count} reviews)
           </p>
         </div>
-        <SignOutButton />
+        <div className="row" style={{ gap: 8 }}>
+          <Link href="/earnings"><button className="secondary">Earnings</button></Link>
+          <SignOutButton />
+        </div>
       </div>
 
       <section style={{ marginBottom: 32 }}>
