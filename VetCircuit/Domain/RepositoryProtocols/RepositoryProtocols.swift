@@ -114,6 +114,23 @@ protocol PetRepository: Sendable {
     func deletePet(id: UUID) async throws
 }
 
+// MARK: - Pet health records (plan §3 B, §3 K)
+
+protocol PetWeightRepository: Sendable {
+    /// Oldest-first, so the chart in `PetDetailView` can plot it directly.
+    func history(petId: UUID) async throws -> [PetWeightEntry]
+    func addEntry(_ entry: PetWeightEntry) async throws -> PetWeightEntry
+}
+
+protocol VaccinationRepository: Sendable {
+    func history(petId: UUID) async throws -> [Vaccination]
+    func record(_ vaccination: Vaccination) async throws -> Vaccination
+}
+
+protocol PrescriptionRepository: Sendable {
+    func history(petId: UUID) async throws -> [Prescription]
+}
+
 protocol PushTokenRepository: Sendable {
     func registerDeviceToken(_ token: String, userId: UUID) async throws
 }

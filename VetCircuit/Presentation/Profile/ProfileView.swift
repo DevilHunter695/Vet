@@ -17,7 +17,10 @@ final class ProfileViewModel {
 
     func load(userId: UUID) async {
         do {
-            pets = try await managePetsUseCase.list(ownerId: userId)
+            // includeArchived: this list is the pet-management screen, not a
+            // booking picker — an archived pet still needs to be visible so
+            // its owner can open its record or bring it back (B8).
+            pets = try await managePetsUseCase.list(ownerId: userId, includeArchived: true)
             subscription = try await subscriptionRepository.currentSubscription(userId: userId)
             loyaltyAccount = try await getLoyaltyAccountUseCase.execute(userId: userId)
             if let subscription, subscription.status == .active {
@@ -196,7 +199,18 @@ struct ProfileView: View {
 
                 Section("Pets") {
                     ForEach(viewModel.pets) { pet in
-                        Text("\(pet.name) · \(pet.species.rawValue.capitalized)")
+                        NavigationLink {
+                            PetDetailView(pet: pet)
+                        } label: {
+                            HStack {
+                                Text("\(pet.name) · \(pet.species.rawValue.capitalized)")
+                                if pet.isArchived {
+                                    Spacer()
+                                    Text(pet.archiveReason?.displayName ?? "")
+                                        .font(.brandCaption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
                     }
                     .onDelete { indexSet in
                         Haptics.warning()

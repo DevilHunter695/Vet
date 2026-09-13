@@ -5,6 +5,10 @@ import SwiftUI
 struct ServiceDetailView: View {
     let service: Service
     let pet: Pet?
+    /// K5: lets a 1-tap "book follow-up"/"book vaccination" action land
+    /// directly on the right variant (the free follow-up, or whichever
+    /// vaccine the pet is due for) instead of the catalog's usual default.
+    var preselectedVariantId: UUID? = nil
 
     @Environment(SessionStore.self) private var session
     @State private var selectedVariantId: UUID?
@@ -169,7 +173,7 @@ struct ServiceDetailView: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { selectedVariantId = service.variants.first?.id }
+        .onAppear { selectedVariantId = preselectedVariantId ?? service.variants.first?.id }
         .task { await loadPets() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

@@ -36,6 +36,9 @@ final class DependencyContainer {
     let helpRepository: HelpRepository
     let supportRepository: SupportRepository
     let appNotificationRepository: AppNotificationRepository
+    let petWeightRepository: PetWeightRepository
+    let vaccinationRepository: VaccinationRepository
+    let prescriptionRepository: PrescriptionRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -70,6 +73,9 @@ final class DependencyContainer {
         self.helpRepository = MockHelpRepository()
         self.supportRepository = MockSupportRepository()
         self.appNotificationRepository = MockAppNotificationRepository()
+        self.petWeightRepository = MockPetWeightRepository()
+        self.vaccinationRepository = MockVaccinationRepository()
+        self.prescriptionRepository = MockPrescriptionRepository()
     }
 
     // MARK: Use case factories
@@ -116,4 +122,7 @@ final class DependencyContainer {
     func getHelpArticlesUseCase() -> GetHelpArticlesUseCase { GetHelpArticlesUseCase(repository: helpRepository) }
     func contactSupportUseCase() -> ContactSupportUseCase { ContactSupportUseCase(repository: supportRepository) }
     func getNotificationCenterUseCase() -> GetNotificationCenterUseCase { GetNotificationCenterUseCase(repository: appNotificationRepository) }
+    func managePetWeightsUseCase() -> ManagePetWeightsUseCase { ManagePetWeightsUseCase(repository: petWeightRepository) }
+    func manageVaccinationsUseCase() -> ManageVaccinationsUseCase { ManageVaccinationsUseCase(repository: vaccinationRepository) }
+    func managePrescriptionsUseCase() -> ManagePrescriptionsUseCase { ManagePrescriptionsUseCase(repository: prescriptionRepository) }
 }

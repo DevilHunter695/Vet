@@ -190,8 +190,14 @@ struct SubmitReviewUseCase {
 struct ManagePetsUseCase {
     let petRepository: PetRepository
 
-    func list(ownerId: UUID) async throws -> [Pet] {
-        try await petRepository.listPets(ownerId: ownerId)
+    /// B8: archived pets are excluded by default — this is the single choke
+    /// point that keeps them out of the booking "which pet" picker and out
+    /// of vaccination-due nagging without every call site re-filtering.
+    /// `includeArchived: true` is for the profile's pet-management screen,
+    /// which still needs to show (and let someone unarchive) a past pet.
+    func list(ownerId: UUID, includeArchived: Bool = false) async throws -> [Pet] {
+        let pets = try await petRepository.listPets(ownerId: ownerId)
+        return includeArchived ? pets : pets.filter { !$0.isArchived }
     }
 
     func add(_ pet: Pet) async throws -> Pet {
@@ -201,8 +207,92 @@ struct ManagePetsUseCase {
         return try await petRepository.addPet(pet)
     }
 
+    func update(_ pet: Pet) async throws -> Pet {
+        try await petRepository.updatePet(pet)
+    }
+
     func remove(id: UUID) async throws {
         try await petRepository.deletePet(id: id)
+    }
+
+    /// B8: soft-delete with sensitive copy handled at the call site — this
+    /// just stamps the flag, never touches the pet's visit history.
+    func archive(_ pet: Pet, reason: Pet.ArchiveReason, now: Date = .now) async throws -> Pet {
+        var pet = pet
+        pet.archivedAt = now
+        pet.archiveReason = reason
+        return try await petRepository.updatePet(pet)
+    }
+
+    func unarchive(_ pet: Pet) async throws -> Pet {
+        var pet = pet
+        pet.archivedAt = nil
+        pet.archiveReason = nil
+        return try await petRepository.updatePet(pet)
+    }
+}
+
+// MARK: - Pet health records (plan §3 B, §3 K)
+
+struct ManagePetWeightsUseCase {
+    let repository: PetWeightRepository
+
+    func history(petId: UUID) async throws -> [PetWeightEntry] {
+        try await repository.history(petId: petId).sorted { $0.recordedAt < $1.recordedAt }
+    }
+
+    func addEntry(petId: UUID, weightKg: Double, recordedAt: Date = .now) async throws -> PetWeightEntry {
+        guard weightKg > 0 else {
+            throw DomainError.validation("Enter a valid weight.")
+        }
+        return try await repository.addEntry(PetWeightEntry(id: UUID(), petId: petId, weightKg: weightKg, recordedAt: recordedAt))
+    }
+}
+
+/// B4 (P0): vaccination history plus the next-due computation that makes the
+/// reminder loop ("repeat-purchase driver") actually happen.
+struct ManageVaccinationsUseCase {
+    let repository: VaccinationRepository
+
+    func history(petId: UUID) async throws -> [Vaccination] {
+        try await repository.history(petId: petId).sorted { $0.nextDueAt < $1.nextDueAt }
+    }
+
+    /// Marking a vaccine as given auto-populates `nextDueAt` (K4) rather
+    /// than leaving the next booking to memory.
+    func recordGiven(petId: UUID, vaccineName: String, givenAt: Date = .now, batchNumber: String?, visitId: UUID?) async throws -> Vaccination {
+        let nextDueAt = VaccinationPolicy.suggestedNextDueDate(givenAt: givenAt)
+        let vaccination = Vaccination(id: UUID(), petId: petId, vaccineName: vaccineName, givenAt: givenAt,
+                                       nextDueAt: nextDueAt, batchNumber: batchNumber, visitId: visitId)
+        return try await repository.record(vaccination)
+    }
+
+    /// Whichever upcoming/overdue vaccination the "book vaccination visit"
+    /// 1-tap action should point at, or nil if this pet is fully up to date.
+    func nextActionable(petId: UUID, now: Date = .now) async throws -> Vaccination? {
+        let history = try await history(petId: petId)
+        return history.first { $0.dueStatus(now: now) != .upToDate }
+    }
+}
+
+/// K5: "book a follow-up in 1 tap" — pure eligibility check so
+/// `VisitDetailView` can decide whether to show the button without
+/// duplicating the 14-day window rule.
+struct FollowUpBookingPolicy {
+    static let windowDays = 14
+
+    static func isEligible(visit: Visit, now: Date = .now) -> Bool {
+        guard visit.status == .completed, let completedAt = visit.completedAt else { return false }
+        let days = Calendar.current.dateComponents([.day], from: completedAt, to: now).day ?? .max
+        return days <= windowDays
+    }
+}
+
+struct ManagePrescriptionsUseCase {
+    let repository: PrescriptionRepository
+
+    func history(petId: UUID) async throws -> [Prescription] {
+        try await repository.history(petId: petId).sorted { $0.issuedAt > $1.issuedAt }
     }
 }
 

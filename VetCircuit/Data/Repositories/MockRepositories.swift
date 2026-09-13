@@ -456,6 +456,46 @@ actor MockPetRepository: PetRepository {
     }
 }
 
+actor MockPetWeightRepository: PetWeightRepository {
+    private var entries: [PetWeightEntry] = []
+
+    func history(petId: UUID) async throws -> [PetWeightEntry] {
+        entries.filter { $0.petId == petId }
+    }
+
+    func addEntry(_ entry: PetWeightEntry) async throws -> PetWeightEntry {
+        entries.append(entry)
+        return entry
+    }
+}
+
+actor MockVaccinationRepository: VaccinationRepository {
+    // Seeded so PetDetailView has something to render before anyone logs one.
+    private var vaccinations: [Vaccination] = [
+        Vaccination(id: UUID(), petId: MockData.user.pets.first?.id ?? UUID(), vaccineName: "Rabies",
+                    givenAt: Calendar.current.date(byAdding: .month, value: -11, to: .now),
+                    nextDueAt: Calendar.current.date(byAdding: .month, value: 1, to: .now) ?? .now,
+                    batchNumber: "RB-2291"),
+    ]
+
+    func history(petId: UUID) async throws -> [Vaccination] {
+        vaccinations.filter { $0.petId == petId }
+    }
+
+    func record(_ vaccination: Vaccination) async throws -> Vaccination {
+        vaccinations.append(vaccination)
+        return vaccination
+    }
+}
+
+actor MockPrescriptionRepository: PrescriptionRepository {
+    private var prescriptions: [Prescription] = []
+
+    func history(petId: UUID) async throws -> [Prescription] {
+        prescriptions.filter { $0.petId == petId }
+    }
+}
+
 actor MockPushTokenRepository: PushTokenRepository {
     func registerDeviceToken(_ token: String, userId: UUID) async throws {}
 }
