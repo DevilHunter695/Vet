@@ -63,6 +63,8 @@ struct CircuitsListView: View {
                     .background(Color(.systemGroupedBackground))
                 }
             }
+            .animation(Theme.crossFade, value: viewModel.isLoading)
+            .animation(Theme.crossFade, value: viewModel.circuits.map(\.id))
             .navigationTitle(selectedVertical.displayName)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

@@ -102,6 +102,7 @@ struct ProfileView: View {
                     Section("Rewards") {
                         LoyaltyProgressCard(account: loyalty, color: tierColor(loyalty.tier), progress: tierProgress(loyalty))
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
                 Section("Subscription") {
@@ -133,6 +134,8 @@ struct ProfileView: View {
                         }
                     }
                 }
+                .transition(.opacity)
+                .animation(Theme.crossFade, value: viewModel.subscription?.id)
 
                 Section("Pets") {
                     ForEach(viewModel.pets) { pet in
@@ -170,6 +173,7 @@ struct ProfileView: View {
                 }
             }
             .navigationTitle("Profile")
+            .animation(Theme.crossFade, value: viewModel.loyaltyAccount?.points)
             .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
             .sheet(item: $checkoutURL) { url in
                 CheckoutWebView(url: url)
