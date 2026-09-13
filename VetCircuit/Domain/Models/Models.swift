@@ -216,6 +216,97 @@ struct Referral: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+// MARK: - Service catalog (V2 plan §D) — what is actually being bought.
+// A v1 `Visit` had no concept of *what* was booked; this is the structural
+// gap everything else (cart, pricing, checkout) depends on.
+
+enum ServiceCategory: String, Codable, CaseIterable, Identifiable {
+    case consult, vaccination, grooming, diagnostics, deworming, dental
+    case elderCareVisit = "elder_care_visit"
+    case physioSession = "physio_session"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .consult: return "Consultation"
+        case .vaccination: return "Vaccination"
+        case .grooming: return "Grooming"
+        case .diagnostics: return "Diagnostics"
+        case .deworming: return "Deworming"
+        case .dental: return "Dental"
+        case .elderCareVisit: return "Elder care visit"
+        case .physioSession: return "Physio session"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .consult: return "stethoscope"
+        case .vaccination: return "syringe.fill"
+        case .grooming: return "scissors"
+        case .diagnostics: return "testtube.2"
+        case .deworming: return "pills.fill"
+        case .dental: return "mouth.fill"
+        case .elderCareVisit: return "figure.wave"
+        case .physioSession: return "figure.strengthtraining.traditional"
+        }
+    }
+
+    var vertical: Vertical {
+        switch self {
+        case .elderCareVisit: return .elderCare
+        case .physioSession: return .physio
+        default: return .vet
+        }
+    }
+}
+
+/// Eligibility gate on a variant or add-on — who/what it's actually sold to.
+/// Kept as plain data so pricing/eligibility logic stays pure and testable.
+struct ServiceEligibility: Codable, Equatable, Hashable {
+    var species: [Pet.Species]? = nil       // nil = all species
+    var requiresPrescriberVet: Bool = false // para-vets can't perform this
+    var minPetAgeMonths: Int? = nil
+
+    func allows(species: Pet.Species) -> Bool {
+        guard let species = self.species else { return true }
+        return species.contains(species)
+    }
+}
+
+struct ServiceVariant: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var serviceId: UUID
+    var name: String              // "Standard 20 min", "Extended 40 min", "Follow-up (14d)"
+    var durationMinutes: Int
+    var priceMinorUnits: Int      // base price, paise
+    var additionalPetPriceMinorUnits: Int = 0
+    var isFollowUp: Bool = false
+}
+
+struct Addon: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var name: String              // "Nail trim", "Deworming", "Blood sample pickup"
+    var priceMinorUnits: Int
+    var eligibility: ServiceEligibility = ServiceEligibility()
+}
+
+struct Service: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var category: ServiceCategory
+    var name: String
+    var summary: String
+    var whatToPrepare: String?
+    var variants: [ServiceVariant]
+    var addons: [Addon] = []
+    var eligibility: ServiceEligibility = ServiceEligibility()
+
+    var startingPriceMinorUnits: Int? {
+        variants.map(\.priceMinorUnits).min()
+    }
+}
+
 // MARK: - Domain errors
 
 enum DomainError: Error, LocalizedError, Equatable {

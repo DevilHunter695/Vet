@@ -145,6 +145,20 @@ struct GetLoyaltyAccountUseCase {
     }
 }
 
+struct GetCatalogUseCase {
+    let catalogRepository: CatalogRepository
+
+    /// Services for a vertical, filtered to ones a given pet is actually
+    /// eligible for (species gate) — showing an ineligible service just to
+    /// hide it behind a disabled button is a worse experience than not
+    /// listing it at all.
+    func execute(vertical: Vertical, forSpecies species: Pet.Species? = nil) async throws -> [Service] {
+        let services = try await catalogRepository.listServices(vertical: vertical)
+        let eligible = species.map { s in services.filter { $0.eligibility.allows(species: s) } } ?? services
+        return eligible.sorted { $0.name < $1.name }
+    }
+}
+
 struct SendReferralUseCase {
     let referralRepository: ReferralRepository
 

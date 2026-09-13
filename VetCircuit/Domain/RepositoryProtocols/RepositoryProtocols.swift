@@ -76,6 +76,12 @@ protocol ReferralRepository: Sendable {
     func listReferrals(userId: UUID) async throws -> [Referral]
 }
 
+protocol CatalogRepository: Sendable {
+    /// All services offered, optionally scoped to a vertical (vet/elder-care/physio).
+    func listServices(vertical: Vertical?) async throws -> [Service]
+    func service(id: UUID) async throws -> Service
+}
+
 protocol LoyaltyRepository: Sendable {
     func account(userId: UUID) async throws -> LoyaltyAccount
     /// Called when a visit completes; awards points and returns the updated account.

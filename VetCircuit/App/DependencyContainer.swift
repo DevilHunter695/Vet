@@ -20,6 +20,7 @@ final class DependencyContainer {
     let referralRepository: ReferralRepository
     let triageRepository: TriageRepository
     let loyaltyRepository: LoyaltyRepository
+    let catalogRepository: CatalogRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -38,6 +39,7 @@ final class DependencyContainer {
         self.referralRepository = MockReferralRepository()
         self.triageRepository = MockTriageRepository()
         self.loyaltyRepository = MockLoyaltyRepository()
+        self.catalogRepository = MockCatalogRepository()
     }
 
     // MARK: Use case factories
@@ -58,4 +60,5 @@ final class DependencyContainer {
     func sendReferralUseCase() -> SendReferralUseCase { SendReferralUseCase(referralRepository: referralRepository) }
     func runTriageUseCase() -> RunTriageUseCase { RunTriageUseCase(triageRepository: triageRepository) }
     func getLoyaltyAccountUseCase() -> GetLoyaltyAccountUseCase { GetLoyaltyAccountUseCase(loyaltyRepository: loyaltyRepository) }
+    func getCatalogUseCase() -> GetCatalogUseCase { GetCatalogUseCase(catalogRepository: catalogRepository) }
 }

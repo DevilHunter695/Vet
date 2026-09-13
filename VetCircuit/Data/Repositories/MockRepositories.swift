@@ -39,6 +39,26 @@ actor MockCircuitRepository: CircuitRepository {
     }
 }
 
+actor MockCatalogRepository: CatalogRepository {
+    private var extraServices: [Service] = []
+
+    /// Test-only hook to inject additional fixtures without mutating shared `MockData`.
+    func seed(_ services: [Service]) { extraServices.append(contentsOf: services) }
+
+    func listServices(vertical: Vertical?) async throws -> [Service] {
+        let all = MockData.services + extraServices
+        guard let vertical else { return all }
+        return all.filter { $0.category.vertical == vertical }
+    }
+
+    func service(id: UUID) async throws -> Service {
+        guard let service = (MockData.services + extraServices).first(where: { $0.id == id }) else {
+            throw DomainError.notFound("Service")
+        }
+        return service
+    }
+}
+
 actor MockVisitRepository: VisitRepository {
     private var visits: [Visit] = MockData.visits
 
@@ -260,4 +280,87 @@ enum MockData {
     }
 
     static let visits: [Visit] = []
+
+    /// The full catalog (plan §D): categories, variants, and add-ons with real
+    /// prices — the "multiple options for each thing" the v1 model had no
+    /// concept of at all.
+    static let services: [Service] = [
+        Service(
+            id: UUID(), category: .consult, name: "Home consultation",
+            summary: "A vet examines your pet at home for any general health concern.",
+            whatToPrepare: "Keep any prior reports or medication handy.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Standard 20 min", durationMinutes: 20, priceMinorUnits: 59_900, additionalPetPriceMinorUnits: 29_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Extended 40 min", durationMinutes: 40, priceMinorUnits: 89_900, additionalPetPriceMinorUnits: 44_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Follow-up (within 14 days)", durationMinutes: 15, priceMinorUnits: 0, isFollowUp: true),
+            ],
+            addons: [
+                Addon(id: UUID(), name: "Nail trim", priceMinorUnits: 14_900),
+                Addon(id: UUID(), name: "Deworming", priceMinorUnits: 24_900),
+                Addon(id: UUID(), name: "Blood sample pickup", priceMinorUnits: 39_900),
+            ]
+        ),
+        Service(
+            id: UUID(), category: .vaccination, name: "Vaccination",
+            summary: "Core and non-core vaccines administered at home, with a certificate and next-due reminder.",
+            whatToPrepare: "Bring the previous vaccination card if this isn't the first dose.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Single vaccine", durationMinutes: 15, priceMinorUnits: 49_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Vaccine + wellness check", durationMinutes: 25, priceMinorUnits: 69_900),
+            ],
+            eligibility: ServiceEligibility(requiresPrescriberVet: true)
+        ),
+        Service(
+            id: UUID(), category: .grooming, name: "Grooming",
+            summary: "Bath, brush-out, nail trim and ear cleaning at home.",
+            whatToPrepare: "A space with water access makes this faster.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Basic groom", durationMinutes: 45, priceMinorUnits: 79_900, additionalPetPriceMinorUnits: 49_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Full groom + haircut", durationMinutes: 75, priceMinorUnits: 129_900, additionalPetPriceMinorUnits: 79_900),
+            ]
+        ),
+        Service(
+            id: UUID(), category: .diagnostics, name: "Sample pickup & diagnostics",
+            summary: "Blood, urine, or stool sample collected at home and sent to a partner lab.",
+            whatToPrepare: "Fasting may be required — you'll get instructions after booking.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Basic panel", durationMinutes: 15, priceMinorUnits: 99_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Comprehensive panel", durationMinutes: 20, priceMinorUnits: 189_900),
+            ]
+        ),
+        Service(
+            id: UUID(), category: .deworming, name: "Deworming",
+            summary: "Routine deworming dose appropriate to your pet's weight and age.",
+            whatToPrepare: nil,
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Single dose", durationMinutes: 10, priceMinorUnits: 34_900),
+            ]
+        ),
+        Service(
+            id: UUID(), category: .dental, name: "Dental check & clean",
+            summary: "Oral exam and scale-and-polish for tartar buildup.",
+            whatToPrepare: "Sedation-free — your pet stays awake throughout.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Dental check", durationMinutes: 20, priceMinorUnits: 59_900),
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Scale & polish", durationMinutes: 40, priceMinorUnits: 149_900),
+            ],
+            eligibility: ServiceEligibility(requiresPrescriberVet: true)
+        ),
+        Service(
+            id: UUID(), category: .elderCareVisit, name: "Elder care check-in",
+            summary: "A nursing/physio check-in visit for elderly family members.",
+            whatToPrepare: nil,
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Standard check-in", durationMinutes: 30, priceMinorUnits: 69_900),
+            ]
+        ),
+        Service(
+            id: UUID(), category: .physioSession, name: "Physio session",
+            summary: "A rehab/physiotherapy session at home.",
+            whatToPrepare: "Wear comfortable clothing.",
+            variants: [
+                ServiceVariant(id: UUID(), serviceId: UUID(), name: "Single session", durationMinutes: 45, priceMinorUnits: 89_900),
+            ]
+        ),
+    ]
 }

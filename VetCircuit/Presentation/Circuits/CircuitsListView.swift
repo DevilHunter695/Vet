@@ -78,6 +78,13 @@ struct CircuitsListView: View {
             .animation(Theme.crossFade, value: viewModel.circuits.map(\.id))
             .navigationTitle(selectedVertical.displayName)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink {
+                        ServiceCatalogView(vertical: selectedVertical, pet: MockData.user.pets.first)
+                    } label: {
+                        Label("Services", systemImage: "list.bullet.rectangle")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
                         TriageView()

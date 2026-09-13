@@ -77,6 +77,34 @@ final class SupabaseCircuitRepository: CircuitRepository {
     }
 }
 
+final class SupabaseCatalogRepository: CatalogRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func listServices(vertical: Vertical?) async throws -> [Service] {
+        var query = client.from("services")
+            .select("*, service_variants(*), addons(*)")
+            .eq("is_active", value: true)
+        if let vertical {
+            let categories = ServiceCategory.allCases.filter { $0.vertical == vertical }.map(\.rawValue)
+            query = query.in("category", values: categories)
+        }
+        let rows: [SupabaseServiceRow] = try await query.execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func service(id: UUID) async throws -> Service {
+        let rows: [SupabaseServiceRow] = try await client
+            .from("services")
+            .select("*, service_variants(*), addons(*)")
+            .eq("id", value: id)
+            .execute()
+            .value
+        guard let row = rows.first else { throw DomainError.notFound("Service") }
+        return row.toDomain()
+    }
+}
+
 final class SupabaseVisitRepository: VisitRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
@@ -164,6 +192,76 @@ private struct SupabaseCircuitRow: Decodable {
     func toDomain() -> Circuit {
         Circuit(id: id, vetId: vetId, vet: vet?.toDomain(), clusterArea: clusterArea,
                 schedule: (schedule ?? []).map { $0.toDomain() }, vertical: Vertical(rawValue: vertical) ?? .vet)
+    }
+}
+
+private struct SupabaseServiceRow: Decodable {
+    let id: UUID
+    let category: String
+    let name: String
+    let summary: String
+    let whatToPrepare: String?
+    let eligibleSpecies: [String]?
+    let requiresPrescriberVet: Bool
+    let minPetAgeMonths: Int?
+    let serviceVariants: [SupabaseServiceVariantRow]?
+    let addons: [SupabaseAddonRow]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, category, name, summary
+        case whatToPrepare = "what_to_prepare", eligibleSpecies = "eligible_species"
+        case requiresPrescriberVet = "requires_prescriber_vet", minPetAgeMonths = "min_pet_age_months"
+        case serviceVariants = "service_variants", addons
+    }
+
+    func toDomain() -> Service {
+        Service(
+            id: id, category: ServiceCategory(rawValue: category) ?? .consult, name: name, summary: summary,
+            whatToPrepare: whatToPrepare,
+            variants: (serviceVariants ?? []).map { $0.toDomain(serviceId: id) },
+            addons: (addons ?? []).map { $0.toDomain() },
+            eligibility: ServiceEligibility(
+                species: eligibleSpecies?.compactMap { Pet.Species(rawValue: $0) },
+                requiresPrescriberVet: requiresPrescriberVet,
+                minPetAgeMonths: minPetAgeMonths
+            )
+        )
+    }
+}
+
+private struct SupabaseServiceVariantRow: Decodable {
+    let id: UUID
+    let name: String
+    let durationMinutes: Int
+    let priceMinorUnits: Int
+    let additionalPetPriceMinorUnits: Int
+    let isFollowUp: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, durationMinutes = "duration_minutes", priceMinorUnits = "price_minor_units"
+        case additionalPetPriceMinorUnits = "additional_pet_price_minor_units", isFollowUp = "is_follow_up"
+    }
+
+    func toDomain(serviceId: UUID) -> ServiceVariant {
+        ServiceVariant(id: id, serviceId: serviceId, name: name, durationMinutes: durationMinutes,
+                       priceMinorUnits: priceMinorUnits, additionalPetPriceMinorUnits: additionalPetPriceMinorUnits,
+                       isFollowUp: isFollowUp)
+    }
+}
+
+private struct SupabaseAddonRow: Decodable {
+    let id: UUID
+    let name: String
+    let priceMinorUnits: Int
+    let eligibleSpecies: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, priceMinorUnits = "price_minor_units", eligibleSpecies = "eligible_species"
+    }
+
+    func toDomain() -> Addon {
+        Addon(id: id, name: name, priceMinorUnits: priceMinorUnits,
+              eligibility: ServiceEligibility(species: eligibleSpecies?.compactMap { Pet.Species(rawValue: $0) }))
     }
 }
 

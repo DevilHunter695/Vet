@@ -197,3 +197,45 @@ struct ManagePetsUseCaseTests {
         }
     }
 }
+
+@Suite("GetCatalogUseCase")
+struct GetCatalogUseCaseTests {
+    @Test("filters services to the requested vertical")
+    func filtersByVertical() async throws {
+        let repo = MockCatalogRepository()
+        let useCase = GetCatalogUseCase(catalogRepository: repo)
+
+        let vetServices = try await useCase.execute(vertical: .vet)
+        #expect(!vetServices.isEmpty)
+        #expect(vetServices.allSatisfy { $0.category.vertical == .vet })
+
+        let physioServices = try await useCase.execute(vertical: .physio)
+        #expect(physioServices.allSatisfy { $0.category.vertical == .physio })
+    }
+
+    @Test("excludes services a pet's species is ineligible for")
+    func filtersBySpeciesEligibility() async throws {
+        let repo = MockCatalogRepository()
+        let useCase = GetCatalogUseCase(catalogRepository: repo)
+        let dogOnly = Service(
+            id: UUID(), category: .dental, name: "Dog dental",
+            summary: "", variants: [ServiceVariant(id: UUID(), serviceId: UUID(), name: "Standard", durationMinutes: 20, priceMinorUnits: 100)],
+            eligibility: ServiceEligibility(species: [.dog])
+        )
+        await repo.seed([dogOnly])
+
+        let forCats = try await useCase.execute(vertical: .vet, forSpecies: .cat)
+        #expect(forCats.isEmpty)
+
+        let forDogs = try await useCase.execute(vertical: .vet, forSpecies: .dog)
+        #expect(forDogs.contains { $0.id == dogOnly.id })
+    }
+
+    @Test("a service with no species restriction is eligible for every species")
+    func unrestrictedServiceIsUniversallyEligible() {
+        let eligibility = ServiceEligibility()
+        for species in Pet.Species.allCases {
+            #expect(eligibility.allows(species: species))
+        }
+    }
+}
