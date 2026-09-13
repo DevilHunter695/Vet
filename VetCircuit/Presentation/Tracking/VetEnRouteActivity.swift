@@ -1,6 +1,6 @@
 import Foundation
 #if canImport(ActivityKit)
-import ActivityKit
+@preconcurrency import ActivityKit
 #endif
 
 // MARK: - I3 Live Activity / Dynamic Island for "vet en route" (plan §3 I3,
@@ -63,16 +63,17 @@ enum VetEnRouteActivityManager {
         }
     }
 
-    static func update(etaMinutes: Int?, status: Visit.VisitStatus) {
+    static func update(etaMinutes: Int?, status: Visit.VisitStatus) async {
         guard let currentActivity else { return }
         let state = VetEnRouteAttributes.ContentState(etaMinutes: etaMinutes, status: status)
-        Task { [currentActivity] in await currentActivity.update(.init(state: state, staleDate: nil)) }
+        await currentActivity.update(.init(state: state, staleDate: nil))
     }
 
     static func end() {
         guard let activity = currentActivity else { return }
         currentActivity = nil
-        Task { [activity] in await activity.end(nil, dismissalPolicy: .immediate) }
+        Task { @MainActor [activity] in await activity.end(nil, dismissalPolicy: .immediate) }
     }
 }
 #endif
+
