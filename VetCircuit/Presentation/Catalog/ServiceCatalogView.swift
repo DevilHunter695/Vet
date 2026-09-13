@@ -79,6 +79,14 @@ struct ServiceCatalogView: View {
         }
         .navigationTitle("Services")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                // D4: packages/bundles, one tap from the à la carte catalog.
+                NavigationLink { PackagesView(vertical: vertical, pet: pet) } label: {
+                    Label("Packages", systemImage: "shippingbox")
+                }
+            }
+        }
         .task { await viewModel.load(vertical: vertical, species: pet?.species) }
     }
 }

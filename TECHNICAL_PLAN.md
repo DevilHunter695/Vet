@@ -178,11 +178,11 @@ Service (Home consultation)
 |---|---|---|---|
 | D1 | Service catalog w/ categories (Consult, Vaccination, Grooming, Diagnostics, Deworming, Dental, Elder-care visit, Physio session) | **P0** | 🔨 |
 | D2 | Variants per service (duration/tier/package) | **P0** | 🔨 |
-| D3 | Add-ons attachable to a booking | P1 | ⛔ |
-| D4 | Packages/bundles ("Puppy first-year: 4 visits + 3 vaccines") | P1 | ⛔ |
+| D3 | Add-ons attachable to a booking | P1 | ✅ | ServiceDetailView now toggles add-ons into `CartItem.addonIds`; PricingEngine/create_quote already priced them |
+| D4 | Packages/bundles ("Puppy first-year: 4 visits + 3 vaccines") | P1 | 🔨 | `Package`/`PackageRepository` + `PackagesView` + `0015_packages.sql` ship; buying one is a stub that expands into individual cart lines — no redemption/entitlement tracking ("3 of 4 visits used") yet |
 | D5 | Per-vet service availability & per-vet pricing overrides | P1 | ⛔ |
-| D6 | Multi-pet in one visit (2nd pet at reduced fee) | **P0** | ⛔ | Extremely common; breaks the whole pricing model if bolted on later |
-| D7 | Catalog managed from ops console, not hardcoded | P0 | ⛔ |
+| D6 | Multi-pet in one visit (2nd pet at reduced fee) | **P0** | ✅ | ServiceDetailView's pet multi-select feeds `CartItem.petIds`, which already drove `PricingEngine.additionalPetCount` — that wiring was the only missing piece |
+| D7 | Catalog managed from ops console, not hardcoded | P0 | 🔨 | iOS `SupabaseCatalogRepository`/`SupabasePackageRepository` read services/packages from Postgres (Mock repos stay hardcoded for local dev, by design); the ops console side is a separate workstream |
 
 ### E. Cart, pricing & checkout
 
@@ -960,7 +960,7 @@ live-tracking view · Postgres schema with RLS · signature-verified payment web
 shells · XcodeGen + GitHub Actions CI · design system (Theme/Mascot/motion) · Keychain token storage.
 
 **The gap to deployable**, in priority order:
-1. Catalog + variants + add-ons (D) — everything downstream depends on it
+1. 🔨 Catalog + variants + add-ons (D) — everything downstream depends on it. Categories/variants/add-ons/multi-pet (D1-D3, D6) and a packages/bundles stub (D4) are now wired end-to-end (catalog → cart → PricingEngine → quote); still open: per-vet pricing overrides (D5) and the ops-console write side of D7
 2. Addresses + capacity slots + holds (A8, F2, E7)
 3. Server-authoritative quote + cart + price breakdown (E)
 4. ✅ `book_visit()` transaction + idempotency (7.1) — atomic, capacity-locked, idempotent by key; not yet quote-referencing (see note below)

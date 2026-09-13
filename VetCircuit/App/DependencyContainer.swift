@@ -30,6 +30,7 @@ final class DependencyContainer {
     let visitOTPRepository: VisitOTPRepository
     let consentRepository: ConsentRepository
     let accountRepository: AccountRepository
+    let packageRepository: PackageRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -58,6 +59,7 @@ final class DependencyContainer {
         self.visitOTPRepository = MockVisitOTPRepository()
         self.consentRepository = MockConsentRepository()
         self.accountRepository = MockAccountRepository()
+        self.packageRepository = MockPackageRepository()
     }
 
     // MARK: Use case factories
@@ -90,4 +92,8 @@ final class DependencyContainer {
     func holdSlotUseCase() -> HoldSlotUseCase { HoldSlotUseCase(circuitRepository: circuitRepository, slotHoldRepository: slotHoldRepository) }
     func manageCartUseCase() -> ManageCartUseCase { ManageCartUseCase(cartRepository: cartRepository) }
     func getQuoteUseCase() -> GetQuoteUseCase { GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository) }
+    func browsePackagesUseCase() -> BrowsePackagesUseCase { BrowsePackagesUseCase(packageRepository: packageRepository) }
+    func buyPackageUseCase() -> BuyPackageUseCase {
+        BuyPackageUseCase(packageRepository: packageRepository, catalogRepository: catalogRepository, cartRepository: cartRepository)
+    }
 }

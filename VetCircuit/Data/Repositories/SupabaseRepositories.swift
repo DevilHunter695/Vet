@@ -245,6 +245,35 @@ final class SupabaseCatalogRepository: CatalogRepository {
     }
 }
 
+/// D4/D7: packages are ops-managed rows, same read pattern as the service
+/// catalog — the app never hardcodes a bundle's contents or price.
+final class SupabasePackageRepository: PackageRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func listPackages(vertical: Vertical?) async throws -> [Package] {
+        var query = client.from("packages")
+            .select("*, package_items(*)")
+            .eq("is_active", value: true)
+        if let vertical {
+            query = query.eq("vertical", value: vertical.rawValue)
+        }
+        let rows: [SupabasePackageRow] = try await query.execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func package(id: UUID) async throws -> Package {
+        let rows: [SupabasePackageRow] = try await client
+            .from("packages")
+            .select("*, package_items(*)")
+            .eq("id", value: id)
+            .execute()
+            .value
+        guard let row = rows.first else { throw DomainError.notFound("Package") }
+        return row.toDomain()
+    }
+}
+
 final class SupabaseVisitRepository: VisitRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
@@ -693,6 +722,36 @@ private struct SupabaseServiceRow: Decodable {
             )
         )
     }
+}
+
+private struct SupabasePackageRow: Decodable {
+    let id: UUID
+    let name: String
+    let description: String
+    let priceMinorUnits: Int
+    let vertical: String
+    let packageItems: [SupabasePackageItemRow]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, description, priceMinorUnits = "price_minor_units", vertical
+        case packageItems = "package_items"
+    }
+
+    func toDomain() -> Package {
+        Package(id: id, name: name, packageDescription: description,
+                items: (packageItems ?? []).map { $0.toDomain() },
+                priceMinorUnits: priceMinorUnits, vertical: Vertical(rawValue: vertical) ?? .vet)
+    }
+}
+
+private struct SupabasePackageItemRow: Decodable {
+    let id: UUID
+    let serviceId: UUID
+    let quantity: Int
+
+    enum CodingKeys: String, CodingKey { case id, serviceId = "service_id", quantity }
+
+    func toDomain() -> PackageItem { PackageItem(id: id, serviceId: serviceId, quantity: quantity) }
 }
 
 private struct SupabaseServiceVariantRow: Decodable {

@@ -169,6 +169,12 @@ protocol CatalogRepository: Sendable {
     func service(id: UUID) async throws -> Service
 }
 
+protocol PackageRepository: Sendable {
+    /// D4: packages/bundles, browsed the same way services are.
+    func listPackages(vertical: Vertical?) async throws -> [Package]
+    func package(id: UUID) async throws -> Package
+}
+
 protocol LoyaltyRepository: Sendable {
     func account(userId: UUID) async throws -> LoyaltyAccount
     /// Called when a visit completes; awards points and returns the updated account.

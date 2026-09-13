@@ -374,6 +374,42 @@ struct GetCatalogUseCase {
     }
 }
 
+struct BrowsePackagesUseCase {
+    let packageRepository: PackageRepository
+
+    func execute(vertical: Vertical?) async throws -> [Package] {
+        try await packageRepository.listPackages(vertical: vertical)
+    }
+}
+
+/// D4 stub: buying a package expands it into one cart line per included
+/// service occurrence (its cheapest variant, for every selected pet) so the
+/// customer reaches the same checkout/quote path as an à la carte booking.
+/// Full redemption/entitlement tracking — crediting "3 of 4 visits used"
+/// against future bookings instead of charging each one — is out of scope
+/// here; see Appendix F gap list.
+struct BuyPackageUseCase {
+    let packageRepository: PackageRepository
+    let catalogRepository: CatalogRepository
+    let cartRepository: CartRepository
+
+    func execute(packageId: UUID, petIds: [UUID], userId: UUID) async throws -> Cart {
+        guard !petIds.isEmpty else {
+            throw DomainError.validation("Choose at least one pet.")
+        }
+        let package = try await packageRepository.package(id: packageId)
+        var cart = try await cartRepository.currentCart(userId: userId)
+        for item in package.items {
+            let service = try await catalogRepository.service(id: item.serviceId)
+            guard let variant = service.variants.first else { continue }
+            for _ in 0..<item.quantity {
+                cart.items.append(CartItem(id: UUID(), serviceId: service.id, variantId: variant.id, petIds: petIds))
+            }
+        }
+        return try await cartRepository.save(cart)
+    }
+}
+
 struct SendReferralUseCase {
     let referralRepository: ReferralRepository
 

@@ -699,3 +699,121 @@ struct GetCatalogUseCaseTests {
         }
     }
 }
+
+@Suite("ManageCartUseCase — D3/D6 add-ons and multi-pet lines")
+struct ManageCartUseCaseAddonsAndMultiPetTests {
+    @Test("addItem rejects a cart line with no pets")
+    func rejectsEmptyPetSelection() async {
+        let repo = MockCartRepository()
+        let useCase = ManageCartUseCase(cartRepository: repo)
+        let userId = UUID()
+        let cart = try! await repo.currentCart(userId: userId)
+        let item = CartItem(id: UUID(), serviceId: UUID(), variantId: UUID(), petIds: [])
+
+        await #expect(throws: DomainError.validation("Choose at least one pet.")) {
+            _ = try await useCase.addItem(item, to: cart)
+        }
+    }
+
+    @Test("a cart line carries the selected add-ons and every selected pet")
+    func addItemPersistsAddonsAndPets() async throws {
+        let repo = MockCartRepository()
+        let useCase = ManageCartUseCase(cartRepository: repo)
+        let userId = UUID()
+        let cart = try await repo.currentCart(userId: userId)
+        let petIds = [UUID(), UUID()]
+        let addonIds = [UUID()]
+        let item = CartItem(id: UUID(), serviceId: UUID(), variantId: UUID(), petIds: petIds, addonIds: addonIds)
+
+        let saved = try await useCase.addItem(item, to: cart)
+        #expect(saved.items.first?.petIds.count == 2)
+        #expect(saved.items.first?.addonIds == addonIds)
+    }
+
+    @Test("PricingEngine charges the reduced multi-pet rate, not the full base price, for the 2nd pet")
+    func multiPetLinePricesTheSecondPetAtTheReducedRate() {
+        let variant = ServiceVariant(id: UUID(), serviceId: UUID(), name: "Standard 20 min",
+                                      durationMinutes: 20, priceMinorUnits: 59_900, additionalPetPriceMinorUnits: 29_900)
+        let input = PricingEngine.Input(variant: variant, addons: [], additionalPetCount: 1, travelFeeMinorUnits: 0)
+        let breakdown = PricingEngine.quote(input)
+
+        #expect(breakdown.lineItems.contains { $0.label.hasPrefix("Additional pet") && $0.amountMinorUnits == 29_900 })
+        #expect(breakdown.totalMinorUnits < (59_900 + 59_900) * 118 / 100) // cheaper than two full-price bookings, even after GST
+    }
+}
+
+@Suite("Package — D4 packages/bundles")
+struct PackageTests {
+    private func makeCatalog() -> [Service] {
+        [
+            Service(id: UUID(), category: .consult, name: "Home consultation", summary: "",
+                    variants: [ServiceVariant(id: UUID(), serviceId: UUID(), name: "Standard", durationMinutes: 20, priceMinorUnits: 59_900)]),
+            Service(id: UUID(), category: .vaccination, name: "Vaccination", summary: "",
+                    variants: [ServiceVariant(id: UUID(), serviceId: UUID(), name: "Single vaccine", durationMinutes: 15, priceMinorUnits: 49_900)]),
+        ]
+    }
+
+    @Test("a package's discount is the saving vs. buying every included service separately")
+    func discountReflectsSeparatePricing() {
+        let catalog = makeCatalog()
+        let package = Package(
+            id: UUID(), name: "Puppy first-year", packageDescription: "",
+            items: [
+                PackageItem(id: UUID(), serviceId: catalog[0].id, quantity: 4),
+                PackageItem(id: UUID(), serviceId: catalog[1].id, quantity: 3),
+            ],
+            priceMinorUnits: 349_900
+        )
+        // 4×599 + 3×499 = 2396 + 1497 = 3893 rupees separately, vs 3499 bundled.
+        #expect(package.discountMinorUnits(catalog: catalog) == 389_300 - 349_900)
+    }
+
+    @Test("a package referencing an unknown service contributes nothing to the discount, never crashes")
+    func discountIgnoresUnknownServices() {
+        let package = Package(
+            id: UUID(), name: "Mystery bundle", packageDescription: "",
+            items: [PackageItem(id: UUID(), serviceId: UUID(), quantity: 2)],
+            priceMinorUnits: 10_000
+        )
+        #expect(package.discountMinorUnits(catalog: []) == 0)
+    }
+}
+
+@Suite("BuyPackageUseCase — D4 checkout stub")
+struct BuyPackageUseCaseTests {
+    @Test("buying a package adds one cart line per included service occurrence, for every selected pet")
+    func expandsPackageIntoCartLines() async throws {
+        let catalogRepo = MockCatalogRepository()
+        let cartRepo = MockCartRepository()
+        let userId = UUID()
+        let consult = try await catalogRepo.listServices(vertical: .vet).first { $0.category == .consult }!
+        let vaccination = try await catalogRepo.listServices(vertical: .vet).first { $0.category == .vaccination }!
+        let packageRepo = MockPackageRepository()
+        let package = try await packageRepo.listPackages(vertical: .vet).first { $0.name == "Puppy first-year" } ??
+            Package(id: UUID(), name: "Test bundle", packageDescription: "",
+                    items: [PackageItem(id: UUID(), serviceId: consult.id, quantity: 2),
+                            PackageItem(id: UUID(), serviceId: vaccination.id, quantity: 1)],
+                    priceMinorUnits: 100_000)
+
+        let useCase = BuyPackageUseCase(packageRepository: packageRepo, catalogRepository: catalogRepo, cartRepository: cartRepo)
+        let petIds = [UUID(), UUID()]
+        let cart = try await useCase.execute(packageId: package.id, petIds: petIds, userId: userId)
+
+        let expectedLineCount = package.items.reduce(0) { $0 + $1.quantity }
+        #expect(cart.items.count == expectedLineCount)
+        #expect(cart.items.allSatisfy { $0.petIds == petIds })
+    }
+
+    @Test("buying a package with no pets selected is rejected before touching the cart")
+    func rejectsEmptyPetSelection() async {
+        let packageRepo = MockPackageRepository()
+        let catalogRepo = MockCatalogRepository()
+        let cartRepo = MockCartRepository()
+        let useCase = BuyPackageUseCase(packageRepository: packageRepo, catalogRepository: catalogRepo, cartRepository: cartRepo)
+        let anyPackage = try! await packageRepo.listPackages(vertical: nil).first!
+
+        await #expect(throws: DomainError.validation("Choose at least one pet.")) {
+            _ = try await useCase.execute(packageId: anyPackage.id, petIds: [], userId: UUID())
+        }
+    }
+}
