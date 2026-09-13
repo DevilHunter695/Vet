@@ -1372,3 +1372,104 @@ struct ContactSupportByCallUseCase {
     }
 }
 
+// MARK: - J8: transactional SMS/WhatsApp fallback when push fails.
+
+/// Pure decision logic — no I/O, fully unit-testable — for whether a
+/// transactional notification should go out over push, fall back to
+/// SMS/WhatsApp, or be suppressed entirely. Kept separate from
+/// `SendTransactionalNotificationUseCase` (which does the actual dispatch)
+/// so the *decision* can be tested exhaustively without a repository double.
+enum NotificationDeliveryPolicy {
+    /// - Parameters:
+    ///   - hasPushToken: does this user have any registered device token at all.
+    ///   - pushDeliveryFailed: did a push send just fail (APNs error, uninstalled app, etc).
+    ///   - preferences: the user's per-category opt-in/out, or nil if unknown.
+    ///   - category: the transactional category being sent — promotions never fall back to SMS.
+    ///   - hasPhoneNumber: is there a phone number on file to fall back to.
+    static func decide(
+        hasPushToken: Bool,
+        pushDeliveryFailed: Bool,
+        preferences: NotificationPreferences?,
+        category: TransactionalNotificationCategory,
+        hasPhoneNumber: Bool
+    ) -> NotificationDeliveryDecision {
+        // Booking-update-shaped categories respect the user's toggle; OTPs
+        // are never optional (plan §7: OTP delivery is a hard requirement of
+        // starting a visit, not a preference).
+        let categoryEnabled = category == .otp || (preferences?.bookingUpdates ?? true)
+
+        if !categoryEnabled {
+            guard hasPhoneNumber else {
+                return .suppressed(reason: "Push disabled by user and no phone number on file.")
+            }
+            return .smsFallback(reason: .pushDisabledByUser)
+        }
+
+        if !hasPushToken {
+            guard hasPhoneNumber else {
+                return .suppressed(reason: "No push token and no phone number on file.")
+            }
+            return .smsFallback(reason: .noPushToken)
+        }
+
+        if pushDeliveryFailed {
+            guard hasPhoneNumber else {
+                return .suppressed(reason: "Push delivery failed and no phone number on file.")
+            }
+            return .smsFallback(reason: .pushDeliveryFailed)
+        }
+
+        return .push
+    }
+}
+
+/// Drives `NotificationDeliveryPolicy` against real repository state and
+/// records the SMS fallback intent when the policy calls for one. There is
+/// no server-side push-sending Edge Function in this codebase yet (push is
+/// currently modeled client-side only via `PushTokenRepository.registerDeviceToken`),
+/// so this use case is the integration point a future push-send job would
+/// call into on a delivery failure — see plan note on J8 for the honest
+/// scope boundary (no live SMS/WhatsApp send without gateway credentials).
+struct SendTransactionalNotificationUseCase {
+    let pushTokenRepository: PushTokenRepository
+    let notificationPreferencesRepository: NotificationPreferencesRepository
+    let smsFallbackRepository: SMSFallbackRepository
+
+    @discardableResult
+    func execute(
+        user: User, category: TransactionalNotificationCategory, body: String,
+        pushDeliveryFailed: Bool = false
+    ) async throws -> NotificationDeliveryDecision {
+        async let hasToken = pushTokenRepository.hasDeviceToken(userId: user.id)
+        async let prefs = try? notificationPreferencesRepository.preferences(userId: user.id)
+        let decision = NotificationDeliveryPolicy.decide(
+            hasPushToken: try await hasToken,
+            pushDeliveryFailed: pushDeliveryFailed,
+            preferences: await prefs,
+            category: category,
+            hasPhoneNumber: (user.phone?.isEmpty == false)
+        )
+        if case .smsFallback(let reason) = decision, let phone = user.phone {
+            _ = try await smsFallbackRepository.sendFallback(
+                userId: user.id, phone: phone, category: category, body: body, reason: reason
+            )
+        }
+        return decision
+    }
+}
+
+// MARK: - K6: lab test ordering + report delivery. Ordering reuses the
+// existing catalog/cart/checkout flow (`Service` of `.labTest` category);
+// this use case only surfaces the resulting reports.
+struct GetLabTestReportsUseCase {
+    let repository: LabTestReportRepository
+
+    func forPet(_ petId: UUID) async throws -> [LabTestReport] {
+        try await repository.reports(petId: petId)
+    }
+
+    func forVisit(_ visitId: UUID) async throws -> [LabTestReport] {
+        try await repository.reports(visitId: visitId)
+    }
+}
+

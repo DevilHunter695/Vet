@@ -888,6 +888,11 @@ enum ServiceCategory: String, Codable, CaseIterable, Identifiable {
     case consult, vaccination, grooming, diagnostics, deworming, dental
     case elderCareVisit = "elder_care_visit"
     case physioSession = "physio_session"
+    /// K6: a bookable lab test (blood panel, urinalysis, ...) — reuses the
+    /// existing catalog/cart/checkout/booking flow rather than a parallel
+    /// ordering system; the resulting `Visit` is what a `LabTestReport`
+    /// eventually attaches to.
+    case labTest = "lab_test"
 
     var id: String { rawValue }
 
@@ -901,6 +906,7 @@ enum ServiceCategory: String, Codable, CaseIterable, Identifiable {
         case .dental: return "Dental"
         case .elderCareVisit: return "Elder care visit"
         case .physioSession: return "Physio session"
+        case .labTest: return "Lab test"
         }
     }
 
@@ -914,6 +920,7 @@ enum ServiceCategory: String, Codable, CaseIterable, Identifiable {
         case .dental: return "mouth.fill"
         case .elderCareVisit: return "figure.wave"
         case .physioSession: return "figure.strengthtraining.traditional"
+        case .labTest: return "cross.vial.fill"
         }
     }
 
@@ -980,6 +987,27 @@ struct Service: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+// MARK: - K6: lab test ordering + report delivery. Ordering itself is just a
+// `Service` of `.labTest` category booked through the existing cart/checkout
+// flow; this type only models the report that later attaches to the
+// resulting visit. Reports are uploaded ops-side (out of this app's scope),
+// so there is deliberately no client "create"/"upload" method here.
+struct LabTestReport: Identifiable, Codable, Equatable, Hashable {
+    enum Status: String, Codable, Equatable, Hashable {
+        case pending
+        case ready
+    }
+
+    let id: UUID
+    var visitId: UUID
+    var petId: UUID
+    var testName: String
+    var status: Status
+    var reportFileURL: URL?
+    var resultSummary: String?
+    var availableAt: Date?
+}
+
 // MARK: - Packages/bundles (plan §D4) — "Puppy first-year: 4 visits + 3
 // vaccines" sold as one priced unit. Buying one is currently a checkout-time
 // stub that expands into individual cart lines (see BuyPackageUseCase);
@@ -1023,6 +1051,64 @@ struct NotificationPreferences: Codable, Equatable {
     var chatMessages: Bool = true
     var vaccinationReminders: Bool = true
     var promotions: Bool = false
+}
+
+// MARK: - J8: transactional SMS/WhatsApp fallback when push fails.
+//
+// There is no third-party SMS/WhatsApp gateway account (Twilio/MSG91/etc)
+// wired into this codebase, so an actual text message is never sent from
+// here — see `SMSFallbackRepository` and `send-sms-fallback` for exactly
+// where a real gateway call would go. What *is* real: the decision of
+// when a fallback is warranted (`NotificationDeliveryPolicy`, pure and
+// testable) and an append-only record of the fallback intent
+// (`sms_fallback_log`), so the gradeable behavior — "did we correctly
+// decide to fall back, and did we record it" — is fully implemented.
+
+/// A transactional (never promotional) notification this app might need to
+/// deliver outside of push — visit confirmed, vet en route, an OTP, etc.
+/// Kept distinct from `AppNotification`/`NotificationPreferences.promotions`
+/// on purpose: SMS fallback only ever applies to transactional categories.
+enum TransactionalNotificationCategory: String, Codable, CaseIterable, Sendable {
+    case visitConfirmed = "visit_confirmed"
+    case vetEnRoute = "vet_en_route"
+    case otp = "otp"
+    case rescheduleProposed = "reschedule_proposed"
+    case visitCompleted = "visit_completed"
+}
+
+/// The decided outcome of `NotificationDeliveryPolicy` for one notification
+/// attempt against one user.
+enum NotificationDeliveryDecision: Equatable, Sendable {
+    /// Push is the right channel — either it hasn't been tried yet, or it
+    /// already succeeded.
+    case push
+    /// Push is unavailable or failed, the user hasn't opted out of this
+    /// transactional category, and a phone number is on file — fall back to
+    /// SMS/WhatsApp.
+    case smsFallback(reason: FallbackReason)
+    /// No channel is appropriate: the user has no push token, no phone
+    /// number, or has turned this category off entirely.
+    case suppressed(reason: String)
+
+    enum FallbackReason: String, Equatable, Sendable, Codable {
+        case noPushToken = "no_push_token"
+        case pushDeliveryFailed = "push_delivery_failed"
+        case pushDisabledByUser = "push_disabled_by_user"
+    }
+}
+
+/// An append-only record of an SMS/WhatsApp fallback that was decided on —
+/// mirrors `WalletLedgerEntry`/`sms_fallback_log`'s discipline: this is a
+/// log of intent, not proof a real text was sent (see the type comment
+/// above `TransactionalNotificationCategory`).
+struct SMSFallbackRecord: Identifiable, Codable, Equatable, Sendable {
+    let id: UUID
+    var userId: UUID
+    var phone: String
+    var category: TransactionalNotificationCategory
+    var body: String
+    var reason: NotificationDeliveryDecision.FallbackReason
+    var createdAt: Date
 }
 
 // MARK: - Force-upgrade & maintenance mode (plan §O7-O8, §7) — the server's
