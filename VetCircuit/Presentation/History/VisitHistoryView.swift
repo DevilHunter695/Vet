@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 @Observable
 @MainActor
@@ -12,6 +13,7 @@ final class VisitHistoryViewModel {
 
     private let getVisitHistoryUseCase = DependencyContainer.shared.getVisitHistoryUseCase()
     private let cancelVisitUseCase = DependencyContainer.shared.cancelVisitUseCase()
+    private let vaccinationRepository = DependencyContainer.shared.vaccinationRepository
 
     func load(userId: UUID) async {
         isLoading = true
@@ -19,9 +21,30 @@ final class VisitHistoryViewModel {
         defer { isLoading = false }
         do {
             visits = try await getVisitHistoryUseCase.execute(userId: userId)
+            await refreshWidgetData(userId: userId)
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// N6: this is the write side of the widget bridge — the only place in
+    /// the app that populates `SharedVisitSummary`, since this screen is
+    /// already the source of truth for "what's my next visit". A reasonable
+    /// simplification: the widget then refreshes on WidgetKit's own timeline
+    /// schedule rather than via a live push the instant this write happens,
+    /// though the `WidgetCenter.reloadTimelines` call below does ask iOS to
+    /// refresh promptly when the app is foregrounded.
+    private func refreshWidgetData(userId: UUID) async {
+        guard let pets = try? await DependencyContainer.shared.petRepository.listPets(ownerId: userId) else { return }
+        var vaccinationsByPet: [UUID: [Vaccination]] = [:]
+        for pet in pets {
+            if let history = try? await vaccinationRepository.history(petId: pet.id) {
+                vaccinationsByPet[pet.id] = history
+            }
+        }
+        let summary = WidgetDataBridge.summarize(visits: visits, pets: pets, vaccinationsByPet: vaccinationsByPet)
+        WidgetDataBridge.write(summary)
+        WidgetCenter.shared.reloadTimelines(ofKind: "VetCircuitNextVisitWidget")
     }
 
     func requestCancellation(_ visit: Visit) async {

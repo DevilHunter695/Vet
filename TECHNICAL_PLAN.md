@@ -311,7 +311,7 @@ Service (Home consultation)
 | N3 | Lifecycle pushes: vaccination due, renewal, dormant 60d, abandoned cart | P1 | 🔨 | Detection + queueing done (`lifecycle-notifications` Edge Function, `notifications` table); actual push-send job to drain the queue is a separate, still-missing piece |
 | N4 | Loyalty points & tiers | P2 | ✅ |
 | N5 | In-app rating prompt (SKStoreReviewController, after a 5★ visit only) | P1 | ✅ | `ReviewView` calls `SKStoreReviewController.requestReview` only on a 5★ submit, gated to once per app version via `UserDefaults` (StoreKit's own throttling is a separate, opaque layer on top) |
-| N6 | Home Screen widget: next visit / vaccination due | P2 | ⛔ |
+| N6 | Home Screen widget: next visit / vaccination due | P2 | 🔨 | Real `VetCircuitWidgetExtension` WidgetKit target added (`project.yml`) with an App Group (`group.com.vetcircuit.app`) entitlement on both targets. `VetCircuitWidget/` has a genuine end-to-end `TimelineProvider` + `TimelineEntry` + SwiftUI widget view (systemSmall/systemMedium) reading a `SharedVisitSummary` written by `VisitHistoryView` on every load (`WidgetDataBridge`), with `WidgetCenter.reloadTimelines` called from the app. Marked 🔨 not ✅ because: (1) the widget target can't be built/run/screenshotted from this environment (no Xcode/macOS toolchain here, only `xcodegen`'s YAML), so it's unverified against a real widget host; (2) the shared struct is duplicated by hand between the two targets (no shared framework target) — a documented, deliberate simplification, not a bug; (3) refresh is timeline-scheduled (30 min) + app-foreground reload, not a live push |
 | N7 | Deep links + universal links for every campaign target | P1 | 🔨 | `DeepLinkParser` (pure) + `.onOpenURL`; `vetcircuit://visit`, `/book`, `/household` parsed and routed to the right tab. **Known gap** (plan §6.1): no shared Router/typed-Route `NavigationStack(path:)` exists — each tab still runs its own stack, so a deep link only jumps to the right tab and (for `/book`) resolves a specific circuit; it can't yet push arbitrary nested screens (e.g. a specific visit's chat) from outside |
 
 ### O. Settings, privacy & platform UX
@@ -319,7 +319,7 @@ Service (Home consultation)
 | # | Capability | Pri | Status |
 |---|---|---|---|
 | O1 | Notification preferences per channel/category | P1 | ✅ |
-| O2 | Language: English + Hindi (+1 regional at launch cluster) | P1 | ⛔ |
+| O2 | Language: English + Hindi (+1 regional at launch cluster) | P1 | 🔨 | Real `Localizable.xcstrings` string catalog (iOS 17/Xcode 15+ format, correct choice over legacy `.strings`) with English + Hindi, declared via `CFBundleLocalizations` in `project.yml`. **Full Hindi coverage**: Circuits list + filter sheet + empty/error states (`CircuitsListView`), Cart (`CartView`), Booking incl. confirmation sheet (`BookingView`) — 36 keys, real Hindi a Hindi speaker would recognize, not machine-garbled. **English-only, known follow-up**: (a) within those same 3 screens, string-interpolated labels (wallet balance amount, slot capacity count, pet name/species) — `Text` interpolation needs per-call-site catalog entries, not just literal keys; (b) every other screen (Chat, History, Wallet, Support, Profile, Legal, etc.) — untouched, as expected for a phased "+1 regional at launch cluster" rollout, not a full-app translation |
 | O3 | Appearance light/dark/system | P0 | ✅ |
 | O4 | Accessibility: Dynamic Type to AX5, VoiceOver, Reduce Motion | P0 | 🔨 |
 | O5 | **Consent dashboard**: what you collect, why, withdraw consent | P0 (DPDP) | ✅ |
