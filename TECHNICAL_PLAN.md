@@ -956,7 +956,7 @@ shells · XcodeGen + GitHub Actions CI · design system (Theme/Mascot/motion) ·
 1. Catalog + variants + add-ons (D) — everything downstream depends on it
 2. Addresses + capacity slots + holds (A8, F2, E7)
 3. Server-authoritative quote + cart + price breakdown (E)
-4. `book_visit()` transaction + idempotency (7.1)
+4. ✅ `book_visit()` transaction + idempotency (7.1) — atomic, capacity-locked, idempotent by key; not yet quote-referencing (see note below)
 5. Cancel/reschedule policy + refunds + invoices (F3–F4, G4–G5)
 6. 8-state machine + visit OTP + consent + record (I)
 7. Delete account, consent dashboard, export (A6, A7, O5) — App Store + DPDP blockers

@@ -16,12 +16,17 @@ struct GetCircuitsUseCase {
 struct BookVisitUseCase {
     let visitRepository: VisitRepository
 
-    func execute(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot) async throws -> Visit {
+    /// The atomic `book_visit()` transaction (Appendix D): capacity-checked,
+    /// idempotent by construction. `idempotencyKey` defaults to a fresh UUID
+    /// per call so existing call sites keep working, but a real checkout flow
+    /// should generate one client-side *once* per attempt and reuse it across
+    /// retries — that's what makes a retried tap safe.
+    func execute(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String = UUID().uuidString) async throws -> Visit {
         guard slot.isAvailable else { throw DomainError.slotUnavailable }
         guard slot.startTime > Date() else {
             throw DomainError.validation("Please choose a slot in the future.")
         }
-        return try await visitRepository.createVisit(petId: petId, vetId: vetId, circuitId: circuitId, slot: slot)
+        return try await visitRepository.createVisit(petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey)
     }
 }
 

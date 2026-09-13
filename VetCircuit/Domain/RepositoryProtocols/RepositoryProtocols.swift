@@ -16,7 +16,11 @@ protocol CircuitRepository: Sendable {
 }
 
 protocol VisitRepository: Sendable {
-    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot) async throws -> Visit
+    /// `idempotencyKey` (plan §7.1: "every mutating endpoint takes an
+    /// idempotency key, no exceptions") makes a retried booking — a double
+    /// tap, a retry after a flaky network response — return the *same*
+    /// visit instead of creating a duplicate.
+    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String) async throws -> Visit
     func listVisits(userId: UUID) async throws -> [Visit]
     func visit(id: UUID) async throws -> Visit
     func updateStatus(visitId: UUID, status: Visit.VisitStatus) async throws -> Visit

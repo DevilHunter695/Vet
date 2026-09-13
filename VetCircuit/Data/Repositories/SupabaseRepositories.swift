@@ -249,13 +249,16 @@ final class SupabaseVisitRepository: VisitRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
-    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot) async throws -> Visit {
-        let insert = SupabaseVisitInsert(
-            petId: petId, vetId: vetId, circuitId: circuitId,
-            status: Visit.VisitStatus.requested.rawValue, scheduledAt: slot.startTime
-        )
-        let rows: [SupabaseVisitRow] = try await client.from("visits").insert(insert).select().execute().value
-        guard let row = rows.first else { throw DomainError.unknown }
+    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String) async throws -> Visit {
+        // Calls the atomic book_visit() Postgres function (Appendix D) rather
+        // than a raw insert — it locks the slot row, checks capacity, and
+        // records the idempotency key all inside one transaction, so a
+        // retried request can never oversell or double-book.
+        let row: SupabaseVisitRow = try await client.rpc("book_visit", params: [
+            "p_pet_id": petId.uuidString, "p_vet_id": vetId.uuidString, "p_circuit_id": circuitId.uuidString,
+            "p_slot_id": slot.id.uuidString, "p_scheduled_at": ISO8601DateFormatter().string(from: slot.startTime),
+            "p_idempotency_key": idempotencyKey,
+        ]).execute().value
         return row.toDomain()
     }
 
@@ -565,18 +568,6 @@ private struct SupabaseVisitRow: Decodable {
         Visit(id: id, userId: userId, petId: petId, vetId: vetId, circuitId: circuitId,
               status: Visit.VisitStatus(rawValue: status) ?? .requested,
               scheduledAt: scheduledAt, completedAt: completedAt, notes: notes, paymentId: paymentId)
-    }
-}
-
-private struct SupabaseVisitInsert: Encodable {
-    let petId: UUID
-    let vetId: UUID
-    let circuitId: UUID
-    let status: String
-    let scheduledAt: Date
-
-    enum CodingKeys: String, CodingKey {
-        case petId = "pet_id", vetId = "vet_id", circuitId = "circuit_id", status, scheduledAt = "scheduled_at"
     }
 }
 

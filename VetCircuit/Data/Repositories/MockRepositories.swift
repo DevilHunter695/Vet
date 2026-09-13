@@ -181,13 +181,30 @@ actor MockCatalogRepository: CatalogRepository {
 
 actor MockVisitRepository: VisitRepository {
     private var visits: [Visit] = MockData.visits
+    /// Simulates the DB's `idempotency_keys` table (Appendix D): the same
+    /// key always returns the same visit rather than creating a duplicate.
+    private var visitsByIdempotencyKey: [String: UUID] = [:]
+    /// Simulates `SELECT ... FOR UPDATE` + the capacity CHECK inside
+    /// `book_visit()` — a slot can never be oversold even under concurrent
+    /// calls, since actor isolation serializes access to this dictionary.
+    private var bookedCountBySlot: [UUID: Int] = [:]
 
-    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot) async throws -> Visit {
+    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String) async throws -> Visit {
+        if let existingVisitId = visitsByIdempotencyKey[idempotencyKey],
+           let existing = visits.first(where: { $0.id == existingVisitId }) {
+            return existing
+        }
+        let alreadyBooked = bookedCountBySlot[slot.id] ?? 0
+        guard slot.bookedCount + alreadyBooked < slot.capacity else {
+            throw DomainError.slotUnavailable
+        }
         let visit = Visit(
             id: UUID(), userId: MockData.user.id, petId: petId, vetId: vetId, circuitId: circuitId,
             status: .requested, scheduledAt: slot.startTime, completedAt: nil, notes: nil, paymentId: nil
         )
         visits.append(visit)
+        visitsByIdempotencyKey[idempotencyKey] = visit.id
+        bookedCountBySlot[slot.id] = alreadyBooked + 1
         return visit
     }
 

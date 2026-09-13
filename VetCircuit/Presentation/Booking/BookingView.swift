@@ -8,7 +8,12 @@ final class BookingViewModel {
     var pets: [Pet] = []
     var selectedPet: Pet?
     var selectedSlot: ScheduleSlot? {
-        didSet { if selectedSlot?.id != oldValue?.id { Task { await refreshHold() } } }
+        didSet {
+            if selectedSlot?.id != oldValue?.id {
+                bookingIdempotencyKey = UUID().uuidString
+                Task { await refreshHold() }
+            }
+        }
     }
     var isLoading = false
     var errorMessage: String?
@@ -19,6 +24,11 @@ final class BookingViewModel {
     private(set) var holdSecondsRemaining: Int?
     private var holdTimer: Task<Void, Never>?
     private var currentUserId: UUID?
+    /// Generated once per booking attempt and reused across retries (plan
+    /// §7.1: "every mutating endpoint takes an idempotency key") — a double
+    /// tap or a retry after a dropped response returns the same visit
+    /// instead of creating a second one.
+    private var bookingIdempotencyKey = UUID().uuidString
 
     private let bookVisitUseCase = DependencyContainer.shared.bookVisitUseCase()
     private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
@@ -81,8 +91,11 @@ final class BookingViewModel {
         defer { isLoading = false }
         do {
             bookedVisit = try await bookVisitUseCase.execute(
-                petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot
+                petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
+                idempotencyKey: bookingIdempotencyKey
             )
+            // The hold's job ends where the confirmed booking begins.
+            if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
         } catch {
             errorMessage = error.localizedDescription
         }

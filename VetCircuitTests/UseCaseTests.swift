@@ -52,6 +52,44 @@ struct BookVisitUseCaseTests {
         let visit = try await useCase.execute(petId: UUID(), vetId: UUID(), circuitId: UUID(), slot: slot)
         #expect(visit.status == .requested)
     }
+
+    @Test("retrying with the same idempotency key returns the original visit, not a duplicate")
+    func idempotentRetryReturnsOriginal() async throws {
+        let repo = MockVisitRepository()
+        let useCase = BookVisitUseCase(visitRepository: repo)
+        let slot = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(3600),
+                                 endTime: .now.addingTimeInterval(7200), capacity: 3, bookedCount: 0)
+        let key = UUID().uuidString
+        let petId = UUID(), vetId = UUID(), circuitId = UUID()
+
+        let first = try await useCase.execute(petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: key)
+        let retry = try await useCase.execute(petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: key)
+
+        #expect(first.id == retry.id)
+        let allVisits = try await repo.listVisits(userId: first.userId)
+        #expect(allVisits.filter { $0.id == first.id }.count == 1)
+    }
+
+    @Test("concurrent bookings on a slot never exceed its capacity")
+    func neverOversellsCapacity() async throws {
+        let repo = MockVisitRepository()
+        let useCase = BookVisitUseCase(visitRepository: repo)
+        let slot = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(3600),
+                                 endTime: .now.addingTimeInterval(7200), capacity: 3, bookedCount: 0)
+
+        let results = await withTaskGroup(of: Bool.self) { group in
+            for _ in 0..<10 {
+                group.addTask {
+                    (try? await useCase.execute(petId: UUID(), vetId: UUID(), circuitId: UUID(), slot: slot)) != nil
+                }
+            }
+            var successes = 0
+            for await success in group where success { successes += 1 }
+            return successes
+        }
+
+        #expect(results == 3)
+    }
 }
 
 @Suite("CancelVisitUseCase")
@@ -61,7 +99,8 @@ struct CancelVisitUseCaseTests {
         let repo = MockVisitRepository()
         let visit = try await repo.createVisit(
             petId: UUID(), vetId: UUID(), circuitId: UUID(),
-            slot: ScheduleSlot(id: UUID(), dayOfWeek: 1, startTime: .now.addingTimeInterval(3600), endTime: .now.addingTimeInterval(7200), capacity: 3, bookedCount: 0)
+            slot: ScheduleSlot(id: UUID(), dayOfWeek: 1, startTime: .now.addingTimeInterval(3600), endTime: .now.addingTimeInterval(7200), capacity: 3, bookedCount: 0),
+            idempotencyKey: UUID().uuidString
         )
         let useCase = CancelVisitUseCase(visitRepository: repo)
         try await useCase.execute(visitId: visit.id, currentStatus: .requested)
