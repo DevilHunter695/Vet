@@ -21,8 +21,11 @@ struct VisitDetailView: View {
     // F7: vet no-show reporting.
     @State private var noShowMessage: String?
     @State private var isReportingNoShow = false
+    // G9: an active gateway dispute against this visit's payment, if any.
+    @State private var activeDispute: PaymentDispute?
 
     private let startCallUseCase = DependencyContainer.shared.startCallUseCase()
+    private let paymentDisputeRepository = DependencyContainer.shared.paymentDisputeRepository
     private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
     private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
@@ -54,6 +57,15 @@ struct VisitDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .appearAnimation()
+
+                // G9: a gateway dispute (chargeback) was opened against this
+                // visit's payment — surfaced so the customer isn't left
+                // confused about a hold on their money. Read-only: the
+                // customer can't act on it here, only see that it's happening.
+                if let activeDispute {
+                    PaymentDisputeStatusView(dispute: activeDispute)
+                        .appearAnimation(delay: 0.01)
+                }
 
                 // F6: vet-initiated reschedule accept/decline banner.
                 if let pendingProposal {
@@ -274,6 +286,7 @@ struct VisitDetailView: View {
                 visitOTP = try? await visitOTPRepository.generateOTP(visitId: visit.id)
             }
             pendingProposal = try? await rescheduleProposalRepository.pendingProposal(visitId: visit.id)
+            activeDispute = try? await paymentDisputeRepository.disputes(visitId: visit.id).first { $0.isActive }
         }
     }
 
@@ -336,6 +349,40 @@ private struct ActionRow: View {
         .padding()
         .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: Theme.cardShadow, radius: 8, y: 3)
+    }
+}
+
+/// G9: a small banner explaining a gateway dispute (chargeback) is under
+/// review for this visit's payment — the customer-facing half of dispute
+/// handling. There is nothing to act on here (evidence, response, etc. are
+/// ops/gateway concerns), only enough context that a hold doesn't look like
+/// a silent problem.
+struct PaymentDisputeStatusView: View {
+    let dispute: PaymentDispute
+
+    private var message: String {
+        switch dispute.status {
+        case .open, .needsResponse:
+            return "A payment dispute is under review for this visit. We're looking into it — no action is needed from you right now."
+        case .won:
+            return "The payment dispute on this visit has been resolved in your favor."
+        case .lost:
+            return "The payment dispute on this visit has been resolved."
+        }
+    }
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Payment under review", systemImage: "exclamationmark.shield.fill")
+                    .font(.brandHeadline)
+                    .foregroundStyle(dispute.isActive ? Theme.warning : .secondary)
+                Text(message)
+                    .font(.brandCaption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
