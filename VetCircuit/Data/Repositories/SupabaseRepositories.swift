@@ -128,7 +128,11 @@ final class SupabaseQuoteRepository: QuoteRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
-    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote {
+    func createQuote(for cart: Cart, catalog: [Service], overrides: [VetServiceOverride]) async throws -> Quote {
+        // Pricing (including D5 overrides) runs entirely inside the
+        // `create-quote` edge function server-side (Appendix C) — `overrides`
+        // is accepted here only to match the protocol; the function reads
+        // vet_service_overrides itself from cart_id's circuit.
         struct Response: Decodable {
             let id: UUID
             let cartId: UUID
@@ -1686,6 +1690,221 @@ private struct SupabaseAppNotificationRow: Decodable {
     func toDomain() -> AppNotification {
         AppNotification(id: id, userId: userId, category: AppNotification.Category(rawValue: category) ?? .promotion,
                          title: title, body: body, sentAt: sentAt, createdAt: createdAt, readAt: readAt)
+    }
+}
+
+// MARK: - D5 per-vet service overrides
+
+final class SupabaseVetServiceOverrideRepository: VetServiceOverrideRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func overrides(vetId: UUID) async throws -> [VetServiceOverride] {
+        let rows: [SupabaseVetServiceOverrideRow] = try await client
+            .from("vet_service_overrides").select().eq("vet_id", value: vetId).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func setOverride(_ override: VetServiceOverride) async throws -> VetServiceOverride {
+        let insert = SupabaseVetServiceOverrideInsert(override: override)
+        // Upsert on (vet_id, service_id, variant_id) — matches the migration's unique constraint.
+        let rows: [SupabaseVetServiceOverrideRow] = try await client
+            .from("vet_service_overrides").upsert(insert, onConflict: "vet_id,service_id,variant_id").select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+}
+
+private struct SupabaseVetServiceOverrideRow: Decodable {
+    let id: UUID
+    let vetId: UUID
+    let serviceId: UUID
+    let variantId: UUID?
+    let priceOverrideMinorUnits: Int?
+    let isOffered: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case vetId = "vet_id", serviceId = "service_id", variantId = "variant_id"
+        case priceOverrideMinorUnits = "price_override_minor_units", isOffered = "is_offered"
+    }
+
+    func toDomain() -> VetServiceOverride {
+        VetServiceOverride(id: id, vetId: vetId, serviceId: serviceId, variantId: variantId,
+                            priceOverrideMinorUnits: priceOverrideMinorUnits, isOffered: isOffered)
+    }
+}
+
+private struct SupabaseVetServiceOverrideInsert: Encodable {
+    let id: UUID
+    let vetId: UUID
+    let serviceId: UUID
+    let variantId: UUID?
+    let priceOverrideMinorUnits: Int?
+    let isOffered: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case vetId = "vet_id", serviceId = "service_id", variantId = "variant_id"
+        case priceOverrideMinorUnits = "price_override_minor_units", isOffered = "is_offered"
+    }
+
+    init(override: VetServiceOverride) {
+        id = override.id; vetId = override.vetId; serviceId = override.serviceId
+        variantId = override.variantId; priceOverrideMinorUnits = override.priceOverrideMinorUnits
+        isOffered = override.isOffered
+    }
+}
+
+// MARK: - F5 recurring booking rules
+
+final class SupabaseRecurringBookingRuleRepository: RecurringBookingRuleRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func rules(userId: UUID) async throws -> [RecurringBookingRule] {
+        let rows: [SupabaseRecurringBookingRuleRow] = try await client
+            .from("recurring_booking_rules").select().eq("user_id", value: userId)
+            .order("next_occurrence_at", ascending: true).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func create(_ rule: RecurringBookingRule) async throws -> RecurringBookingRule {
+        let insert = SupabaseRecurringBookingRuleInsert(rule: rule)
+        let rows: [SupabaseRecurringBookingRuleRow] = try await client
+            .from("recurring_booking_rules").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func setActive(id: UUID, isActive: Bool) async throws -> RecurringBookingRule {
+        let rows: [SupabaseRecurringBookingRuleRow] = try await client
+            .from("recurring_booking_rules").update(["is_active": isActive]).eq("id", value: id).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Recurring booking rule") }
+        return row.toDomain()
+    }
+
+    func delete(id: UUID) async throws {
+        try await client.from("recurring_booking_rules").delete().eq("id", value: id).execute()
+    }
+}
+
+private struct SupabaseRecurringBookingRuleRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let petId: UUID
+    let serviceId: UUID
+    let variantId: UUID
+    let circuitId: UUID
+    let cadence: String
+    let nextOccurrenceAt: Date
+    let isActive: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, cadence
+        case userId = "user_id", petId = "pet_id", serviceId = "service_id", variantId = "variant_id"
+        case circuitId = "circuit_id", nextOccurrenceAt = "next_occurrence_at", isActive = "is_active"
+    }
+
+    func toDomain() -> RecurringBookingRule {
+        RecurringBookingRule(id: id, userId: userId, petId: petId, serviceId: serviceId, variantId: variantId,
+                              circuitId: circuitId, cadence: RecurringBookingRule.Cadence(rawValue: cadence) ?? .monthly,
+                              nextOccurrenceAt: nextOccurrenceAt, isActive: isActive)
+    }
+}
+
+private struct SupabaseRecurringBookingRuleInsert: Encodable {
+    let id: UUID
+    let userId: UUID
+    let petId: UUID
+    let serviceId: UUID
+    let variantId: UUID
+    let circuitId: UUID
+    let cadence: String
+    let nextOccurrenceAt: Date
+    let isActive: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, cadence
+        case userId = "user_id", petId = "pet_id", serviceId = "service_id", variantId = "variant_id"
+        case circuitId = "circuit_id", nextOccurrenceAt = "next_occurrence_at", isActive = "is_active"
+    }
+
+    init(rule: RecurringBookingRule) {
+        id = rule.id; userId = rule.userId; petId = rule.petId; serviceId = rule.serviceId
+        variantId = rule.variantId; circuitId = rule.circuitId; cadence = rule.cadence.rawValue
+        nextOccurrenceAt = rule.nextOccurrenceAt; isActive = rule.isActive
+    }
+}
+
+// MARK: - F6 vet-initiated reschedule proposals
+
+final class SupabaseRescheduleProposalRepository: RescheduleProposalRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func pendingProposal(visitId: UUID) async throws -> RescheduleProposal? {
+        let rows: [SupabaseRescheduleProposalRow] = try await client
+            .from("reschedule_proposals").select().eq("visit_id", value: visitId).eq("status", value: "pending")
+            .limit(1).execute().value
+        return rows.first?.toDomain()
+    }
+
+    func create(_ proposal: RescheduleProposal) async throws -> RescheduleProposal {
+        let insert = SupabaseRescheduleProposalInsert(proposal: proposal)
+        let rows: [SupabaseRescheduleProposalRow] = try await client
+            .from("reschedule_proposals").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func respond(id: UUID, accept: Bool) async throws -> RescheduleProposal {
+        let rows: [SupabaseRescheduleProposalRow] = try await client
+            .from("reschedule_proposals").update(["status": accept ? "accepted" : "declined"])
+            .eq("id", value: id).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Reschedule proposal") }
+        return row.toDomain()
+    }
+}
+
+private struct SupabaseRescheduleProposalRow: Decodable {
+    let id: UUID
+    let visitId: UUID
+    let proposedByRole: String
+    let proposedSlotId: UUID
+    let status: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, status
+        case visitId = "visit_id", proposedByRole = "proposed_by_role"
+        case proposedSlotId = "proposed_slot_id", createdAt = "created_at"
+    }
+
+    func toDomain() -> RescheduleProposal {
+        RescheduleProposal(id: id, visitId: visitId,
+                            proposedByRole: RescheduleProposal.ProposerRole(rawValue: proposedByRole) ?? .vet,
+                            proposedSlotId: proposedSlotId,
+                            status: RescheduleProposal.Status(rawValue: status) ?? .pending,
+                            createdAt: createdAt)
+    }
+}
+
+private struct SupabaseRescheduleProposalInsert: Encodable {
+    let id: UUID
+    let visitId: UUID
+    let proposedByRole: String
+    let proposedSlotId: UUID
+    let status: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, status
+        case visitId = "visit_id", proposedByRole = "proposed_by_role", proposedSlotId = "proposed_slot_id"
+    }
+
+    init(proposal: RescheduleProposal) {
+        id = proposal.id; visitId = proposal.visitId; proposedByRole = proposal.proposedByRole.rawValue
+        proposedSlotId = proposal.proposedSlotId; status = proposal.status.rawValue
     }
 }
 

@@ -43,6 +43,12 @@ final class DependencyContainer {
     let emergencyClinicRepository: EmergencyClinicRepository
     let householdRepository: HouseholdRepository
     let waitlistRepository: WaitlistRepository
+    /// D5: per-vet service availability/pricing overrides.
+    let vetServiceOverrideRepository: VetServiceOverrideRepository
+    /// F5: recurring booking rules.
+    let recurringBookingRuleRepository: RecurringBookingRuleRepository
+    /// F6: vet-initiated reschedule proposals.
+    let rescheduleProposalRepository: RescheduleProposalRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -83,6 +89,9 @@ final class DependencyContainer {
         self.emergencyClinicRepository = MockEmergencyClinicRepository()
         self.householdRepository = MockHouseholdRepository()
         self.waitlistRepository = MockWaitlistRepository()
+        self.vetServiceOverrideRepository = MockVetServiceOverrideRepository()
+        self.recurringBookingRuleRepository = MockRecurringBookingRuleRepository()
+        self.rescheduleProposalRepository = MockRescheduleProposalRepository()
     }
 
     // MARK: Use case factories
@@ -117,7 +126,20 @@ final class DependencyContainer {
     func manageAddressesUseCase() -> ManageAddressesUseCase { ManageAddressesUseCase(addressRepository: addressRepository) }
     func holdSlotUseCase() -> HoldSlotUseCase { HoldSlotUseCase(circuitRepository: circuitRepository, slotHoldRepository: slotHoldRepository) }
     func manageCartUseCase() -> ManageCartUseCase { ManageCartUseCase(cartRepository: cartRepository) }
-    func getQuoteUseCase() -> GetQuoteUseCase { GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository) }
+    func getQuoteUseCase() -> GetQuoteUseCase {
+        GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository,
+                         circuitRepository: circuitRepository, vetServiceOverrideRepository: vetServiceOverrideRepository)
+    }
+    func manageRecurringBookingUseCase() -> ManageRecurringBookingUseCase {
+        ManageRecurringBookingUseCase(recurringBookingRuleRepository: recurringBookingRuleRepository)
+    }
+    func respondToRescheduleProposalUseCase() -> RespondToRescheduleProposalUseCase {
+        RespondToRescheduleProposalUseCase(proposalRepository: rescheduleProposalRepository, visitRepository: visitRepository,
+                                            circuitRepository: circuitRepository, loyaltyRepository: loyaltyRepository)
+    }
+    func reportVetNoShowUseCase() -> ReportVetNoShowUseCase {
+        ReportVetNoShowUseCase(visitRepository: visitRepository, refundRepository: refundRepository, loyaltyRepository: loyaltyRepository)
+    }
     func browsePackagesUseCase() -> BrowsePackagesUseCase { BrowsePackagesUseCase(packageRepository: packageRepository) }
     func buyPackageUseCase() -> BuyPackageUseCase {
         BuyPackageUseCase(packageRepository: packageRepository, catalogRepository: catalogRepository, cartRepository: cartRepository)

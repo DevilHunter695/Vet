@@ -175,8 +175,8 @@ struct Visit: Identifiable, Codable, Equatable, Hashable {
     static let legalTransitions: [VisitStatus: Set<VisitStatus>] = [
         .requested: [.confirmed, .cancelledByUser, .cancelledByVet],
         .confirmed: [.assigned, .cancelledByUser, .cancelledByVet],
-        .assigned: [.enRoute, .cancelledByUser, .cancelledByVet],
-        .enRoute: [.arrived, .cancelledByVet],
+        .assigned: [.enRoute, .cancelledByUser, .cancelledByVet, .noShowVet],
+        .enRoute: [.arrived, .cancelledByVet, .noShowVet],
         .arrived: [.inProgress, .noShowUser],
         .inProgress: [.completed],
         .completed: [.disputed],
@@ -1149,6 +1149,108 @@ struct EmergencyClinic: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+
+// MARK: - D5: per-vet service availability & pricing overrides — a vet can
+// opt out of a catalog service entirely, or charge more/less than the
+// catalog default, without ops editing the shared catalog per vet.
+struct VetServiceOverride: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var vetId: UUID
+    var serviceId: UUID
+    var variantId: UUID?               // nil = applies to the whole service; set = one variant only
+    var priceOverrideMinorUnits: Int?  // nil = use the catalog price, only isOffered is overridden
+    var isOffered: Bool = true
+}
+
+// MARK: - F5: recurring bookings (monthly deworming, weekly physio). The rule
+// itself is client/server state; actually spawning the next visit each cycle
+// is a scheduled-job concern (plan §6.5-style job) — out of scope here, see
+// RecurrenceScheduler's doc comment for the known gap this leaves.
+struct RecurringBookingRule: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var petId: UUID
+    var serviceId: UUID
+    var variantId: UUID
+    var circuitId: UUID
+    var cadence: Cadence
+    var nextOccurrenceAt: Date
+    var isActive: Bool = true
+
+    enum Cadence: String, Codable, CaseIterable {
+        case weekly, monthly
+
+        var displayName: String {
+            switch self {
+            case .weekly: return "Weekly"
+            case .monthly: return "Monthly"
+            }
+        }
+    }
+}
+
+/// Pure date math for F5 — no I/O, so the "what's the next occurrence" rule
+/// is directly unit-testable independent of whichever job ends up running it.
+struct RecurrenceScheduler {
+    /// Computes the next occurrence after `lastOccurrence` for the given
+    /// cadence. A calendar (not a fixed 7/30-day interval) is used so weekly
+    /// stays pinned to the same weekday and monthly to the same day-of-month
+    /// across DST transitions and month-length differences.
+    static func nextOccurrence(after lastOccurrence: Date, cadence: RecurringBookingRule.Cadence, calendar: Calendar = .current) -> Date {
+        switch cadence {
+        case .weekly:
+            return calendar.date(byAdding: .weekOfYear, value: 1, to: lastOccurrence) ?? lastOccurrence.addingTimeInterval(7 * 86400)
+        case .monthly:
+            return calendar.date(byAdding: .month, value: 1, to: lastOccurrence) ?? lastOccurrence.addingTimeInterval(30 * 86400)
+        }
+    }
+}
+
+// MARK: - F6: vet-initiated reschedule with customer accept/decline. Unlike
+// a customer-initiated reschedule (RescheduleVisitUseCase), a vet-initiated
+// proposal bypasses the 4h policy window — the vet, not the customer, is the
+// one moving the slot — and a decline earns the customer a goodwill credit
+// rather than leaving them simply stuck with the original (now vet-unwanted) time.
+struct RescheduleProposal: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var visitId: UUID
+    var proposedByRole: ProposerRole
+    var proposedSlotId: UUID
+    var status: Status
+    var createdAt: Date
+
+    enum ProposerRole: String, Codable { case vet, customer }
+    enum Status: String, Codable { case pending, accepted, declined }
+}
+
+// MARK: - F7: no-show policy for both directions — mirrors CancellationPolicy
+// (pure, testable, no I/O) but the two directions have opposite consequences:
+// a customer no-show forfeits the full amount, a vet no-show refunds it in
+// full plus a small goodwill credit (same loyalty award F6 uses on decline).
+struct NoShowPolicy {
+    /// Awarded to the customer whenever the *vet* is at fault — either a
+    /// full vet no-show, or a declined vet-initiated reschedule (F6).
+    static let goodwillCreditPoints = 50
+
+    struct Outcome: Equatable {
+        var refundPercent: Int   // 0 for customer no-show, 100 for vet no-show
+        var refundMinorUnits: Int
+        var goodwillCreditPoints: Int
+    }
+
+    static func customerNoShow(paidMinorUnits: Int) -> Outcome {
+        Outcome(refundPercent: 0, refundMinorUnits: 0, goodwillCreditPoints: 0)
+    }
+
+    static func vetNoShow(paidMinorUnits: Int) -> Outcome {
+        Outcome(refundPercent: 100, refundMinorUnits: paidMinorUnits, goodwillCreditPoints: goodwillCreditPoints)
+    }
+
+    /// How long past the scheduled time a visit stuck in `assigned`/`enRoute`
+    /// must sit before the customer can report a vet no-show — long enough
+    /// to not penalize ordinary lateness, short enough to be useful same-day.
+    static let vetGraceWindowMinutes: Double = 30
+}
 
 // MARK: - Domain errors
 

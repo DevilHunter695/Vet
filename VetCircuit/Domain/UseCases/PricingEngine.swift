@@ -16,12 +16,15 @@ enum PricingEngine {
         var couponDiscountMinorUnits: Int = 0
         var walletBalanceMinorUnits: Int = 0
         var gstRate: Double = 0.18
+        /// D5: a vet's per-service price override, when one exists for this
+        /// vet+service/variant — takes precedence over the catalog default.
+        var vetOverridePriceMinorUnits: Int? = nil
     }
 
     static func quote(_ input: Input) -> PriceBreakdown {
         var lineItems: [PriceLineItem] = []
 
-        let base = input.variant.priceMinorUnits
+        let base = input.vetOverridePriceMinorUnits ?? input.variant.priceMinorUnits
         lineItems.append(PriceLineItem(label: input.variant.name, amountMinorUnits: base))
 
         let multiPet = input.additionalPetCount * input.variant.additionalPetPriceMinorUnits

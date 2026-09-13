@@ -93,6 +93,73 @@ struct RescheduleVisitUseCase {
     }
 }
 
+/// F6: vet-initiated reschedule — the customer accepts or declines a
+/// vet-proposed slot. Accepting bypasses `RescheduleVisitUseCase`'s 4h
+/// policy window entirely (the vet moved the slot, not the customer), and
+/// declining awards a goodwill loyalty credit since the customer is now
+/// inconvenienced through no fault of their own.
+struct RespondToRescheduleProposalUseCase {
+    let proposalRepository: RescheduleProposalRepository
+    let visitRepository: VisitRepository
+    let circuitRepository: CircuitRepository
+    let loyaltyRepository: LoyaltyRepository
+
+    @discardableResult
+    func execute(proposal: RescheduleProposal, visit: Visit, accept: Bool) async throws -> RescheduleProposal {
+        guard proposal.status == .pending, proposal.proposedByRole == .vet else {
+            throw DomainError.validation("This proposal has already been responded to.")
+        }
+        let updated = try await proposalRepository.respond(id: proposal.id, accept: accept)
+        if accept {
+            let circuit = try await circuitRepository.circuit(id: visit.circuitId)
+            guard let slot = circuit.schedule.first(where: { $0.id == proposal.proposedSlotId }) else {
+                throw DomainError.notFound("Proposed slot")
+            }
+            // Vet-initiated, so the customer-side 4h policy window doesn't
+            // apply here — go straight to the repository, not through
+            // RescheduleVisitUseCase.execute's guard.
+            _ = try await visitRepository.rescheduleVisit(visitId: visit.id, newSlot: slot)
+        } else {
+            _ = try await loyaltyRepository.awardPoints(userId: visit.userId, points: NoShowPolicy.goodwillCreditPoints)
+        }
+        return updated
+    }
+}
+
+/// F7: no-show handling for both directions (Appendix B). Customer no-show
+/// is reported vet-side (out of scope for this customer app); a *vet*
+/// no-show is what the customer app itself needs to let a customer report
+/// once the grace window has passed.
+struct ReportVetNoShowUseCase {
+    let visitRepository: VisitRepository
+    let refundRepository: RefundRepository
+    let loyaltyRepository: LoyaltyRepository
+
+    @discardableResult
+    func execute(visit: Visit, now: Date = .now) async throws -> NoShowPolicy.Outcome {
+        guard visit.status == .assigned || visit.status == .enRoute else {
+            throw DomainError.validation("This visit isn't in a state where a vet no-show can be reported.")
+        }
+        let minutesLate = now.timeIntervalSince(visit.scheduledAt) / 60
+        guard minutesLate >= NoShowPolicy.vetGraceWindowMinutes else {
+            throw DomainError.validation("Please wait a little longer before reporting a no-show.")
+        }
+        let paidMinorUnits = try await visitRepository.paidAmountMinorUnits(visitId: visit.id)
+        let outcome = NoShowPolicy.vetNoShow(paidMinorUnits: paidMinorUnits)
+        _ = try await visitRepository.updateStatus(visitId: visit.id, status: .noShowVet)
+        if outcome.refundMinorUnits > 0, let paymentId = visit.paymentId {
+            _ = try await refundRepository.issueRefund(
+                visitId: visit.id, paymentId: paymentId, amountMinorUnits: outcome.refundMinorUnits,
+                reason: "Vet no-show", initiatedByOpsUserId: nil
+            )
+        }
+        if outcome.goodwillCreditPoints > 0 {
+            _ = try await loyaltyRepository.awardPoints(userId: visit.userId, points: outcome.goodwillCreditPoints)
+        }
+        return outcome
+    }
+}
+
 struct GetVisitHistoryUseCase {
     let visitRepository: VisitRepository
 
@@ -441,15 +508,53 @@ struct ManageCartUseCase {
 struct GetQuoteUseCase {
     let quoteRepository: QuoteRepository
     let catalogRepository: CatalogRepository
+    let circuitRepository: CircuitRepository
+    let vetServiceOverrideRepository: VetServiceOverrideRepository
 
     /// E6: the app hands over its selections and gets back a signed,
     /// itemized, TTL'd quote — it never assembles a rupee amount itself.
+    /// D5: the booking vet's price overrides (if the cart is on a circuit)
+    /// are fetched and threaded through so the quote reflects the vet's own
+    /// pricing rather than always the catalog default.
     func execute(cart: Cart) async throws -> Quote {
         guard !cart.items.isEmpty else {
             throw DomainError.validation("Your cart is empty.")
         }
         let catalog = try await catalogRepository.listServices(vertical: nil)
-        return try await quoteRepository.createQuote(for: cart, catalog: catalog)
+        var overrides: [VetServiceOverride] = []
+        if let circuitId = cart.circuitId {
+            let circuit = try await circuitRepository.circuit(id: circuitId)
+            overrides = try await vetServiceOverrideRepository.overrides(vetId: circuit.vetId)
+        }
+        return try await quoteRepository.createQuote(for: cart, catalog: catalog, overrides: overrides)
+    }
+}
+
+/// F5: create/manage a recurring booking rule. Spawning the actual next
+/// visit each cycle is a scheduled-job concern (plan §6.5-style), not
+/// something a client app can run itself while backgrounded — known gap,
+/// tracked in TECHNICAL_PLAN.md's F5 row.
+struct ManageRecurringBookingUseCase {
+    let recurringBookingRuleRepository: RecurringBookingRuleRepository
+
+    func execute(userId: UUID, petId: UUID, serviceId: UUID, variantId: UUID, circuitId: UUID, cadence: RecurringBookingRule.Cadence, firstOccurrenceAt: Date) async throws -> RecurringBookingRule {
+        let rule = RecurringBookingRule(
+            id: UUID(), userId: userId, petId: petId, serviceId: serviceId, variantId: variantId,
+            circuitId: circuitId, cadence: cadence, nextOccurrenceAt: firstOccurrenceAt, isActive: true
+        )
+        return try await recurringBookingRuleRepository.create(rule)
+    }
+
+    func list(userId: UUID) async throws -> [RecurringBookingRule] {
+        try await recurringBookingRuleRepository.rules(userId: userId)
+    }
+
+    func setActive(id: UUID, isActive: Bool) async throws -> RecurringBookingRule {
+        try await recurringBookingRuleRepository.setActive(id: id, isActive: isActive)
+    }
+
+    func cancel(id: UUID) async throws {
+        try await recurringBookingRuleRepository.delete(id: id)
     }
 }
 

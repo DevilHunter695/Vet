@@ -130,7 +130,7 @@ actor MockCartRepository: CartRepository {
 }
 
 actor MockQuoteRepository: QuoteRepository {
-    func createQuote(for cart: Cart, catalog: [Service]) async throws -> Quote {
+    func createQuote(for cart: Cart, catalog: [Service], overrides: [VetServiceOverride]) async throws -> Quote {
         var lineItems: [PriceLineItem] = []
         var total = 0
         for item in cart.items {
@@ -139,10 +139,17 @@ actor MockQuoteRepository: QuoteRepository {
                 throw DomainError.notFound("Service variant")
             }
             let addons = service.addons.filter { item.addonIds.contains($0.id) }
+            // D5: a variant-specific override wins over a whole-service one,
+            // and only an offered override counts as a price override at all
+            // — an unoffered service shouldn't reach checkout in the first
+            // place, but pricing here stays defensive regardless.
+            let override = overrides.first { $0.isOffered && $0.serviceId == item.serviceId && $0.variantId == item.variantId }
+                ?? overrides.first { $0.isOffered && $0.serviceId == item.serviceId && $0.variantId == nil }
             let input = PricingEngine.Input(
                 variant: variant, addons: addons,
                 additionalPetCount: max(0, item.petIds.count - 1),
-                travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500
+                travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500,
+                vetOverridePriceMinorUnits: override?.priceOverrideMinorUnits
             )
             let breakdown = PricingEngine.quote(input)
             lineItems.append(contentsOf: breakdown.lineItems)
@@ -973,5 +980,74 @@ actor MockWaitlistRepository: WaitlistRepository {
 
     func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool {
         entries.contains { $0.userId == userId && $0.addressId == addressId }
+    }
+}
+
+// MARK: - D5 per-vet service overrides
+
+actor MockVetServiceOverrideRepository: VetServiceOverrideRepository {
+    private var overridesByVet: [UUID: [VetServiceOverride]] = [:]
+
+    func overrides(vetId: UUID) async throws -> [VetServiceOverride] {
+        overridesByVet[vetId] ?? []
+    }
+
+    func setOverride(_ override: VetServiceOverride) async throws -> VetServiceOverride {
+        var list = overridesByVet[override.vetId] ?? []
+        if let idx = list.firstIndex(where: { $0.serviceId == override.serviceId && $0.variantId == override.variantId }) {
+            list[idx] = override
+        } else {
+            list.append(override)
+        }
+        overridesByVet[override.vetId] = list
+        return override
+    }
+}
+
+// MARK: - F5 recurring booking rules
+
+actor MockRecurringBookingRuleRepository: RecurringBookingRuleRepository {
+    private var rulesById: [UUID: RecurringBookingRule] = [:]
+
+    func rules(userId: UUID) async throws -> [RecurringBookingRule] {
+        rulesById.values.filter { $0.userId == userId }.sorted { $0.nextOccurrenceAt < $1.nextOccurrenceAt }
+    }
+
+    func create(_ rule: RecurringBookingRule) async throws -> RecurringBookingRule {
+        rulesById[rule.id] = rule
+        return rule
+    }
+
+    func setActive(id: UUID, isActive: Bool) async throws -> RecurringBookingRule {
+        guard var rule = rulesById[id] else { throw DomainError.notFound("Recurring booking rule") }
+        rule.isActive = isActive
+        rulesById[id] = rule
+        return rule
+    }
+
+    func delete(id: UUID) async throws {
+        rulesById[id] = nil
+    }
+}
+
+// MARK: - F6 vet-initiated reschedule proposals
+
+actor MockRescheduleProposalRepository: RescheduleProposalRepository {
+    private var proposalsById: [UUID: RescheduleProposal] = [:]
+
+    func pendingProposal(visitId: UUID) async throws -> RescheduleProposal? {
+        proposalsById.values.first { $0.visitId == visitId && $0.status == .pending }
+    }
+
+    func create(_ proposal: RescheduleProposal) async throws -> RescheduleProposal {
+        proposalsById[proposal.id] = proposal
+        return proposal
+    }
+
+    func respond(id: UUID, accept: Bool) async throws -> RescheduleProposal {
+        guard var proposal = proposalsById[id] else { throw DomainError.notFound("Reschedule proposal") }
+        proposal.status = accept ? .accepted : .declined
+        proposalsById[id] = proposal
+        return proposal
     }
 }
