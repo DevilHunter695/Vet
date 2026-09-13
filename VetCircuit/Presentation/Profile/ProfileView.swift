@@ -165,6 +165,9 @@ struct ProfileView: View {
                     NavigationLink("Addresses") {
                         AddressListView()
                     }
+                    NavigationLink("Household") {
+                        HouseholdView()
+                    }
                     NavigationLink("Notifications") {
                         NotificationPreferencesView()
                     }

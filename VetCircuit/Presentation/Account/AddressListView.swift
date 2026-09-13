@@ -57,6 +57,9 @@ struct AddressListView: View {
                     Haptics.selection()
                     if let user = session.currentUser { Task { await viewModel.makeDefault(address, ownerId: user.id) } }
                 }
+                if !address.isServed, let user = session.currentUser {
+                    WaitlistJoinRow(address: address, userId: user.id)
+                }
             }
             .onDelete { indexSet in
                 Haptics.warning()
@@ -115,6 +118,66 @@ private struct AddressRow: View {
             }
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// C10: an uncovered address used to just say "Not yet covered" with no
+/// action — this closes the loop with a join button and the "N neighbours
+/// already waiting" social-proof count (via the `waitlist_count_near` RPC,
+/// which returns only a count, never the underlying rows).
+@Observable
+@MainActor
+private final class WaitlistRowViewModel {
+    var neighbourCount: Int?
+    var hasJoined = false
+    var isJoining = false
+
+    private let joinWaitlistUseCase = DependencyContainer.shared.joinWaitlistUseCase()
+
+    func load(address: Address, userId: UUID) async {
+        hasJoined = (try? await joinWaitlistUseCase.hasJoined(userId: userId, addressId: address.id)) ?? false
+        neighbourCount = try? await joinWaitlistUseCase.neighbourCount(latitude: address.latitude, longitude: address.longitude)
+    }
+
+    func join(address: Address, userId: UUID) async {
+        isJoining = true
+        defer { isJoining = false }
+        _ = try? await joinWaitlistUseCase.execute(
+            userId: userId, addressId: address.id,
+            latitude: address.latitude, longitude: address.longitude, areaLabel: address.label
+        )
+        hasJoined = true
+        neighbourCount = try? await joinWaitlistUseCase.neighbourCount(latitude: address.latitude, longitude: address.longitude)
+    }
+}
+
+private struct WaitlistJoinRow: View {
+    let address: Address
+    let userId: UUID
+    @State private var viewModel = WaitlistRowViewModel()
+
+    var body: some View {
+        HStack {
+            if viewModel.hasJoined {
+                Label("You're on the waitlist", systemImage: "checkmark.circle.fill")
+                    .font(.brandCaption).foregroundStyle(Theme.success)
+            } else {
+                Button {
+                    Haptics.confirm()
+                    Task { await viewModel.join(address: address, userId: userId) }
+                } label: {
+                    if let count = viewModel.neighbourCount, count > 0 {
+                        Text("Join the waitlist — \(count) neighbour\(count == 1 ? "" : "s") already waiting")
+                    } else {
+                        Text("Join the waitlist")
+                    }
+                }
+                .font(.brandCaption)
+                .disabled(viewModel.isJoining)
+            }
+            Spacer()
+        }
+        .task { await viewModel.load(address: address, userId: userId) }
     }
 }
 

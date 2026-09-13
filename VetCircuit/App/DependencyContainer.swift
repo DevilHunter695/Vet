@@ -33,6 +33,8 @@ final class DependencyContainer {
     let packageRepository: PackageRepository
     let notificationPreferencesRepository: NotificationPreferencesRepository
     let appConfigRepository: AppConfigRepository
+    let householdRepository: HouseholdRepository
+    let waitlistRepository: WaitlistRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -64,6 +66,8 @@ final class DependencyContainer {
         self.packageRepository = MockPackageRepository()
         self.notificationPreferencesRepository = MockNotificationPreferencesRepository()
         self.appConfigRepository = MockAppConfigRepository()
+        self.householdRepository = MockHouseholdRepository()
+        self.waitlistRepository = MockWaitlistRepository()
     }
 
     // MARK: Use case factories
@@ -107,4 +111,8 @@ final class DependencyContainer {
         ManageNotificationPreferencesUseCase(repository: notificationPreferencesRepository)
     }
     func checkAppConfigUseCase() -> CheckAppConfigUseCase { CheckAppConfigUseCase(repository: appConfigRepository) }
+    func manageHouseholdUseCase() -> ManageHouseholdUseCase { ManageHouseholdUseCase(householdRepository: householdRepository) }
+    func searchUseCase() -> SearchUseCase { SearchUseCase(circuitRepository: circuitRepository, catalogRepository: catalogRepository) }
+    func rebookLastVisitUseCase() -> RebookLastVisitUseCase { RebookLastVisitUseCase(visitRepository: visitRepository, circuitRepository: circuitRepository) }
+    func joinWaitlistUseCase() -> JoinWaitlistUseCase { JoinWaitlistUseCase(waitlistRepository: waitlistRepository) }
 }

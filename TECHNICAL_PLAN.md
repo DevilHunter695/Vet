@@ -129,7 +129,7 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | A6 | **Delete account + data** | **P0** | ✅ | **App Store guideline 5.1.1(v) — a hard rejection if missing.** 30-day soft window, financial records retained per statute with justification shown to user |
 | A7 | Export my data (JSON + PDF of records) | P1 | 🔨 | DPDP data-principal right — JSON export done, no PDF |
 | A8 | Multiple addresses (home/office/parents), default, geofence check | **P0** | ✅ | A circuit is *address-scoped* — this is core inventory logic, not a nicety |
-| A9 | Household: invite spouse/family to same pets & bookings | P1 | ⛔ | Very common real-world need; roles: owner/member |
+| A9 | Household: invite spouse/family to same pets & bookings | P1 | 🔨 | Roles: owner/member. `Household`/`HouseholdMember` + `HouseholdRepository`, `HouseholdView` linked from Profile. Pets keep `owner_id`; visibility only, via an additional RLS policy (see 0020_households.sql) — no pet-ownership model change |
 | A10 | Biometric lock on app (Face ID) | P1 | ⛔ | Medical records = sensitive |
 | A11 | Blocked/deactivated account handling | P1 | ⛔ | Graceful screen, support path |
 
@@ -157,9 +157,9 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | C5 | **Vet detail screen**: photo, bio, VCI reg no. (verified badge), years of experience, species, languages, services + prices, ratings histogram, reviews w/ photos, next 7 days availability | **P0** | 🔨 | Today there is no vet detail screen at all |
 | C6 | **Service detail screen**: what's included, duration, what to prepare, price, add-ons, FAQs | **P0** | ⛔ | Directly your "showing details" requirement |
 | C7 | Map view of cluster coverage | P1 | 🔨 | |
-| C8 | Search (vet name, service, symptom) | P1 | ⛔ | Postgres FTS is enough; do not add a search cluster |
-| C9 | Recently viewed / rebook last visit (1 tap) | P1 | ⛔ | Highest-converting element in repeat marketplaces |
-| C10 | Waitlist for uncovered clusters + "N neighbours waiting" | P1 | ⛔ | Demand aggregation, not a dead end |
+| C8 | Search (vet name, service, symptom) | P1 | 🔨 | Postgres FTS (0022_search_fts.sql: generated `tsvector` + GIN on services/vets), `SearchUseCase`, search bar on CircuitsListView now matches vet name + service, not just area |
+| C9 | Recently viewed / rebook last visit (1 tap) | P1 | 🔨 | Highest-converting element in repeat marketplaces. `RecentlyViewedStore` (UserDefaults), "Recently viewed" rail + "Rebook last visit" card on CircuitsListView |
+| C10 | Waitlist for uncovered clusters + "N neighbours waiting" | P1 | 🔨 | Demand aggregation, not a dead end. `WaitlistEntry`/`WaitlistRepository`, `waitlist_count_near` RPC returns only a count, "Not yet covered" addresses now show a join button |
 | C11 | Emergency path: "This is urgent" → nearest 24×7 clinic + triage call | **P0** | ⛔ | Safety-critical. You are not an emergency service — say so and route out. |
 
 ### D. Service catalog (the "multiple options for each thing")
@@ -246,7 +246,7 @@ Service (Home consultation)
 |---|---|---|---|---|
 | I1 | Persistent "what's happening now" card on Home | P0 | 🔨 | The highest-trust feature per unit of effort |
 | I2 | Status timeline w/ timestamps (requested → confirmed → assigned → en route → arrived → in progress → completed) | P0 | 🔨 | 8-state enum + legal-transition table done; timestamped timeline UI still uses badges, not a full timeline view |
-| I3 | **Live Activity + Dynamic Island** for "vet en route / ETA" | P1 | ⛔ | iOS-native differentiator; huge perceived-quality win |
+| I3 | **Live Activity + Dynamic Island** for "vet en route / ETA" | P1 | 🔨 | iOS-native differentiator; huge perceived-quality win. `VetEnRouteAttributes` + `Activity<T>.request` call site wired from LiveTrackingView. **Known gap:** no Widget Extension target exists yet (project.yml is single-target) — nothing renders on the Lock Screen/Island until that target is added in Xcode; see VetEnRouteActivity.swift |
 | I4 | Live map tracking with ETA | P1 | 🔨 | |
 | I5 | **Start-of-visit OTP** (customer reads 4-digit code to vet) | **P0** | 🔨 | Anti-fraud + proof-of-service. Cheap, high value. |
 | I6 | Digital consent/liability waiver accepted in-app before first visit | **P0** | ✅ | Legal shield |
@@ -312,7 +312,7 @@ Service (Home consultation)
 | N4 | Loyalty points & tiers | P2 | ✅ |
 | N5 | In-app rating prompt (SKStoreReviewController, after a 5★ visit only) | P1 | ⛔ |
 | N6 | Home Screen widget: next visit / vaccination due | P2 | ⛔ |
-| N7 | Deep links + universal links for every campaign target | P1 | ⛔ |
+| N7 | Deep links + universal links for every campaign target | P1 | 🔨 | `DeepLinkParser` (pure) + `.onOpenURL`; `vetcircuit://visit`, `/book`, `/household` parsed and routed to the right tab. **Known gap** (plan §6.1): no shared Router/typed-Route `NavigationStack(path:)` exists — each tab still runs its own stack, so a deep link only jumps to the right tab and (for `/book`) resolves a specific circuit; it can't yet push arbitrary nested screens (e.g. a specific visit's chat) from outside |
 
 ### O. Settings, privacy & platform UX
 

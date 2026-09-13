@@ -16,12 +16,41 @@ final class LiveTrackingViewModel {
     func start() async {
         location = try? await trackVetUseCase.execute(visitId: visitId)
         updateCamera()
+        startLiveActivity()
         subscriptionToken = trackVetUseCase.subscribe(visitId: visitId) { [weak self] update in
             Task { @MainActor in
                 self?.location = update
                 self?.updateCamera()
+                self?.updateLiveActivity()
             }
         }
+    }
+
+    /// I3: mirrors this screen's own state onto the Lock Screen/Dynamic
+    /// Island — see VetEnRouteActivity.swift for the widget-extension gap
+    /// this depends on to actually render anywhere.
+    private func startLiveActivity() {
+        #if canImport(ActivityKit)
+        if #available(iOS 16.1, *) {
+            VetEnRouteActivityManager.start(visitId: visitId, vetName: "Your vet", etaMinutes: location?.etaMinutes, status: .enRoute)
+        }
+        #endif
+    }
+
+    private func updateLiveActivity() {
+        #if canImport(ActivityKit)
+        if #available(iOS 16.1, *) {
+            VetEnRouteActivityManager.update(etaMinutes: location?.etaMinutes, status: .enRoute)
+        }
+        #endif
+    }
+
+    func stop() {
+        #if canImport(ActivityKit)
+        if #available(iOS 16.1, *) {
+            VetEnRouteActivityManager.end()
+        }
+        #endif
     }
 
     private func updateCamera() {
@@ -73,6 +102,7 @@ struct LiveTrackingView: View {
         .navigationTitle("Vet en route")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.start() }
+        .onDisappear { viewModel.stop() }
     }
 }
 

@@ -482,6 +482,119 @@ struct ManageNotificationPreferencesUseCase {
 /// O7/O8: evaluated once at launch against the running app's
 /// `CFBundleShortVersionString` — the single gate `RootView` checks before
 /// showing sign-in or the tab bar.
+// MARK: - A9 household
+
+struct ManageHouseholdUseCase {
+    let householdRepository: HouseholdRepository
+
+    func current(userId: UUID) async throws -> Household? {
+        try await householdRepository.myHousehold(userId: userId)
+    }
+
+    func create(name: String, ownerId: UUID) async throws -> Household {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            throw DomainError.validation("Give your household a name.")
+        }
+        return try await householdRepository.createHousehold(name: trimmed, ownerId: ownerId)
+    }
+
+    func members(householdId: UUID) async throws -> [HouseholdMember] {
+        try await householdRepository.members(householdId: householdId)
+    }
+
+    func invite(householdId: UUID, phone: String) async throws -> HouseholdMember {
+        let digitsOnly = phone.filter(\.isNumber)
+        guard digitsOnly.count >= 10 else {
+            throw DomainError.validation("Enter a valid phone number to invite.")
+        }
+        return try await householdRepository.invite(householdId: householdId, phone: phone)
+    }
+
+    func removeMember(householdId: UUID, memberId: UUID) async throws {
+        try await householdRepository.removeMember(householdId: householdId, memberId: memberId)
+    }
+}
+
+// MARK: - C8 search
+
+/// Client-facing entry point for "search by vet name, service, symptom"
+/// (plan §3 C8) — fans a single query out across circuits (vet/area) and the
+/// service catalog, since a customer doesn't know or care which table their
+/// term matches.
+struct SearchUseCase {
+    let circuitRepository: CircuitRepository
+    let catalogRepository: CatalogRepository
+
+    struct Result {
+        var circuits: [Circuit]
+        var services: [Service]
+    }
+
+    func execute(term: String, vertical: Vertical) async throws -> Result {
+        guard !term.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return Result(circuits: [], services: [])
+        }
+        async let circuits = circuitRepository.searchCircuits(term: term, area: nil)
+        async let services = catalogRepository.searchServices(term: term, vertical: vertical)
+        return try await Result(
+            circuits: circuits.filter { $0.vertical == vertical },
+            services: services
+        )
+    }
+}
+
+// MARK: - C9 rebook last visit
+
+/// "Rebook last visit" — plan §3 C9 calls this the highest-converting
+/// element in repeat marketplaces. Pulls the most recent *completed* visit
+/// (not just most recent by date, which could be a future booking) and
+/// resolves the circuit it belongs to so the UI can jump straight into
+/// `BookingView` pre-filled with the same circuit/pet.
+struct RebookLastVisitUseCase {
+    let visitRepository: VisitRepository
+    let circuitRepository: CircuitRepository
+
+    struct Suggestion {
+        var visit: Visit
+        var circuit: Circuit
+    }
+
+    func execute(userId: UUID) async throws -> Suggestion? {
+        let visits = try await visitRepository.listVisits(userId: userId)
+        guard let lastCompleted = visits
+            .filter({ $0.status == .completed })
+            .sorted(by: { ($0.completedAt ?? $0.scheduledAt) > ($1.completedAt ?? $1.scheduledAt) })
+            .first
+        else { return nil }
+        let circuit = try await circuitRepository.circuit(id: lastCompleted.circuitId)
+        return Suggestion(visit: lastCompleted, circuit: circuit)
+    }
+}
+
+// MARK: - C10 waitlist
+
+struct JoinWaitlistUseCase {
+    let waitlistRepository: WaitlistRepository
+
+    func execute(userId: UUID, addressId: UUID?, latitude: Double, longitude: Double, areaLabel: String?) async throws -> WaitlistEntry {
+        try await waitlistRepository.join(userId: userId, addressId: addressId, latitude: latitude, longitude: longitude, areaLabel: areaLabel)
+    }
+
+    /// "N neighbours already waiting" — deliberately excludes the caller's
+    /// own just-joined entry from the displayed count would require a
+    /// second round trip; the plan's copy ("N neighbours") already implies
+    /// *other* people, so callers should join first, then read this against
+    /// the same radius used at join time.
+    func neighbourCount(latitude: Double, longitude: Double, radiusKm: Double = 3.0) async throws -> Int {
+        try await waitlistRepository.countNear(latitude: latitude, longitude: longitude, radiusKm: radiusKm)
+    }
+
+    func hasJoined(userId: UUID, addressId: UUID?) async throws -> Bool {
+        try await waitlistRepository.hasJoined(userId: userId, addressId: addressId)
+    }
+}
+
 struct CheckAppConfigUseCase {
     let repository: AppConfigRepository
 
