@@ -39,6 +39,8 @@ final class DependencyContainer {
     let petWeightRepository: PetWeightRepository
     let vaccinationRepository: VaccinationRepository
     let prescriptionRepository: PrescriptionRepository
+    /// C11: 24x7 emergency clinic directory.
+    let emergencyClinicRepository: EmergencyClinicRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -76,6 +78,7 @@ final class DependencyContainer {
         self.petWeightRepository = MockPetWeightRepository()
         self.vaccinationRepository = MockVaccinationRepository()
         self.prescriptionRepository = MockPrescriptionRepository()
+        self.emergencyClinicRepository = MockEmergencyClinicRepository()
     }
 
     // MARK: Use case factories
@@ -125,4 +128,6 @@ final class DependencyContainer {
     func managePetWeightsUseCase() -> ManagePetWeightsUseCase { ManagePetWeightsUseCase(repository: petWeightRepository) }
     func manageVaccinationsUseCase() -> ManageVaccinationsUseCase { ManageVaccinationsUseCase(repository: vaccinationRepository) }
     func managePrescriptionsUseCase() -> ManagePrescriptionsUseCase { ManagePrescriptionsUseCase(repository: prescriptionRepository) }
+    func listEmergencyClinicsUseCase() -> ListEmergencyClinicsUseCase { ListEmergencyClinicsUseCase(repository: emergencyClinicRepository) }
+    func getVetProfileUseCase() -> GetVetProfileUseCase { GetVetProfileUseCase(reviewRepository: reviewRepository) }
 }

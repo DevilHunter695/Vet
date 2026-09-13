@@ -105,6 +105,16 @@ protocol ChatRepository: Sendable {
 
 protocol ReviewRepository: Sendable {
     func submit(visitId: UUID, rating: Int, comment: String?) async throws -> Review
+    /// C5: reviews for a vet's profile — the ratings histogram and review
+    /// list are both computed client-side from this.
+    func reviews(vetId: UUID) async throws -> [Review]
+}
+
+// MARK: - Emergency path (plan §C11) — public-read, admin-write list of
+// 24x7 emergency clinics to route a customer to when this app says outright
+// it is not the right tool for the situation.
+protocol EmergencyClinicRepository: Sendable {
+    func listClinics() async throws -> [EmergencyClinic]
 }
 
 protocol PetRepository: Sendable {

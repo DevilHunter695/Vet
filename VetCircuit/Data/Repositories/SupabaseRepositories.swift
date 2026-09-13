@@ -59,7 +59,10 @@ final class SupabaseCircuitRepository: CircuitRepository {
     init(client: SupabaseClient) { self.client = client }
 
     func listCircuits(area: String?) async throws -> [Circuit] {
-        var query = client.from("circuits").select("*, vet:vets(*), schedule:schedule_slots(*)")
+        // L1/L3: server-side filter (RLS/query, not a client-side badge) so
+        // an unverified vet is never reachable in the customer booking flow.
+        var query = client.from("circuits").select("*, vet:vets!inner(*), schedule:schedule_slots(*)")
+            .eq("vet.verification_status", value: Vet.VerificationStatus.verified.rawValue)
         if let area { query = query.eq("cluster_area", value: area) }
         let rows: [SupabaseCircuitRow] = try await query.execute().value
         return rows.map { $0.toDomain() }
@@ -304,7 +307,7 @@ final class SupabaseCatalogRepository: CatalogRepository {
 
     func listServices(vertical: Vertical?) async throws -> [Service] {
         var query = client.from("services")
-            .select("*, service_variants(*), addons(*)")
+            .select("*, service_variants(*), addons(*), faqs(*)")
             .eq("is_active", value: true)
         if let vertical {
             let categories = ServiceCategory.allCases.filter { $0.vertical == vertical }.map(\.rawValue)
@@ -317,7 +320,7 @@ final class SupabaseCatalogRepository: CatalogRepository {
     func service(id: UUID) async throws -> Service {
         let rows: [SupabaseServiceRow] = try await client
             .from("services")
-            .select("*, service_variants(*), addons(*)")
+            .select("*, service_variants(*), addons(*), faqs(*)")
             .eq("id", value: id)
             .execute()
             .value
@@ -964,12 +967,13 @@ private struct SupabaseServiceRow: Decodable {
     let minPetAgeMonths: Int?
     let serviceVariants: [SupabaseServiceVariantRow]?
     let addons: [SupabaseAddonRow]?
+    let faqs: [SupabaseFAQRow]?
 
     enum CodingKeys: String, CodingKey {
         case id, category, name, summary
         case whatToPrepare = "what_to_prepare", eligibleSpecies = "eligible_species"
         case requiresPrescriberVet = "requires_prescriber_vet", minPetAgeMonths = "min_pet_age_months"
-        case serviceVariants = "service_variants", addons
+        case serviceVariants = "service_variants", addons, faqs
     }
 
     func toDomain() -> Service {
@@ -982,9 +986,18 @@ private struct SupabaseServiceRow: Decodable {
                 species: eligibleSpecies?.compactMap { Pet.Species(rawValue: $0) },
                 requiresPrescriberVet: requiresPrescriberVet,
                 minPetAgeMonths: minPetAgeMonths
-            )
+            ),
+            faqs: (faqs ?? []).map { $0.toDomain() }
         )
     }
+}
+
+private struct SupabaseFAQRow: Decodable {
+    let id: UUID
+    let question: String
+    let answer: String
+
+    func toDomain() -> FAQ { FAQ(id: id, question: question, answer: answer) }
 }
 
 private struct SupabasePackageRow: Decodable {
@@ -1060,16 +1073,90 @@ private struct SupabaseVetRow: Decodable {
     let verificationStatus: String
     let rating: Double
     let reviewCount: Int
+    let bio: String?
+    let yearsOfExperience: Int?
+    let languages: [String]?
+    let gender: String?
+    let speciesHandled: [String]?
 
     enum CodingKeys: String, CodingKey {
         case id, name, licenseNumber = "license_number", verificationStatus = "verification_status"
-        case rating, reviewCount = "review_count"
+        case rating, reviewCount = "review_count", bio, languages, gender
+        case yearsOfExperience = "years_of_experience", speciesHandled = "species_handled"
     }
 
     func toDomain() -> Vet {
         Vet(id: id, name: name, licenseNumber: licenseNumber,
             verificationStatus: Vet.VerificationStatus(rawValue: verificationStatus) ?? .pending,
-            rating: rating, reviewCount: reviewCount, photoURL: nil)
+            rating: rating, reviewCount: reviewCount, photoURL: nil,
+            bio: bio, yearsOfExperience: yearsOfExperience, languages: languages ?? [],
+            gender: gender.flatMap(Vet.Gender.init(rawValue:)),
+            speciesHandled: (speciesHandled ?? []).compactMap(Pet.Species.init(rawValue:)))
+    }
+}
+
+/// C11: public-read emergency clinic directory.
+final class SupabaseEmergencyClinicRepository: EmergencyClinicRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func listClinics() async throws -> [EmergencyClinic] {
+        struct Row: Decodable {
+            let id: UUID, name: String, address: String, phone: String
+            let latitude: Double, longitude: Double, isOpen24x7: Bool
+            enum CodingKeys: String, CodingKey {
+                case id, name, address, phone, latitude, longitude
+                case isOpen24x7 = "is_open_24x7"
+            }
+        }
+        let rows: [Row] = try await client.from("emergency_clinics").select().execute().value
+        return rows.map {
+            EmergencyClinic(id: $0.id, name: $0.name, address: $0.address, phone: $0.phone,
+                             latitude: $0.latitude, longitude: $0.longitude, isOpen24x7: $0.isOpen24x7)
+        }
+    }
+}
+
+/// C5: reviews for a vet's profile. Submission remains a stub here — the
+/// review-submit flow's Supabase wiring predates this file and is a known
+/// pre-existing gap, not something introduced by C5.
+final class SupabaseReviewRepository: ReviewRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func submit(visitId: UUID, rating: Int, comment: String?) async throws -> Review {
+        struct Insert: Encodable {
+            let visitId: UUID, rating: Int, comment: String?
+            enum CodingKeys: String, CodingKey { case visitId = "visit_id", rating, comment }
+        }
+        struct Row: Decodable {
+            let id: UUID, visitId: UUID, vetId: UUID, userId: UUID, rating: Int, comment: String?, createdAt: Date
+            enum CodingKeys: String, CodingKey {
+                case id, rating, comment
+                case visitId = "visit_id", vetId = "vet_id", userId = "user_id", createdAt = "created_at"
+            }
+        }
+        let rows: [Row] = try await client.from("reviews")
+            .insert(Insert(visitId: visitId, rating: rating, comment: comment)).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return Review(id: row.id, visitId: row.visitId, vetId: row.vetId, userId: row.userId,
+                      rating: row.rating, comment: row.comment, createdAt: row.createdAt)
+    }
+
+    func reviews(vetId: UUID) async throws -> [Review] {
+        struct Row: Decodable {
+            let id: UUID, visitId: UUID, vetId: UUID, userId: UUID, rating: Int, comment: String?, createdAt: Date
+            enum CodingKeys: String, CodingKey {
+                case id, rating, comment
+                case visitId = "visit_id", vetId = "vet_id", userId = "user_id", createdAt = "created_at"
+            }
+        }
+        let rows: [Row] = try await client.from("reviews").select().eq("vet_id", value: vetId)
+            .order("created_at", ascending: false).execute().value
+        return rows.map {
+            Review(id: $0.id, visitId: $0.visitId, vetId: $0.vetId, userId: $0.userId,
+                   rating: $0.rating, comment: $0.comment, createdAt: $0.createdAt)
+        }
     }
 }
 

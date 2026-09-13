@@ -152,15 +152,15 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 |---|---|---|---|---|
 | C1 | Address-first discovery: pick address → show circuits serving it | P0 | 🔨 | Replaces v1's free-text "area" |
 | C2 | Circuit list with next-available slot, price-from, vet rating | P0 | ✅ | |
-| C3 | **Filters**: service type, date, time-of-day, price, rating, species handled, language, gender of vet | **P0** | ⛔ | "Vet who handles cats", "Hindi-speaking" are real filters in India |
-| C4 | **Sort**: soonest, cheapest, top-rated, previously-booked | P0 | ⛔ | |
-| C5 | **Vet detail screen**: photo, bio, VCI reg no. (verified badge), years of experience, species, languages, services + prices, ratings histogram, reviews w/ photos, next 7 days availability | **P0** | 🔨 | Today there is no vet detail screen at all |
-| C6 | **Service detail screen**: what's included, duration, what to prepare, price, add-ons, FAQs | **P0** | ⛔ | Directly your "showing details" requirement |
+| C3 | **Filters**: service type, date, time-of-day, price, rating, species handled, language, gender of vet | **P0** | ✅ | `CircuitFilter` (client-side, applied over the fetched list) + a filter sheet in `CircuitsListView`. Cheapest/price filtering is catalog-scoped since a circuit itself has no price. |
+| C4 | **Sort**: soonest, cheapest, top-rated, previously-booked | P0 | ✅ | `CircuitSortOption` wired into a sort menu. "Cheapest" falls back to cluster-area order — circuits don't carry a per-circuit price, only the catalog does (known gap). |
+| C5 | **Vet detail screen**: photo, bio, VCI reg no. (verified badge), years of experience, species, languages, services + prices, ratings histogram, reviews w/ photos, next 7 days availability | **P0** | ✅ | New `VetDetailView`. Reviews have no photo field yet (`Review` model gap, out of scope here) — text reviews and star ratings only. |
+| C6 | **Service detail screen**: what's included, duration, what to prepare, price, add-ons, FAQs | **P0** | ✅ | `ServiceDetailView` already covered everything except FAQs before this pass (tag was wrong — it wasn't ⛔); added `Service.faqs` + a disclosure-row section. |
 | C7 | Map view of cluster coverage | P1 | 🔨 | |
 | C8 | Search (vet name, service, symptom) | P1 | ⛔ | Postgres FTS is enough; do not add a search cluster |
 | C9 | Recently viewed / rebook last visit (1 tap) | P1 | ⛔ | Highest-converting element in repeat marketplaces |
 | C10 | Waitlist for uncovered clusters + "N neighbours waiting" | P1 | ⛔ | Demand aggregation, not a dead end |
-| C11 | Emergency path: "This is urgent" → nearest 24×7 clinic + triage call | **P0** | ⛔ | Safety-critical. You are not an emergency service — say so and route out. |
+| C11 | Emergency path: "This is urgent" → nearest 24×7 clinic + triage call | **P0** | ✅ | New `EmergencyView` (from `CircuitsListView`'s banner and `TriageView`'s "This is an emergency" button): disclaimer + `EmergencyClinicRepository` (mock: 3 Bangalore clinics) with tap-to-call/tap-to-navigate, plus a link into the existing symptom-triage flow. |
 
 ### D. Service catalog (the "multiple options for each thing")
 
@@ -285,12 +285,12 @@ Service (Home consultation)
 |---|---|---|---|---|
 | L1 | Manual VCI registration verification before a vet goes live | P0 | 🔨 | Do this by hand, every time, forever |
 | L2 | Document-backed onboarding: degree, VCI cert, ID, police verification, photo | P0 | ⛔ | |
-| L3 | "Verified" badge + credentials visible on vet profile | P0 | ⛔ | |
+| L3 | "Verified" badge + credentials visible on vet profile | P0 | ✅ | `VerifiedBadge` on `VetDetailView`, the booking-flow vet card, and the circuit list row. Also closed a real gap: `CircuitRepository.listCircuits` previously surfaced unverified vets in the booking flow at all — it now filters to `verificationStatus == .verified` server-query-side (Supabase) / actor-side (mock), per L1's "verified before going live". |
 | L4 | **SOS button + share-my-visit link** during an in-home visit | P1 | ⛔ | A stranger is inside a home. Take this seriously. |
 | L5 | Incident reporting (both directions) + vet suspension flow | P1 | ⛔ | |
 | L6 | Review moderation (profanity, PII, defamation) | P1 | ⛔ | |
 | L7 | Professional indemnity / liability insurance requirement for vets | P1 | ⛔ | Commercial, not code — but blocks launch legally |
-| L8 | Clear "not an emergency service" disclaimer + escalation routing | **P0** | ⛔ | |
+| L8 | Clear "not an emergency service" disclaimer + escalation routing | **P0** | ✅ | Full disclaimer on `EmergencyView`; a brief caption version under `CircuitsListView`'s "Not sure?"/emergency entry points too, so it's not only reachable via the emergency path. |
 
 ### M. Support & disputes
 

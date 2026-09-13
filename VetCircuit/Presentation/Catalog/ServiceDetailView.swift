@@ -152,6 +152,16 @@ struct ServiceDetailView: View {
                     .appearAnimation(delay: 0.15)
                 }
 
+                if !service.faqs.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("FAQs").font(.brandHeadline)
+                        ForEach(service.faqs) { faq in
+                            FAQRow(faq: faq)
+                        }
+                    }
+                    .appearAnimation(delay: 0.18)
+                }
+
                 if service.eligibility.requiresPrescriberVet {
                     Label("Performed only by a VCI-registered veterinarian, not a para-vet.", systemImage: "checkmark.seal.fill")
                         .font(.brandCaption)
@@ -247,6 +257,28 @@ private struct CheckboxRow: View {
             .shadow(color: Theme.cardShadow, radius: 6, y: 2)
         }
         .buttonStyle(PressableStyle())
+    }
+}
+
+/// C6: a simple disclosure row per FAQ — no need for a custom accordion
+/// component elsewhere in the app, so this stays local to the one screen
+/// that uses it.
+private struct FAQRow: View {
+    let faq: FAQ
+    @State private var isExpanded = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            Text(faq.answer)
+                .font(.brandBody)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
+        } label: {
+            Text(faq.question).font(.brandBody)
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .animation(Theme.springQuick, value: isExpanded)
     }
 }
 

@@ -125,12 +125,32 @@ struct BookingView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Card {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(viewModel.circuit.vet?.name ?? "Veterinarian").font(.title3.bold())
-                        Text(viewModel.circuit.clusterArea).foregroundStyle(.secondary)
+                if let vet = viewModel.circuit.vet {
+                    NavigationLink {
+                        VetDetailView(vet: vet, clusterArea: viewModel.circuit.clusterArea)
+                    } label: {
+                        Card {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Text(vet.name).font(.title3.bold()).foregroundStyle(.primary)
+                                    // L3: a verified badge here, not just in the list row — this
+                                    // is the last screen before money changes hands.
+                                    VerifiedBadge(status: vet.verificationStatus)
+                                }
+                                Text(viewModel.circuit.clusterArea).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .buttonStyle(PressableStyle())
+                } else {
+                    Card {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Veterinarian").font(.title3.bold())
+                            Text(viewModel.circuit.clusterArea).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
