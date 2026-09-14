@@ -34,11 +34,13 @@ struct PaymentRetryPolicyTests {
 actor FakePaymentRepository: PaymentRepository {
     var status: Payment.Status
     private(set) var checkoutCallCount = 0
+    private var paymentIdsByVisit: [UUID: UUID] = [:]
 
     init(status: Payment.Status) { self.status = status }
 
-    func createCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL {
+    func createCheckout(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> URL {
         checkoutCallCount += 1
+        paymentIdsByVisit[visitId] = UUID()
         return URL(string: "https://checkout.example.com/visit/\(visitId)")!
     }
 
@@ -48,9 +50,18 @@ actor FakePaymentRepository: PaymentRepository {
 
     func paymentStatus(paymentId: UUID) async throws -> Payment.Status { status }
 
+    func latestPaymentId(forVisit visitId: UUID) async throws -> UUID? { paymentIdsByVisit[visitId] }
+
     func createTipCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL {
         URL(string: "https://checkout.example.com/tip/\(visitId)")!
     }
+}
+
+private func makeTestQuote(expired: Bool = false) -> Quote {
+    Quote(id: UUID(), cartId: UUID(),
+          breakdown: PriceBreakdown(lineItems: [PriceLineItem(label: "Service", amountMinorUnits: 50000)], totalMinorUnits: 50000),
+          signature: "test-signature",
+          expiresAt: expired ? .now.addingTimeInterval(-60) : .now.addingTimeInterval(600))
 }
 
 @Suite("RetryPaymentUseCase")
@@ -59,7 +70,7 @@ struct RetryPaymentUseCaseTests {
     func retriesWhenAllowed() async throws {
         let repo = FakePaymentRepository(status: .failed)
         let useCase = RetryPaymentUseCase(paymentRepository: repo)
-        _ = try await useCase.execute(visitId: UUID(), paymentId: UUID(), amountMinorUnits: 50000, priorAttempts: 0)
+        _ = try await useCase.execute(visitId: UUID(), paymentId: UUID(), quote: makeTestQuote(), priorAttempts: 0)
         let calls = await repo.checkoutCallCount
         #expect(calls == 1)
     }
@@ -69,7 +80,7 @@ struct RetryPaymentUseCaseTests {
         let repo = FakePaymentRepository(status: .succeeded)
         let useCase = RetryPaymentUseCase(paymentRepository: repo)
         await #expect(throws: DomainError.self) {
-            _ = try await useCase.execute(visitId: UUID(), paymentId: UUID(), amountMinorUnits: 50000, priorAttempts: 0)
+            _ = try await useCase.execute(visitId: UUID(), paymentId: UUID(), quote: makeTestQuote(), priorAttempts: 0)
         }
     }
 
@@ -78,7 +89,16 @@ struct RetryPaymentUseCaseTests {
         let repo = FakePaymentRepository(status: .failed)
         let useCase = RetryPaymentUseCase(paymentRepository: repo)
         await #expect(throws: DomainError.self) {
-            _ = try await useCase.execute(visitId: UUID(), paymentId: UUID(), amountMinorUnits: 50000, priorAttempts: PaymentRetryPolicy.maxAttempts)
+            _ = try await useCase.execute(visitId: UUID(), paymentId: UUID(), quote: makeTestQuote(), priorAttempts: PaymentRetryPolicy.maxAttempts)
+        }
+    }
+
+    @Test("refuses to retry with an expired quote even if the payment can otherwise retry")
+    func refusesWithExpiredQuote() async {
+        let repo = FakePaymentRepository(status: .failed)
+        let useCase = RetryPaymentUseCase(paymentRepository: repo)
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(visitId: UUID(), paymentId: UUID(), quote: makeTestQuote(expired: true), priorAttempts: 0)
         }
     }
 }

@@ -170,6 +170,14 @@ final class DependencyContainer {
     func submitReviewUseCase() -> SubmitReviewUseCase { SubmitReviewUseCase(reviewRepository: reviewRepository) }
     func managePetsUseCase() -> ManagePetsUseCase { ManagePetsUseCase(petRepository: petRepository) }
     func startCheckoutUseCase() -> StartCheckoutUseCase { StartCheckoutUseCase(paymentRepository: paymentRepository) }
+
+    /// E6+E8+E10+G6: the coordinating quote -> checkout -> confirmed-visit pipeline.
+    func bookingCheckoutUseCase() -> BookingCheckoutUseCase {
+        BookingCheckoutUseCase(
+            bookVisitUseCase: bookVisitUseCase(), startCheckoutUseCase: startCheckoutUseCase(),
+            visitRepository: visitRepository, paymentRepository: paymentRepository
+        )
+    }
     /// G3: payment retry on failure.
     func retryPaymentUseCase() -> RetryPaymentUseCase { RetryPaymentUseCase(paymentRepository: paymentRepository) }
     func trackVetUseCase() -> TrackVetUseCase { TrackVetUseCase(liveTrackingRepository: liveTrackingRepository) }

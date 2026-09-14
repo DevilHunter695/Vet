@@ -744,19 +744,110 @@ struct StartCheckoutUseCase {
     }
 }
 
+/// E6/G6: pure decision logic for what the booking pipeline does once it
+/// observes a payment's current status, kept free of I/O so the state
+/// machine is directly unit-testable. Reuses `PaymentRetryPolicy` for the
+/// retry-cap decision rather than duplicating it.
+enum BookingCheckoutOutcome: Equatable {
+    /// Payment succeeded — attach it to the visit and show confirmation.
+    case confirmVisit
+    /// No decision yet: the webhook hasn't landed, or the customer backed
+    /// out of the checkout webview before finishing. The visit stays
+    /// `requested` (never silently lost) so checkout can be resumed later.
+    case awaitingPayment
+    /// Payment failed or was refunded — a visit is never created/confirmed
+    /// off a charge that didn't go through.
+    case paymentFailed(canRetry: Bool, reason: String?)
+}
+
+struct BookingCheckoutPolicy {
+    static func outcome(forPaymentStatus status: Payment.Status, priorAttempts: Int) -> BookingCheckoutOutcome {
+        switch status {
+        case .succeeded:
+            return .confirmVisit
+        case .pending:
+            return .awaitingPayment
+        case .failed:
+            let retry = PaymentRetryPolicy.evaluate(status: status, priorAttempts: priorAttempts)
+            return .paymentFailed(canRetry: retry.canRetry, reason: retry.reason)
+        case .refunded:
+            return .paymentFailed(canRetry: false, reason: "This payment was refunded.")
+        }
+    }
+}
+
+/// E6+E8+E10+G6: the one coordinating use case that turns a signed `Quote`
+/// into a confirmed, payment-linked `Visit` — the pipeline this gap was
+/// about. It composes `BookVisitUseCase`'s atomic (E7-hold-respecting)
+/// booking, `StartCheckoutUseCase`'s quote-gated checkout, and
+/// `VisitRepository.attachPayment`'s confirmation step, so `BookingView`/
+/// `CartView` never have to get that ordering right themselves.
+///
+/// The visit is created *before* payment (status `.requested`) because
+/// `PaymentRepository.createCheckout(forVisit:...)`'s own signature already
+/// requires a visit id to check out against — there is no "pay first, then
+/// create the visit" path available at the repository boundary. A payment
+/// that never completes just leaves an uncompleted `.requested` visit
+/// behind rather than losing the booking outright; `resolve` is what the UI
+/// calls (on checkout-sheet dismissal, or on reopening the app) to find out
+/// what actually happened and, only on `.succeeded`, confirm it.
+struct BookingCheckoutUseCase {
+    let bookVisitUseCase: BookVisitUseCase
+    let startCheckoutUseCase: StartCheckoutUseCase
+    let visitRepository: VisitRepository
+    let paymentRepository: PaymentRepository
+
+    struct Session {
+        var visit: Visit
+        var checkoutURL: URL
+    }
+
+    /// Step 1: book the visit (pending payment) and start checkout against
+    /// the given signed quote. `StartCheckoutUseCase` itself rejects an
+    /// expired quote, so a stale quote fails here rather than silently
+    /// booking at the wrong price.
+    func start(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, quote: Quote, idempotencyKey: String) async throws -> Session {
+        let visit = try await bookVisitUseCase.execute(petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey)
+        let checkoutURL = try await startCheckoutUseCase.execute(visitId: visit.id, quote: quote)
+        return Session(visit: visit, checkoutURL: checkoutURL)
+    }
+
+    /// Step 2: after the checkout webview closes (success, failure, or the
+    /// customer just backing out), find out what actually happened and, on
+    /// success, confirm + link the payment to the visit.
+    func resolve(visitId: UUID, priorAttempts: Int) async throws -> (visit: Visit, outcome: BookingCheckoutOutcome) {
+        guard let paymentId = try await paymentRepository.latestPaymentId(forVisit: visitId) else {
+            return (try await visitRepository.visit(id: visitId), .awaitingPayment)
+        }
+        let status = try await paymentRepository.paymentStatus(paymentId: paymentId)
+        let outcome = BookingCheckoutPolicy.outcome(forPaymentStatus: status, priorAttempts: priorAttempts)
+        if case .confirmVisit = outcome {
+            let visit = try await visitRepository.attachPayment(visitId: visitId, paymentId: paymentId)
+            return (visit, outcome)
+        }
+        return (try await visitRepository.visit(id: visitId), outcome)
+    }
+}
+
 /// G3: payment retry on failure, with a clear stopping point instead of an
 /// endless "try again" loop — `PaymentRetryPolicy` decides whether another
 /// attempt is even offered before this ever calls the gateway again.
 struct RetryPaymentUseCase {
     let paymentRepository: PaymentRepository
 
-    func execute(visitId: UUID, paymentId: UUID, amountMinorUnits: Int, priorAttempts: Int) async throws -> URL {
+    /// Takes a fresh `Quote` (not a raw amount) for the same reason
+    /// `StartCheckoutUseCase` does — a retry is still a new order and must
+    /// stay gated on a real, unexpired, signed quote (Appendix C).
+    func execute(visitId: UUID, paymentId: UUID, quote: Quote, priorAttempts: Int) async throws -> URL {
         let status = try await paymentRepository.paymentStatus(paymentId: paymentId)
         let outcome = PaymentRetryPolicy.evaluate(status: status, priorAttempts: priorAttempts)
         guard outcome.canRetry else {
             throw DomainError.validation(outcome.reason ?? "This payment can't be retried right now.")
         }
-        return try await paymentRepository.createCheckout(forVisit: visitId, amountMinorUnits: amountMinorUnits)
+        guard !quote.isExpired else {
+            throw DomainError.validation("This price quote has expired — refresh it and try again.")
+        }
+        return try await paymentRepository.createCheckout(forVisit: visitId, quoteId: quote.id, amountMinorUnits: quote.breakdown.totalMinorUnits)
     }
 }
 
