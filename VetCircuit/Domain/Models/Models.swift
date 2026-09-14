@@ -538,6 +538,20 @@ struct PaymentRetryPolicy {
     }
 }
 
+/// I7: one item on the vet's in-visit checklist, as it becomes the
+/// customer's record. Filling it out is a vet-side action (no vet-mode
+/// surface exists in this app, matching F9/I5's scope boundary) — the
+/// client only ever reads these, mirroring `LabTestReport`.
+struct VisitChecklistItem: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var visitId: UUID
+    var label: String
+    var isCompleted: Bool
+    var note: String?
+    var completedAt: Date?
+    var sortOrder: Int
+}
+
 struct ChatMessage: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var visitId: UUID

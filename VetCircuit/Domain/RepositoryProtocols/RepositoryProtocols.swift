@@ -76,6 +76,12 @@ protocol PaymentDisputeRepository: Sendable {
     func disputes(visitId: UUID) async throws -> [PaymentDispute]
 }
 
+/// I7: read-only from the customer side — see the type comment on
+/// `VisitChecklistItem`.
+protocol VisitChecklistRepository: Sendable {
+    func items(visitId: UUID) async throws -> [VisitChecklistItem]
+}
+
 protocol InvoiceRepository: Sendable {
     /// G5: GST-compliant invoice per order, generated once a visit completes.
     func invoice(visitId: UUID) async throws -> Invoice?

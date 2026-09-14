@@ -504,6 +504,19 @@ actor MockPaymentDisputeRepository: PaymentDisputeRepository {
 // G5: generates a stand-in GST invoice for any visit so InvoiceView has
 // something real to render in mock mode — the Supabase conformer instead
 // reads an already-issued row (invoice numbering/GST math is server-side).
+// I7: fabricates a representative completed checklist, mirroring
+// MockLabTestReportRepository/MockInvoiceRepository's "nothing to read
+// server-side, so stand in with something real" stance.
+actor MockVisitChecklistRepository: VisitChecklistRepository {
+    func items(visitId: UUID) async throws -> [VisitChecklistItem] {
+        let labels = ["Temperature & vitals check", "Weight recorded", "Physical examination", "Vaccination reviewed", "Owner questions answered"]
+        return labels.enumerated().map { index, label in
+            VisitChecklistItem(id: UUID(), visitId: visitId, label: label, isCompleted: true, note: nil,
+                                completedAt: Calendar.current.date(byAdding: .minute, value: index * 5, to: .now), sortOrder: index)
+        }
+    }
+}
+
 actor MockInvoiceRepository: InvoiceRepository {
     func invoice(visitId: UUID) async throws -> Invoice? {
         let subtotal = 59_900

@@ -69,6 +69,8 @@ final class DependencyContainer {
     let smsFallbackRepository: SMSFallbackRepository
     /// K6: lab test reports (read-only; uploaded ops-side).
     let labTestReportRepository: LabTestReportRepository
+    /// I7: the vet's in-visit checklist, read-only from the customer side.
+    let visitChecklistRepository: VisitChecklistRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -124,6 +126,7 @@ final class DependencyContainer {
         self.paymentDisputeRepository = MockPaymentDisputeRepository()
         self.smsFallbackRepository = MockSMSFallbackRepository()
         self.labTestReportRepository = MockLabTestReportRepository()
+        self.visitChecklistRepository = MockVisitChecklistRepository()
     }
 
     // MARK: Use case factories
@@ -232,5 +235,9 @@ final class DependencyContainer {
     /// K6: lab test reports attached to a visit/pet.
     func getLabTestReportsUseCase() -> GetLabTestReportsUseCase {
         GetLabTestReportsUseCase(repository: labTestReportRepository)
+    }
+    /// I7: the vet's in-visit checklist, once it becomes the customer's record.
+    func getVisitChecklistUseCase() -> GetVisitChecklistUseCase {
+        GetVisitChecklistUseCase(repository: visitChecklistRepository)
     }
 }

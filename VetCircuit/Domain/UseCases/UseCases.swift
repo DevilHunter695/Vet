@@ -1585,3 +1585,14 @@ struct GetLabTestReportsUseCase {
     }
 }
 
+/// I7: the vet's in-visit checklist, once it becomes the customer's record —
+/// sorted by `sortOrder` so it reads as the order the vet actually worked
+/// through it.
+struct GetVisitChecklistUseCase {
+    let repository: VisitChecklistRepository
+
+    func execute(visitId: UUID) async throws -> [VisitChecklistItem] {
+        try await repository.items(visitId: visitId).sorted { $0.sortOrder < $1.sortOrder }
+    }
+}
+

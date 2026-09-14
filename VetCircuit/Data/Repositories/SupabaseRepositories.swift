@@ -856,6 +856,30 @@ final class SupabaseInvoiceRepository: InvoiceRepository {
     }
 }
 
+/// I7: read-only — items are written vet/ops-side only (0047_visit_checklists.sql).
+final class SupabaseVisitChecklistRepository: VisitChecklistRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func items(visitId: UUID) async throws -> [VisitChecklistItem] {
+        struct Row: Decodable {
+            let id: UUID, visitId: UUID, label: String, isCompleted: Bool, note: String?, completedAt: Date?, sortOrder: Int
+            enum CodingKeys: String, CodingKey {
+                case id, label, note
+                case visitId = "visit_id", isCompleted = "is_completed", completedAt = "completed_at", sortOrder = "sort_order"
+            }
+        }
+        let rows: [Row] = try await client
+            .from("visit_checklist_items").select().eq("visit_id", value: visitId)
+            .order("sort_order", ascending: true)
+            .execute().value
+        return rows.map {
+            VisitChecklistItem(id: $0.id, visitId: $0.visitId, label: $0.label, isCompleted: $0.isCompleted,
+                                note: $0.note, completedAt: $0.completedAt, sortOrder: $0.sortOrder)
+        }
+    }
+}
+
 // Row DTOs matching the Postgres schema (backend/supabase/migrations).
 private struct SupabaseUserRow: Decodable {
     let id: UUID

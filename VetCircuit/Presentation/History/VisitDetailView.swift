@@ -265,6 +265,15 @@ struct VisitDetailView: View {
                 }
 
                 if visit.status == .completed {
+                    // I7: the vet's in-visit checklist, now the customer's record.
+                    NavigationLink {
+                        VisitChecklistView(visitId: visit.id)
+                    } label: {
+                        ActionRow(title: "Visit checklist", systemImage: "checklist", tint: Theme.success)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .appearAnimation(delay: 0.085)
+
                     // G5: GST-compliant invoice, rendered on-device from the
                     // server-issued Invoice row.
                     NavigationLink {
