@@ -259,7 +259,7 @@ Service (Home consultation)
 |---|---|---|---|---|
 | J1 | Per-visit chat, text | P0 | ✅ | |
 | J2 | Chat attachments (photo of the symptom) | **P0** | ✅ | Was mistakenly still 🔨: `ChatMessage.attachmentURL` (0012_chat_attachments.sql), `ChatRepository.sendPhoto` (Mock; size/emptiness-validated by `SendChatMessageUseCase`), a `PhotosPicker` camera button in `ChatView`, and inline `AsyncImage` rendering in `ChatBubble` are all already wired end-to-end — the only thing missing (a `SupabaseChatRepository` conformer) is a whole-repository gap shared with already-✅ J1, not specific to attachments |
-| J3 | Read receipts, typing, unread badge | P1 | 🔨 | |
+| J3 | Read receipts, typing, unread badge | P1 | ✅ | `ChatRepository.markRead`/`sendTypingIndicator`/`subscribeToTyping` (Mock; typing is fire-and-forget/unstored, matching `LiveTrackingRepository`'s subscribe-only shape) + pure `ChatUnreadPolicy` (tested); `ChatView` marks the thread read on open and on each incoming message, shows "Read" under the sender's own bubbles and a transient "Typing…" row, and `VisitDetailView`'s "Message your vet" row carries an unread-count badge |
 | J4 | **Masked voice calling** (Exotel/Twilio proxy — real numbers never exposed) | **P0** | 🔨 | Privacy + safety + "vet can't find the gate" reality |
 | J5 | Chat auto-closes 48h post-visit, with escalation to support | P1 | ✅ | `ChatPolicy.isOpen` (domain, tested) gates `ChatView`'s input bar and shows a "chat has closed — contact support" banner |
 | J6 | Video consult | P2 | 🔨 (stub) | |

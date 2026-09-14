@@ -124,6 +124,23 @@ protocol ChatRepository: Sendable {
     /// the resulting attachment message — never a client-guessable public URL.
     func sendPhoto(visitId: UUID, imageData: Data) async throws -> ChatMessage
     func subscribe(visitId: UUID, onMessage: @escaping @Sendable (ChatMessage) -> Void) -> AnyObject
+    /// J3: marks every message in this visit's thread not sent by `readerId`
+    /// as read, so the sender's bubble can show a read receipt.
+    func markRead(visitId: UUID, readerId: UUID) async throws
+    /// J3: a lightweight, non-persisted "is typing" ping — fire-and-forget,
+    /// nothing is stored (matches `LiveTrackingRepository`'s subscribe-only
+    /// shape for ephemeral signals).
+    func sendTypingIndicator(visitId: UUID, senderId: UUID) async
+    func subscribeToTyping(visitId: UUID, onTyping: @escaping @Sendable (UUID) -> Void) -> AnyObject
+}
+
+/// J3: unread-count logic, pure and shared by both the chat thread and any
+/// list row that wants a badge — a message counts as unread when it wasn't
+/// sent by the viewer and hasn't been read yet.
+enum ChatUnreadPolicy {
+    static func unreadCount(messages: [ChatMessage], viewerId: UUID) -> Int {
+        messages.filter { $0.senderId != viewerId && $0.readAt == nil }.count
+    }
 }
 
 protocol ReviewRepository: Sendable {

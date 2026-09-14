@@ -633,6 +633,24 @@ actor MockChatRepository: ChatRepository {
     nonisolated func subscribe(visitId: UUID, onMessage: @escaping @Sendable (ChatMessage) -> Void) -> AnyObject {
         NSObject() // no-op token; mock has no realtime transport
     }
+
+    /// J3: flips `readAt` on every message not sent by `readerId`.
+    func markRead(visitId: UUID, readerId: UUID) async throws {
+        guard var thread = messages[visitId] else { return }
+        let now = Date.now
+        for index in thread.indices where thread[index].senderId != readerId && thread[index].readAt == nil {
+            thread[index].readAt = now
+        }
+        messages[visitId] = thread
+    }
+
+    nonisolated func sendTypingIndicator(visitId: UUID, senderId: UUID) async {
+        // No realtime transport in mock mode — nothing to broadcast to.
+    }
+
+    nonisolated func subscribeToTyping(visitId: UUID, onTyping: @escaping @Sendable (UUID) -> Void) -> AnyObject {
+        NSObject() // no-op token; mock has no realtime transport
+    }
 }
 
 actor MockReviewRepository: ReviewRepository {

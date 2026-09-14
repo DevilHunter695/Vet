@@ -23,8 +23,12 @@ struct VisitDetailView: View {
     @State private var isReportingNoShow = false
     // G9: an active gateway dispute against this visit's payment, if any.
     @State private var activeDispute: PaymentDispute?
+    // J3: unread-message badge on the "Message your vet" row.
+    @State private var unreadChatCount = 0
+    @Environment(SessionStore.self) private var session
 
     private let startCallUseCase = DependencyContainer.shared.startCallUseCase()
+    private let chatRepository = DependencyContainer.shared.chatRepository
     private let paymentDisputeRepository = DependencyContainer.shared.paymentDisputeRepository
     private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
@@ -195,7 +199,12 @@ struct VisitDetailView: View {
                 NavigationLink {
                     ChatView(visitId: visit.id)
                 } label: {
-                    ActionRow(title: "Message your vet", systemImage: "message.fill", tint: Theme.primary)
+                    ActionRow(title: "Message your vet", systemImage: "message.fill", tint: Theme.primary, badgeCount: unreadChatCount)
+                }
+                .task {
+                    guard let userId = session.currentUser?.id else { return }
+                    let messages = (try? await chatRepository.history(visitId: visit.id)) ?? []
+                    unreadChatCount = ChatUnreadPolicy.unreadCount(messages: messages, viewerId: userId)
                 }
                 .buttonStyle(PressableStyle())
                 .appearAnimation(delay: 0.1)
@@ -375,6 +384,8 @@ private struct ActionRow: View {
     let title: String
     let systemImage: String
     let tint: Color
+    /// J3: unread-message badge, e.g. on the "Message your vet" row.
+    var badgeCount: Int = 0
 
     var body: some View {
         HStack(spacing: 12) {
@@ -386,6 +397,14 @@ private struct ActionRow: View {
 
             Text(title).font(.brandHeadline).foregroundStyle(.primary)
             Spacer()
+            if badgeCount > 0 {
+                Text("\(badgeCount)")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Color.red, in: Capsule())
+                    .accessibilityLabel("\(badgeCount) unread messages")
+            }
             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
         }
         .padding()
