@@ -306,6 +306,31 @@ struct DunningStatusUseCase {
     }
 }
 
+/// H4: renewal reminders (T-7, T-1). `RenewalReminderPolicy` decides whether
+/// today is a reminder day; this wires that into the existing transactional
+/// notification pipeline (J8) rather than inventing a second one. Like J8
+/// itself, actually *invoking* this once a day is a scheduled job (plan
+/// §6.5) — no cron exists in this codebase to call it, so it's exercised
+/// from wherever a daily check will eventually live (or a test).
+struct RenewalReminderUseCase {
+    let sendTransactionalNotificationUseCase: SendTransactionalNotificationUseCase
+
+    @discardableResult
+    func execute(user: User, subscription: Subscription, now: Date = .now) async throws -> RenewalReminderPolicy.Stage? {
+        guard subscription.status == .active, let stage = RenewalReminderPolicy.dueStage(renewalDate: subscription.renewalDate, now: now) else {
+            return nil
+        }
+        let body: String = {
+            switch stage {
+            case .sevenDaysBefore: return "Your \(subscription.planType.displayName) plan renews in 7 days."
+            case .oneDayBefore: return "Your \(subscription.planType.displayName) plan renews tomorrow."
+            }
+        }()
+        _ = try await sendTransactionalNotificationUseCase.execute(user: user, category: .subscriptionRenewalDue, body: body)
+        return stage
+    }
+}
+
 struct SendChatMessageUseCase {
     let chatRepository: ChatRepository
 

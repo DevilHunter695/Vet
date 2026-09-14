@@ -1153,6 +1153,39 @@ enum TransactionalNotificationCategory: String, Codable, CaseIterable, Sendable 
     case otp = "otp"
     case rescheduleProposed = "reschedule_proposed"
     case visitCompleted = "visit_completed"
+    /// H4: T-7/T-1 subscription renewal reminders.
+    case subscriptionRenewalDue = "subscription_renewal_due"
+}
+
+// MARK: - H4: renewal reminders (T-7, T-1) + receipt.
+
+/// Pure — given a renewal date and "now", decides whether a T-7 or T-1
+/// reminder is due today. Deliberately a same-day match rather than "within
+/// N days", so a caller invoked once a day (the scheduled job this needs,
+/// see the plan note) sends each reminder exactly once.
+struct RenewalReminderPolicy {
+    enum Stage: Equatable { case sevenDaysBefore, oneDayBefore }
+
+    static func dueStage(renewalDate: Date, now: Date = .now, calendar: Calendar = .current) -> Stage? {
+        guard let daysUntilRenewal = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: renewalDate)).day else {
+            return nil
+        }
+        switch daysUntilRenewal {
+        case 7: return .sevenDaysBefore
+        case 1: return .oneDayBefore
+        default: return nil
+        }
+    }
+}
+
+/// H4's "receipt" half — a simple record of what was actually charged at
+/// renewal, distinct from `Invoice` (which is per-visit, GST-itemized).
+struct SubscriptionReceipt: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var subscriptionId: UUID
+    var planType: Subscription.PlanType
+    var amountMinorUnits: Int
+    var chargedAt: Date
 }
 
 /// The decided outcome of `NotificationDeliveryPolicy` for one notification

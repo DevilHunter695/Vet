@@ -102,6 +102,32 @@ struct PlanCatalogEntryTests {
     }
 }
 
+// H4: renewal reminders.
+
+@Suite("RenewalReminderPolicy")
+struct RenewalReminderPolicyTests {
+    @Test("fires the 7-day reminder exactly at T-7")
+    func sevenDayReminder() {
+        let now = Date()
+        let renewal = Calendar.current.date(byAdding: .day, value: 7, to: Calendar.current.startOfDay(for: now))!
+        #expect(RenewalReminderPolicy.dueStage(renewalDate: renewal, now: now) == .sevenDaysBefore)
+    }
+
+    @Test("fires the 1-day reminder exactly at T-1")
+    func oneDayReminder() {
+        let now = Date()
+        let renewal = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: now))!
+        #expect(RenewalReminderPolicy.dueStage(renewalDate: renewal, now: now) == .oneDayBefore)
+    }
+
+    @Test("no reminder on an unrelated day")
+    func noReminderOtherDays() {
+        let now = Date()
+        let renewal = Calendar.current.date(byAdding: .day, value: 3, to: Calendar.current.startOfDay(for: now))!
+        #expect(RenewalReminderPolicy.dueStage(renewalDate: renewal, now: now) == nil)
+    }
+}
+
 // H5: dunning status use case — wiring on top of the already-pure DunningPolicy.
 
 @Suite("DunningStatusUseCase")

@@ -225,6 +225,10 @@ final class DependencyContainer {
             smsFallbackRepository: smsFallbackRepository
         )
     }
+    /// H4: T-7/T-1 subscription renewal reminders.
+    func renewalReminderUseCase() -> RenewalReminderUseCase {
+        RenewalReminderUseCase(sendTransactionalNotificationUseCase: sendTransactionalNotificationUseCase())
+    }
     /// K6: lab test reports attached to a visit/pet.
     func getLabTestReportsUseCase() -> GetLabTestReportsUseCase {
         GetLabTestReportsUseCase(repository: labTestReportRepository)
