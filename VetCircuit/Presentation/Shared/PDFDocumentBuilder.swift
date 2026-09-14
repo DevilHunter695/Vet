@@ -95,6 +95,41 @@ extension Vaccination {
     }
 }
 
+extension DataExport {
+    /// A7: DPDP data-principal export as a readable PDF, alongside the
+    /// machine-readable JSON export — same `PDFDocumentBuilder` already
+    /// used for K2/K4, so this closes the "no PDF" gap without a new
+    /// rendering path.
+    func summaryPDF() -> Data {
+        var rows: [PDFDocumentBuilder.Row] = [
+            .init(label: "Name", value: user.name),
+        ]
+        if let email = user.email { rows.append(.init(label: "Email", value: email)) }
+        if let phone = user.phone { rows.append(.init(label: "Phone", value: phone)) }
+        rows.append(.init(label: "Addresses on file", value: "\(addresses.count)"))
+        rows.append(.init(label: "Visits on record", value: "\(visits.count)"))
+        rows.append(.init(label: "Active consents", value: "\(consents.count)"))
+        for visit in visits {
+            rows.append(.init(
+                label: "Visit \(visit.scheduledAt.formatted(date: .abbreviated, time: .shortened))",
+                value: visit.status.rawValue.capitalized
+            ))
+        }
+        for consent in consents {
+            rows.append(.init(
+                label: "Consent: \(consent.purpose)",
+                value: "granted \(consent.grantedAt.formatted(date: .abbreviated, time: .omitted))"
+            ))
+        }
+        return PDFDocumentBuilder.render(
+            title: "Your VetCircuit Data",
+            subtitle: "Generated \(generatedAt.formatted(date: .long, time: .shortened))",
+            rows: rows,
+            footer: "A DPDP data-principal export. The full machine-readable record is also available as JSON."
+        )
+    }
+}
+
 extension Prescription {
     /// K2: a printable prescription document, structured from this app's
     /// own (vet-signed, server-recorded) record.
