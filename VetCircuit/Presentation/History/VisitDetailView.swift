@@ -80,6 +80,7 @@ struct VisitDetailView: View {
                     }
                 }
                 .buttonStyle(PressableStyle())
+                .accessibilityElement(children: .combine)
                 .appearAnimation()
 
                 // G9: a gateway dispute (chargeback) was opened against this
@@ -506,6 +507,7 @@ private struct ActionRow: View {
         .padding()
         .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: Theme.cardShadow, radius: 8, y: 3)
+        .accessibilityElement(children: .combine)
     }
 }
 
