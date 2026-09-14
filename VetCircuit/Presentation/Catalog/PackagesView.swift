@@ -128,12 +128,14 @@ private struct MyPackagesSection: View {
                             .font(.brandBody)
                         ProgressView(value: Double(entitlement.redemption.usedCount), total: Double(entitlement.redemption.totalCount))
                             .tint(entitlement.redemption.isExhausted ? Theme.success : Theme.primary)
+                            .accessibilityHidden(true)
                         Text(entitlement.progressLabel)
                             .font(.brandCaption)
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .accessibilityElement(children: .combine)
             }
         }
     }
@@ -149,8 +151,11 @@ private struct PackageCard: View {
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
-                Text(package.name).font(.brandHeadline)
-                Text(package.packageDescription).font(.brandBody).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(package.name).font(.brandHeadline)
+                    Text(package.packageDescription).font(.brandBody).foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
 
                 HStack {
                     Text(CurrencyFormatter.rupees(package.priceMinorUnits))
@@ -164,6 +169,7 @@ private struct PackageCard: View {
                     }
                     Spacer()
                 }
+                .accessibilityElement(children: .combine)
 
                 PrimaryButton(title: isBought ? "Added to cart" : "Add package to cart", isLoading: isBuying, action: action)
                     .disabled(isBought)
