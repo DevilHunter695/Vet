@@ -188,6 +188,7 @@ struct ServiceDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { CartView() } label: { Image(systemName: "cart") }
+                    .accessibilityLabel("Cart")
             }
         }
     }
@@ -218,6 +219,8 @@ private struct VariantRow: View {
         }
         .buttonStyle(PressableStyle())
         .selectable(isSelected: isSelected)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }
 
@@ -249,6 +252,8 @@ private struct CheckboxRow: View {
         }
         .buttonStyle(PressableStyle())
         .selectable(isSelected: isSelected)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }
 
