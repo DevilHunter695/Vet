@@ -38,6 +38,9 @@ final class CartViewModel {
     // booking silently vanishing; `confirmedVisit` is set once payment
     // actually succeeds and the visit is confirmed + linked to it.
     var checkoutURL: URL?
+    /// E8: the customer's choice at checkout — pay now (prepaid, via
+    /// `checkoutURL`) or pay after the visit (cash/UPI to the vet on-site).
+    var payAfterVisit = false
     private(set) var pendingVisit: Visit?
     var confirmedVisit: Visit?
     var isCheckingOut = false
@@ -163,7 +166,7 @@ final class CartViewModel {
 
     /// E6+E8+E10+G6: get (or reuse) a real signed quote, book the visit as
     /// pending payment against it, and open the hosted-checkout sheet.
-    func proceedToCheckout() async {
+    func proceedToCheckout(user: User) async {
         guard let cart else { return }
         guard let circuitId = cart.circuitId, let slotId = cart.slotId else {
             errorMessage = "Pick a time slot from a circuit before checking out."
@@ -188,12 +191,29 @@ final class CartViewModel {
                 throw DomainError.notFound("Time slot")
             }
             lastQuote = quote
-            let session = try await bookingCheckoutUseCase.start(
-                petId: petId, vetId: circuit.vetId, circuitId: circuitId, slot: slot,
-                quote: quote, idempotencyKey: checkoutIdempotencyKey
-            )
-            pendingVisit = session.visit
-            checkoutURL = session.checkoutURL
+            if payAfterVisit {
+                // E8: booked and confirmed immediately — no hosted checkout,
+                // no webhook to wait on.
+                let visit = try await bookingCheckoutUseCase.startPayAfterVisit(
+                    petId: petId, vetId: circuit.vetId, circuitId: circuitId, slot: slot,
+                    quote: quote, idempotencyKey: checkoutIdempotencyKey
+                )
+                confirmedVisit = visit
+                try? await manageCartUseCase.clear(userId: user.id)
+                self.cart = Cart(id: UUID(), userId: user.id, addressId: nil, circuitId: nil, slotId: nil)
+                self.quote = nil
+                _ = try? await sendTransactionalNotificationUseCase.execute(
+                    user: user, category: .visitConfirmed,
+                    body: "Your visit is confirmed for \(visit.scheduledAt.formatted(date: .abbreviated, time: .shortened)). Pay the vet on-site."
+                )
+            } else {
+                let session = try await bookingCheckoutUseCase.start(
+                    petId: petId, vetId: circuit.vetId, circuitId: circuitId, slot: slot,
+                    quote: quote, idempotencyKey: checkoutIdempotencyKey
+                )
+                pendingVisit = session.visit
+                checkoutURL = session.checkoutURL
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -360,11 +380,25 @@ struct CartView: View {
                         }
 
                         // E6+E8: only once a real signed quote is in hand
-                        // does "Book & pay" become the primary action —
-                        // never a client-computed amount going to checkout.
+                        // does checkout become available — never a
+                        // client-computed amount going to checkout.
                         if viewModel.quote != nil {
-                            PrimaryButton(title: "Book & pay", isLoading: viewModel.isCheckingOut) {
-                                Task { await viewModel.proceedToCheckout() }
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("How do you want to pay?").font(.brandBody.bold())
+                                Picker("Payment", selection: $viewModel.payAfterVisit) {
+                                    Text("Pay now").tag(false)
+                                    Text("Pay after visit").tag(true)
+                                }
+                                .pickerStyle(.segmented)
+                                if viewModel.payAfterVisit {
+                                    Text("Cash or UPI to the vet on-site.")
+                                        .font(.brandCaption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            PrimaryButton(title: viewModel.payAfterVisit ? "Book — pay after visit" : "Book & pay", isLoading: viewModel.isCheckingOut) {
+                                guard let user = session.currentUser else { return }
+                                Task { await viewModel.proceedToCheckout(user: user) }
                             }
                         }
                     }

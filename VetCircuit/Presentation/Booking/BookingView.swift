@@ -34,6 +34,10 @@ final class BookingViewModel {
     /// checkout — presented as a sheet; `resolveCheckout` runs when it's
     /// dismissed (success, failure, or the customer just backing out).
     var checkoutURL: URL?
+    /// E8: the customer's choice at the same decision point where they'd
+    /// otherwise be sent to hosted checkout — pay now (prepaid, via
+    /// `checkoutURL`) or pay after the visit (cash/UPI to the vet on-site).
+    var payAfterVisit = false
     /// The visit created (status `.requested`, unpaid) while checkout is in
     /// flight — kept around so a dismissed/failed/pending checkout can be
     /// resumed instead of the booking silently vanishing.
@@ -160,14 +164,27 @@ final class BookingViewModel {
                 )
                 let quote = try await getQuoteUseCase.execute(cart: cart)
                 lastQuote = quote
-                let session = try await bookingCheckoutUseCase.start(
-                    petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
-                    quote: quote, idempotencyKey: bookingIdempotencyKey
-                )
-                pendingVisit = session.visit
-                checkoutURL = session.checkoutURL
-                // The hold's job ends once the visit is booked (pending payment).
-                if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
+                if payAfterVisit {
+                    // E8: booked and confirmed immediately — no hosted
+                    // checkout, no webhook to wait on.
+                    let visit = try await bookingCheckoutUseCase.startPayAfterVisit(
+                        petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
+                        quote: quote, idempotencyKey: bookingIdempotencyKey
+                    )
+                    bookedVisit = visit
+                    if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
+                    await sendConfirmationReceipt(pet: pet)
+                    await createRecurringRuleIfNeeded(pet: pet)
+                } else {
+                    let session = try await bookingCheckoutUseCase.start(
+                        petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
+                        quote: quote, idempotencyKey: bookingIdempotencyKey
+                    )
+                    pendingVisit = session.visit
+                    checkoutURL = session.checkoutURL
+                    // The hold's job ends once the visit is booked (pending payment).
+                    if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
+                }
             } else {
                 bookedVisit = try await bookVisitUseCase.execute(
                     petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
@@ -358,6 +375,20 @@ struct BookingView: View {
                     }
                 }
 
+                if viewModel.canCheckoutWithPayment {
+                    Card {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("How do you want to pay?").font(.brandBody.bold())
+                            SelectableRow(title: "Pay now", subtitle: "UPI, card, netbanking or wallet", isSelected: !viewModel.payAfterVisit) {
+                                viewModel.payAfterVisit = false
+                            }
+                            SelectableRow(title: "Pay after visit", subtitle: "Cash or UPI to the vet on-site", isSelected: viewModel.payAfterVisit) {
+                                viewModel.payAfterVisit = true
+                            }
+                        }
+                    }
+                }
+
                 if let seconds = viewModel.holdSecondsRemaining {
                     Label("This slot is held for you — \(seconds / 60):\(String(format: "%02d", seconds % 60))",
                           systemImage: "clock.badge.checkmark")
@@ -375,7 +406,7 @@ struct BookingView: View {
                     }
                 }
 
-                PrimaryButton(title: viewModel.canCheckoutWithPayment ? "Get price & pay" : "Confirm booking", isLoading: viewModel.isLoading) {
+                PrimaryButton(title: viewModel.canCheckoutWithPayment ? (viewModel.payAfterVisit ? "Confirm booking — pay after visit" : "Get price & pay") : "Confirm booking", isLoading: viewModel.isLoading) {
                     confirmBookingTapped()
                 }
             }
