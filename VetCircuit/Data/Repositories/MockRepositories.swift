@@ -258,6 +258,10 @@ actor MockCouponRepository: CouponRepository {
         Coupon(id: UUID(), code: "WINBACK100", discountType: .fixedAmountOff, discountValue: 10_000,
                maxDiscountMinorUnits: nil, validFrom: .distantPast, validUntil: .distantFuture,
                usageLimit: nil, perUserLimit: 1, minSpendMinorUnits: 20_000, campaignName: "Win-back"),
+        // N2: the third named campaign type (first-visit, win-back, cluster-launch).
+        Coupon(id: UUID(), code: "CLUSTERLAUNCH", discountType: .percentageOff, discountValue: 15,
+               maxDiscountMinorUnits: 20_000, validFrom: .distantPast, validUntil: .distantFuture,
+               usageLimit: 500, perUserLimit: nil, minSpendMinorUnits: nil, campaignName: "Cluster launch"),
         Coupon(id: UUID(), code: "EXPIRED10", discountType: .percentageOff, discountValue: 10,
                maxDiscountMinorUnits: nil, validFrom: .distantPast,
                validUntil: Date().addingTimeInterval(-86_400), usageLimit: nil, perUserLimit: nil,
