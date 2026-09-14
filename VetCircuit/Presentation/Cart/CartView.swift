@@ -163,6 +163,11 @@ final class CartViewModel {
     /// single-visit booking is tracked as a separate structural change to
     /// `VisitRepository.createVisit`, out of scope here.
     var primaryPetId: UUID? { cart?.items.first?.petIds.first }
+    /// D4: the same "books only the first item" limitation `primaryPetId`
+    /// already documents — so the visit this pipeline actually books is
+    /// tagged with *that* item's service/variant/redemption, not lost
+    /// entirely the way it was before this existed.
+    private var primaryItem: CartItem? { cart?.items.first }
 
     /// E6+E8+E10+G6: get (or reuse) a real signed quote, book the visit as
     /// pending payment against it, and open the hosted-checkout sheet.
@@ -196,7 +201,9 @@ final class CartViewModel {
                 // no webhook to wait on.
                 let visit = try await bookingCheckoutUseCase.startPayAfterVisit(
                     petId: petId, vetId: circuit.vetId, circuitId: circuitId, slot: slot,
-                    quote: quote, idempotencyKey: checkoutIdempotencyKey
+                    quote: quote, idempotencyKey: checkoutIdempotencyKey,
+                    serviceId: primaryItem?.serviceId, variantId: primaryItem?.variantId,
+                    packageRedemptionId: primaryItem?.packageRedemptionId
                 )
                 confirmedVisit = visit
                 try? await manageCartUseCase.clear(userId: user.id)
@@ -209,7 +216,9 @@ final class CartViewModel {
             } else {
                 let session = try await bookingCheckoutUseCase.start(
                     petId: petId, vetId: circuit.vetId, circuitId: circuitId, slot: slot,
-                    quote: quote, idempotencyKey: checkoutIdempotencyKey
+                    quote: quote, idempotencyKey: checkoutIdempotencyKey,
+                    serviceId: primaryItem?.serviceId, variantId: primaryItem?.variantId,
+                    packageRedemptionId: primaryItem?.packageRedemptionId
                 )
                 pendingVisit = session.visit
                 checkoutURL = session.checkoutURL
