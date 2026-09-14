@@ -629,6 +629,22 @@ struct StartCheckoutUseCase {
     }
 }
 
+/// G3: payment retry on failure, with a clear stopping point instead of an
+/// endless "try again" loop — `PaymentRetryPolicy` decides whether another
+/// attempt is even offered before this ever calls the gateway again.
+struct RetryPaymentUseCase {
+    let paymentRepository: PaymentRepository
+
+    func execute(visitId: UUID, paymentId: UUID, amountMinorUnits: Int, priorAttempts: Int) async throws -> URL {
+        let status = try await paymentRepository.paymentStatus(paymentId: paymentId)
+        let outcome = PaymentRetryPolicy.evaluate(status: status, priorAttempts: priorAttempts)
+        guard outcome.canRetry else {
+            throw DomainError.validation(outcome.reason ?? "This payment can't be retried right now.")
+        }
+        return try await paymentRepository.createCheckout(forVisit: visitId, amountMinorUnits: amountMinorUnits)
+    }
+}
+
 // MARK: - V2 use cases
 
 struct TrackVetUseCase {

@@ -23,8 +23,15 @@ struct VisitDetailView: View {
     @State private var isReportingNoShow = false
     // G9: an active gateway dispute against this visit's payment, if any.
     @State private var activeDispute: PaymentDispute?
+    // G3: payment retry on failure.
+    @State private var paymentStatus: Payment.Status?
+    @State private var retryAttempts = 0
+    @State private var isRetryingPayment = false
+    @State private var retryErrorMessage: String?
 
     private let startCallUseCase = DependencyContainer.shared.startCallUseCase()
+    private let paymentRepository = DependencyContainer.shared.paymentRepository
+    private let retryPaymentUseCase = DependencyContainer.shared.retryPaymentUseCase()
     private let paymentDisputeRepository = DependencyContainer.shared.paymentDisputeRepository
     private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
@@ -65,6 +72,27 @@ struct VisitDetailView: View {
                 if let activeDispute {
                     PaymentDisputeStatusView(dispute: activeDispute)
                         .appearAnimation(delay: 0.01)
+                }
+
+                // G3: payment retry on failure — a clear failure state with a
+                // bounded number of retries instead of a dead checkout link.
+                if paymentStatus == .failed {
+                    Card {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Payment failed", systemImage: "exclamationmark.circle.fill")
+                                .font(.brandHeadline).foregroundStyle(Theme.danger)
+                            Text("Your payment for this visit didn't go through.")
+                                .font(.brandCaption).foregroundStyle(.secondary)
+                            if let retryErrorMessage {
+                                Text(retryErrorMessage).font(.brandCaption).foregroundStyle(Theme.danger)
+                            }
+                            PrimaryButton(title: "Retry payment", isLoading: isRetryingPayment) {
+                                Task { await retryPayment() }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .appearAnimation(delay: 0.015)
                 }
 
                 // F6: vet-initiated reschedule accept/decline banner.
@@ -298,6 +326,28 @@ struct VisitDetailView: View {
             }
             pendingProposal = try? await rescheduleProposalRepository.pendingProposal(visitId: visit.id)
             activeDispute = try? await paymentDisputeRepository.disputes(visitId: visit.id).first { $0.isActive }
+            if let paymentId = visit.paymentId {
+                paymentStatus = try? await paymentRepository.paymentStatus(paymentId: paymentId)
+            }
+        }
+    }
+
+    /// G3: re-launches hosted checkout for this visit's payment, bounded by
+    /// `PaymentRetryPolicy`'s attempt cap.
+    private func retryPayment() async {
+        guard let paymentId = visit.paymentId else { return }
+        isRetryingPayment = true
+        retryErrorMessage = nil
+        defer { isRetryingPayment = false }
+        do {
+            let paidMinorUnits = try await DependencyContainer.shared.visitRepository.paidAmountMinorUnits(visitId: visit.id)
+            let url = try await retryPaymentUseCase.execute(
+                visitId: visit.id, paymentId: paymentId, amountMinorUnits: paidMinorUnits, priorAttempts: retryAttempts
+            )
+            retryAttempts += 1
+            await UIApplication.shared.open(url)
+        } catch {
+            retryErrorMessage = error.localizedDescription
         }
     }
 

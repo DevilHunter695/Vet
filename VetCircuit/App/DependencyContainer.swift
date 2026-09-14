@@ -151,6 +151,8 @@ final class DependencyContainer {
     func submitReviewUseCase() -> SubmitReviewUseCase { SubmitReviewUseCase(reviewRepository: reviewRepository) }
     func managePetsUseCase() -> ManagePetsUseCase { ManagePetsUseCase(petRepository: petRepository) }
     func startCheckoutUseCase() -> StartCheckoutUseCase { StartCheckoutUseCase(paymentRepository: paymentRepository) }
+    /// G3: payment retry on failure.
+    func retryPaymentUseCase() -> RetryPaymentUseCase { RetryPaymentUseCase(paymentRepository: paymentRepository) }
     func trackVetUseCase() -> TrackVetUseCase { TrackVetUseCase(liveTrackingRepository: liveTrackingRepository) }
     func startCallUseCase() -> StartCallUseCase { StartCallUseCase(callRepository: callRepository) }
     func sendReferralUseCase() -> SendReferralUseCase { SendReferralUseCase(referralRepository: referralRepository) }

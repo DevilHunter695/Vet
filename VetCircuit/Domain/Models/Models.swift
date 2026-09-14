@@ -456,6 +456,35 @@ struct Payment: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+// MARK: - Payment retry (plan §G3) — a failed visit charge needs a clear,
+// bounded retry path rather than leaving the customer stuck on a dead
+// checkout link. Pure policy: no I/O, so the retry-attempt cap and the
+// "can retry right now" decision are directly unit-testable; the use case
+// (`RetryPaymentUseCase`) is what actually calls the gateway again.
+struct PaymentRetryPolicy {
+    /// A visit can only be retried a bounded number of times before the
+    /// customer is routed to support instead of another dead-end checkout.
+    static let maxAttempts = 3
+
+    struct Outcome: Equatable {
+        var canRetry: Bool
+        var attemptsRemaining: Int
+        /// Set when `canRetry` is false — the copy the UI shows instead of a
+        /// retry button (plan §9: never a bare failure with no next step).
+        var reason: String?
+    }
+
+    static func evaluate(status: Payment.Status, priorAttempts: Int) -> Outcome {
+        guard status == .failed else {
+            return Outcome(canRetry: false, attemptsRemaining: max(0, maxAttempts - priorAttempts), reason: nil)
+        }
+        guard priorAttempts < maxAttempts else {
+            return Outcome(canRetry: false, attemptsRemaining: 0, reason: "This payment couldn't go through after \(maxAttempts) tries. Please contact support or try a different payment method.")
+        }
+        return Outcome(canRetry: true, attemptsRemaining: maxAttempts - priorAttempts, reason: nil)
+    }
+}
+
 struct ChatMessage: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var visitId: UUID
