@@ -318,6 +318,7 @@ struct BookingView: View {
                         }
                     }
                     .buttonStyle(PressableStyle())
+                    .accessibilityElement(children: .combine)
                 } else {
                     Card {
                         VStack(alignment: .leading, spacing: 6) {
@@ -471,6 +472,7 @@ private struct SelectableRow: View {
         }
         .buttonStyle(PressableStyle())
         .selectable(isSelected: isSelected)
+        .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }
