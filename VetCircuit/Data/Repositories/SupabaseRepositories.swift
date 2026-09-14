@@ -790,6 +790,27 @@ final class SupabaseAccountRepository: AccountRepository {
         let response: DataExport = try await client.functions.invoke("export-account-data")
         return response
     }
+
+    func updateProfile(_ user: User) async throws -> User {
+        let update = SupabaseUserProfileUpdate(name: user.name, email: user.email, preferredLanguage: user.preferredLanguage)
+        let rows: [SupabaseUserRow] = try await client
+            .from("users").update(update).eq("id", value: user.id).select("*, pets(*)").execute().value
+        guard let row = rows.first else { throw DomainError.notFound("User") }
+        return row.toDomain()
+    }
+
+    // A5: same shape/discipline as `SupabasePetRepository.updatePhoto` —
+    // TODO(Storage SDK): actually push `data` to the `documents` bucket at
+    // this path before writing `photo_url`; today only the reference column
+    // is real.
+    func updatePhoto(userId: UUID, data: Data) async throws -> User {
+        let path = "profile-photos/\(userId)/\(UUID().uuidString).jpg"
+        let update = SupabaseUserPhotoUpdate(photoUrl: path)
+        let rows: [SupabaseUserRow] = try await client
+            .from("users").update(update).eq("id", value: userId).select("*, pets(*)").execute().value
+        guard let row = rows.first else { throw DomainError.notFound("User") }
+        return row.toDomain()
+    }
 }
 
 final class SupabaseCallRepository: CallRepository {
@@ -1071,17 +1092,36 @@ private struct SupabaseUserRow: Decodable {
     // A11: admin/trusted-function-set only (see 0026 migration) — decoded
     // read-only, never sent back on any client update to this row.
     let accountStatus: String?
+    // A5: edit-profile fields (0059 migration).
+    let photoUrl: String?
+    let preferredLanguage: String?
 
     enum CodingKeys: String, CodingKey {
         case id, phone, name, email, createdAt = "created_at", pets
         case accountStatus = "account_status"
+        case photoUrl = "photo_url", preferredLanguage = "preferred_language"
     }
 
     func toDomain() -> User {
         User(id: id, phone: phone, name: name, email: email, createdAt: createdAt,
              pets: (pets ?? []).map { $0.toDomain() },
-             accountStatus: User.AccountStatus(rawValue: accountStatus ?? "active") ?? .active)
+             accountStatus: User.AccountStatus(rawValue: accountStatus ?? "active") ?? .active,
+             photoURL: photoUrl.flatMap(URL.init(string:)), preferredLanguage: preferredLanguage)
     }
+}
+
+private struct SupabaseUserProfileUpdate: Encodable {
+    let name: String
+    let email: String?
+    let preferredLanguage: String?
+    enum CodingKeys: String, CodingKey {
+        case name, email, preferredLanguage = "preferred_language"
+    }
+}
+
+private struct SupabaseUserPhotoUpdate: Encodable {
+    let photoUrl: String
+    enum CodingKeys: String, CodingKey { case photoUrl = "photo_url" }
 }
 
 private struct SupabasePetRow: Decodable {

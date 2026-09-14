@@ -923,6 +923,32 @@ struct ExportDataUseCase {
     }
 }
 
+/// A5: edit profile (name, email, photo, language).
+struct EditProfileUseCase {
+    let accountRepository: AccountRepository
+
+    func updateProfile(_ user: User, name: String, email: String?, language: String?) async throws -> User {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw DomainError.validation("Enter your name.")
+        }
+        if let email, !email.isEmpty {
+            guard email.contains("@"), email.contains(".") else {
+                throw DomainError.validation("Enter a valid email address.")
+            }
+        }
+        var updated = user
+        updated.name = trimmedName
+        updated.email = (email?.isEmpty ?? true) ? nil : email
+        updated.preferredLanguage = language
+        return try await accountRepository.updateProfile(updated)
+    }
+
+    func updatePhoto(userId: UUID, data: Data) async throws -> User {
+        try await accountRepository.updatePhoto(userId: userId, data: data)
+    }
+}
+
 struct StartVisitUseCase {
     let visitOTPRepository: VisitOTPRepository
     let visitRepository: VisitRepository

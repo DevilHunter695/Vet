@@ -10,6 +10,7 @@ final class PrivacyConsentViewModel {
     var isExporting = false
     var errorMessage: String?
     var exportedFileURL: URL?
+    var exportedPDF: PDFShareURL?
     var deletionRequested = false
 
     private let manageAccountDeletionUseCase = DependencyContainer.shared.manageAccountDeletionUseCase()
@@ -83,6 +84,23 @@ final class PrivacyConsentViewModel {
             errorMessage = error.localizedDescription
         }
     }
+
+    /// A7: the same export as a shareable, human-readable PDF — reuses
+    /// `PDFDocumentBuilder` (the pattern already used for K2/K4).
+    func exportDataAsPDF(userId: UUID) async {
+        isExporting = true
+        errorMessage = nil
+        defer { isExporting = false }
+        do {
+            let export = try await exportDataUseCase.execute(userId: userId)
+            let data = export.summaryPDF()
+            exportedPDF = PDFShareURL.write(data, suggestedName: "vetcircuit-my-data")
+            Haptics.success()
+        } catch {
+            Haptics.error()
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
 /// O5 (consent dashboard) + A6 (delete account) + A7 (export data) — the
@@ -122,14 +140,22 @@ struct PrivacyConsentView: View {
                     if let user = session.currentUser { Task { await viewModel.exportData(userId: user.id) } }
                 } label: {
                     HStack {
-                        Label("Export my data", systemImage: "square.and.arrow.up")
+                        Label("Export as JSON", systemImage: "square.and.arrow.up")
                         Spacer()
                         if viewModel.isExporting { ProgressView() }
                     }
                 }
                 .disabled(viewModel.isExporting)
 
-                Text("Downloads everything VetCircuit holds about you — profile, addresses, visit history, and consent records — as a JSON file.")
+                Button {
+                    Haptics.tap()
+                    if let user = session.currentUser { Task { await viewModel.exportDataAsPDF(userId: user.id) } }
+                } label: {
+                    Label("Export as PDF", systemImage: "doc.richtext")
+                }
+                .disabled(viewModel.isExporting)
+
+                Text("Downloads everything VetCircuit holds about you — profile, addresses, visit history, and consent records — as JSON (machine-readable) or PDF (readable summary).")
                     .font(.brandCaption).foregroundStyle(.secondary)
             }
 
@@ -177,6 +203,9 @@ struct PrivacyConsentView: View {
         }
         .sheet(item: $viewModel.exportedFileURL) { url in
             ShareSheet(activityItems: [url])
+        }
+        .sheet(item: $viewModel.exportedPDF) { pdf in
+            ShareSheet(activityItems: [pdf.url])
         }
     }
 

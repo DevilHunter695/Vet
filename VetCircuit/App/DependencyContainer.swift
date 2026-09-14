@@ -157,6 +157,7 @@ final class DependencyContainer {
         ManageAccountDeletionUseCase(accountRepository: accountRepository, authRepository: authRepository)
     }
     func exportDataUseCase() -> ExportDataUseCase { ExportDataUseCase(accountRepository: accountRepository) }
+    func editProfileUseCase() -> EditProfileUseCase { EditProfileUseCase(accountRepository: accountRepository) }
     func getVisitHistoryUseCase() -> GetVisitHistoryUseCase { GetVisitHistoryUseCase(visitRepository: visitRepository) }
     func subscribeToPlanUseCase() -> SubscribeToPlanUseCase {
         SubscribeToPlanUseCase(subscriptionRepository: subscriptionRepository, paymentRepository: paymentRepository)
