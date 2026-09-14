@@ -310,6 +310,15 @@ final class SupabaseAddressRepository: AddressRepository {
         let result: String? = try await client.rpc("match_cluster", params: ["p_lat": latitude, "p_lng": longitude]).execute().value
         return result
     }
+
+    /// C7: backs a map view of cluster coverage — reads the same
+    /// `circuit_cluster_centers` table `match_cluster()` already uses
+    /// server-side (0004_addresses.sql), via a public-read view that adds
+    /// the radius the geofence function hardcodes (0048_served_clusters_view.sql).
+    func listServedClusters() async throws -> [ServedCluster] {
+        let rows: [SupabaseServedClusterRow] = try await client.from("served_clusters").select().execute().value
+        return rows.map { $0.toDomain() }
+    }
 }
 
 final class SupabasePetRepository: PetRepository {
@@ -1401,6 +1410,17 @@ private struct SupabaseAddressRow: Decodable {
                 accessNotes: accessNotes, latitude: latitude, longitude: longitude,
                 clusterArea: clusterArea, isDefault: isDefault)
     }
+}
+
+private struct SupabaseServedClusterRow: Decodable {
+    let area: String
+    let latitude: Double
+    let longitude: Double
+    let radiusKm: Double
+
+    enum CodingKeys: String, CodingKey { case area, latitude, longitude, radiusKm = "radius_km" }
+
+    func toDomain() -> ServedCluster { ServedCluster(area: area, latitude: latitude, longitude: longitude, radiusKm: radiusKm) }
 }
 
 private struct SupabaseAddressInsert: Encodable {

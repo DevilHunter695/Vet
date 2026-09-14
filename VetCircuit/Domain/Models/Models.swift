@@ -580,6 +580,18 @@ struct Address: Identifiable, Codable, Equatable, Hashable {
     var isServed: Bool { clusterArea != nil }
 }
 
+// MARK: - C7: served cluster coverage (for a map view) — the same notion
+// `AddressRepository.matchCluster` point-tests against, just enumerable so a
+// map can draw it instead of only answering "is this one point inside".
+
+struct ServedCluster: Identifiable, Codable, Equatable, Hashable {
+    var id: String { area }
+    var area: String
+    var latitude: Double
+    var longitude: Double
+    var radiusKm: Double
+}
+
 // MARK: - Account deletion & data export (plan §A6-A7)
 
 struct DeletionRequest: Identifiable, Codable, Equatable, Hashable {

@@ -158,6 +158,8 @@ final class DependencyContainer {
     func getLoyaltyAccountUseCase() -> GetLoyaltyAccountUseCase { GetLoyaltyAccountUseCase(loyaltyRepository: loyaltyRepository) }
     func getCatalogUseCase() -> GetCatalogUseCase { GetCatalogUseCase(catalogRepository: catalogRepository) }
     func manageAddressesUseCase() -> ManageAddressesUseCase { ManageAddressesUseCase(addressRepository: addressRepository) }
+    /// C7: served-cluster coverage for the map view.
+    func getServedClustersUseCase() -> GetServedClustersUseCase { GetServedClustersUseCase(addressRepository: addressRepository) }
     func holdSlotUseCase() -> HoldSlotUseCase { HoldSlotUseCase(circuitRepository: circuitRepository, slotHoldRepository: slotHoldRepository) }
     func manageCartUseCase() -> ManageCartUseCase { ManageCartUseCase(cartRepository: cartRepository) }
     func getQuoteUseCase() -> GetQuoteUseCase {

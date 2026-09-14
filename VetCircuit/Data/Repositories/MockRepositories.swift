@@ -345,6 +345,12 @@ actor MockAddressRepository: AddressRepository {
             abs($0.lat - latitude) < thresholdDegrees && abs($0.lng - longitude) < thresholdDegrees
         }?.area
     }
+
+    /// C7: same list `matchCluster` checks against, ~3km (the mock's
+    /// `thresholdDegrees`) converted to a radius for the map to draw.
+    func listServedClusters() async throws -> [ServedCluster] {
+        servedClusters.map { ServedCluster(area: $0.area, latitude: $0.lat, longitude: $0.lng, radiusKm: 3) }
+    }
 }
 
 actor MockCatalogRepository: CatalogRepository {

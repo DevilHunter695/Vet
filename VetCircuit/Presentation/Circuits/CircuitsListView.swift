@@ -234,6 +234,15 @@ struct CircuitsListView: View {
                         Label("Services", systemImage: "list.bullet.rectangle")
                     }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    // C7: map view of cluster coverage.
+                    NavigationLink {
+                        CoverageMapView()
+                    } label: {
+                        Label("Coverage map", systemImage: "map")
+                            .labelStyle(.iconOnly)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     // C4: sort menu.
                     Menu {

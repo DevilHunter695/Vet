@@ -303,6 +303,10 @@ protocol AddressRepository: Sendable {
     /// Server-side geofence check: does a lat/lng fall inside a served cluster?
     /// Returns the matched cluster area name, or nil if uncovered.
     func matchCluster(latitude: Double, longitude: Double) async throws -> String?
+    /// C7: the served clusters themselves (name/centre/coverage radius),
+    /// for a map view of cluster coverage — the same source of truth
+    /// `matchCluster` checks against, just enumerable instead of point-tested.
+    func listServedClusters() async throws -> [ServedCluster]
 }
 
 protocol CatalogRepository: Sendable {

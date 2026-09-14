@@ -910,6 +910,17 @@ struct HoldSlotUseCase {
     }
 }
 
+/// C7: map view of cluster coverage — a thin read-only wrapper, same shape as
+/// `GetLabTestReportsUseCase`, so the presentation layer never talks to
+/// `AddressRepository` directly for something it only ever reads.
+struct GetServedClustersUseCase {
+    let addressRepository: AddressRepository
+
+    func execute() async throws -> [ServedCluster] {
+        try await addressRepository.listServedClusters()
+    }
+}
+
 struct ManageAddressesUseCase {
     let addressRepository: AddressRepository
 
