@@ -2166,8 +2166,11 @@ private struct SupabaseVisitRow: Decodable {
         Visit(id: id, userId: userId, petId: petId, vetId: vetId, circuitId: circuitId,
               status: Visit.VisitStatus(rawValue: status) ?? .requested,
               scheduledAt: scheduledAt, completedAt: completedAt, notes: notes, paymentId: paymentId,
-              diagnosisNotes: diagnosisNotes, proceduresPerformed: proceduresPerformed ?? [], medicationsGiven: medicationsGiven ?? [],
-              serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId)
+              // Argument order has to match `Visit`'s property order: the D4
+              // service/variant/redemption fields are declared above the K1
+              // structured-record fields.
+              serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId,
+              diagnosisNotes: diagnosisNotes, proceduresPerformed: proceduresPerformed ?? [], medicationsGiven: medicationsGiven ?? [])
     }
 }
 
