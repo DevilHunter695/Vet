@@ -291,8 +291,16 @@ struct ManageSubscriptionUseCase {
 /// auto-downgrade `DunningPolicy` calls for. The actual "a renewal charge
 /// just failed" trigger is a gateway webhook (no gateway is wired into this
 /// codebase), so `recordFailure` exists for that future caller/scheduled job
-/// (plan §6.5) to invoke — this use case's real job today is reading and
-/// resolving whatever dunning state already exists.
+/// (plan §6.5) to invoke — a real gap, since nothing here can simulate a
+/// failed charge. `resolveIfGraceExpired`, though, is closed the same way
+/// F4/I8/H4 closed their equivalent gaps: `ProfileView`'s routine screen
+/// load calls it on every appearance for any subscriber whose grace period
+/// has already started, so an expired grace gets downgraded promptly rather
+/// than only when the customer happens to open subscription management. It
+/// needs no separate local dedupe — it reads `dunningState` and only acts
+/// once `DunningPolicy.shouldAutoDowngrade` is true, and acting clears that
+/// state, so a repeat call the same day is already a no-op via the
+/// repository's own state, not a client-side flag.
 struct DunningStatusUseCase {
     let subscriptionRepository: SubscriptionRepository
 
@@ -335,16 +343,23 @@ struct DunningStatusUseCase {
 
 /// H4: renewal reminders (T-7, T-1). `RenewalReminderPolicy` decides whether
 /// today is a reminder day; this wires that into the existing transactional
-/// notification pipeline (J8) rather than inventing a second one. Like J8
-/// itself, actually *invoking* this once a day is a scheduled job (plan
-/// §6.5) — no cron exists in this codebase to call it, so it's exercised
-/// from wherever a daily check will eventually live (or a test).
+/// notification pipeline (J8) rather than inventing a second one. Closed the
+/// same way F4/I8 closed their equivalent gaps: `ProfileView`'s routine
+/// screen load calls this on every appearance, and `dedupeRepository` (see
+/// its honest gap on `RenewalReminderDedupeRepository`) stops it firing more
+/// than once per stage per day. A real server-side daily cron (plan §6.5)
+/// remains the accepted, honest limit — this only runs when a subscriber
+/// happens to open the app, not exactly at T-7/T-1 regardless of that.
 struct RenewalReminderUseCase {
     let sendTransactionalNotificationUseCase: SendTransactionalNotificationUseCase
+    let dedupeRepository: RenewalReminderDedupeRepository
 
     @discardableResult
     func execute(user: User, subscription: Subscription, now: Date = .now) async throws -> RenewalReminderPolicy.Stage? {
         guard subscription.status == .active, let stage = RenewalReminderPolicy.dueStage(renewalDate: subscription.renewalDate, now: now) else {
+            return nil
+        }
+        guard try await !dedupeRepository.hasSent(subscriptionId: subscription.id, stage: stage, day: now) else {
             return nil
         }
         let body: String = {
@@ -354,6 +369,7 @@ struct RenewalReminderUseCase {
             }
         }()
         _ = try await sendTransactionalNotificationUseCase.execute(user: user, category: .subscriptionRenewalDue, body: body)
+        try await dedupeRepository.markSent(subscriptionId: subscription.id, stage: stage, day: now)
         return stage
     }
 }

@@ -120,6 +120,21 @@ protocol NoShowDetectionRepository: Sendable {
     func markFlagged(visitId: UUID) async throws
 }
 
+/// H4: device-local dedupe for `RenewalReminderUseCase`, so a T-7/T-1
+/// reminder doesn't refire every time the routine trigger point
+/// (`ProfileView`'s load, mirroring `NoShowDetectionRepository`'s /
+/// `PostVisitSummaryRepository`'s established pattern) runs again the same
+/// day. Keyed by subscription + stage + calendar day, not just subscription
+/// id, since a reminder is date-scoped — the same stage recurs every
+/// renewal cycle. Same honest gap as those two: this is a device-local
+/// "have I sent this today" flag, not a server-side one — a real deployment
+/// wants a daily scheduled job (plan §6.5) driving this regardless of
+/// whether the app happens to be opened that day.
+protocol RenewalReminderDedupeRepository: Sendable {
+    func hasSent(subscriptionId: UUID, stage: RenewalReminderPolicy.Stage, day: Date) async throws -> Bool
+    func markSent(subscriptionId: UUID, stage: RenewalReminderPolicy.Stage, day: Date) async throws
+}
+
 protocol InvoiceRepository: Sendable {
     /// G5: GST-compliant invoice per order, generated once a visit completes.
     func invoice(visitId: UUID) async throws -> Invoice?

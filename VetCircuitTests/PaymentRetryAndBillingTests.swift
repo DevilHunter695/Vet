@@ -259,3 +259,90 @@ struct DunningStatusUseCaseTests {
         #expect(!downgraded)
     }
 }
+
+// H4: RenewalReminderUseCase — the T-7/T-1 policy wired through the J8
+// pipeline, deduped per subscription+stage+day so ProfileView's routine
+// load doesn't refire the same reminder every time it runs that day.
+
+private actor FakeRenewalReminderDedupeRepository: RenewalReminderDedupeRepository {
+    private var sent: Set<String> = []
+
+    private func key(_ subscriptionId: UUID, _ stage: RenewalReminderPolicy.Stage, _ day: Date) -> String {
+        "\(subscriptionId)|\(stage)|\(Calendar.current.startOfDay(for: day))"
+    }
+
+    func hasSent(subscriptionId: UUID, stage: RenewalReminderPolicy.Stage, day: Date) async throws -> Bool {
+        sent.contains(key(subscriptionId, stage, day))
+    }
+
+    func markSent(subscriptionId: UUID, stage: RenewalReminderPolicy.Stage, day: Date) async throws {
+        sent.insert(key(subscriptionId, stage, day))
+    }
+}
+
+@Suite("RenewalReminderUseCase")
+struct RenewalReminderUseCaseTests {
+    private func makeUseCase(smsRepo: MockSMSFallbackRepository, dedupe: FakeRenewalReminderDedupeRepository) -> RenewalReminderUseCase {
+        RenewalReminderUseCase(
+            sendTransactionalNotificationUseCase: SendTransactionalNotificationUseCase(
+                pushTokenRepository: MockPushTokenRepository(),
+                notificationPreferencesRepository: MockNotificationPreferencesRepository(),
+                smsFallbackRepository: smsRepo
+            ),
+            dedupeRepository: dedupe
+        )
+    }
+
+    @Test("sends the T-7 reminder through the notification pipeline")
+    func sendsSevenDayReminder() async throws {
+        let now = Date()
+        let renewal = Calendar.current.date(byAdding: .day, value: 7, to: Calendar.current.startOfDay(for: now))!
+        var user = MockData.user
+        user.phone = "+919876543210"
+        let subscription = Subscription(id: UUID(), userId: user.id, planType: .monthly, status: .active, renewalDate: renewal)
+        let smsRepo = MockSMSFallbackRepository()
+        let useCase = makeUseCase(smsRepo: smsRepo, dedupe: FakeRenewalReminderDedupeRepository())
+
+        let stage = try await useCase.execute(user: user, subscription: subscription, now: now)
+
+        #expect(stage == .sevenDaysBefore)
+        let records = await smsRepo.sentRecords
+        #expect(records.count == 1)
+        #expect(records.first?.category == .subscriptionRenewalDue)
+    }
+
+    @Test("does not refire the same stage twice in one day")
+    func dedupesWithinTheSameDay() async throws {
+        let now = Date()
+        let renewal = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: now))!
+        var user = MockData.user
+        user.phone = "+919876543210"
+        let subscription = Subscription(id: UUID(), userId: user.id, planType: .monthly, status: .active, renewalDate: renewal)
+        let smsRepo = MockSMSFallbackRepository()
+        let useCase = makeUseCase(smsRepo: smsRepo, dedupe: FakeRenewalReminderDedupeRepository())
+
+        let first = try await useCase.execute(user: user, subscription: subscription, now: now)
+        let second = try await useCase.execute(user: user, subscription: subscription, now: now.addingTimeInterval(120))
+
+        #expect(first == .oneDayBefore)
+        #expect(second == nil)
+        let records = await smsRepo.sentRecords
+        #expect(records.count == 1)
+    }
+
+    @Test("sends nothing for a cancelled subscription even on a reminder day")
+    func skipsInactiveSubscription() async throws {
+        let now = Date()
+        let renewal = Calendar.current.date(byAdding: .day, value: 7, to: Calendar.current.startOfDay(for: now))!
+        var user = MockData.user
+        user.phone = "+919876543210"
+        let subscription = Subscription(id: UUID(), userId: user.id, planType: .monthly, status: .cancelled, renewalDate: renewal)
+        let smsRepo = MockSMSFallbackRepository()
+        let useCase = makeUseCase(smsRepo: smsRepo, dedupe: FakeRenewalReminderDedupeRepository())
+
+        let stage = try await useCase.execute(user: user, subscription: subscription, now: now)
+
+        #expect(stage == nil)
+        #expect(await smsRepo.sentRecords.isEmpty)
+    }
+}

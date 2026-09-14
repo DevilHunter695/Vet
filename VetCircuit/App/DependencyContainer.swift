@@ -78,6 +78,8 @@ final class DependencyContainer {
     let postVisitSummaryRepository: PostVisitSummaryRepository
     /// F4: device-local dedupe for client-detected no-show flagging.
     let noShowDetectionRepository: NoShowDetectionRepository
+    /// H4: device-local dedupe for the client-detected renewal reminder push.
+    let renewalReminderDedupeRepository: RenewalReminderDedupeRepository
     /// H7: corporate/RWA seat assignment roster.
     let corporateSeatAssignmentRepository: CorporateSeatAssignmentRepository
 
@@ -143,6 +145,7 @@ final class DependencyContainer {
         self.visitChecklistRepository = MockVisitChecklistRepository()
         self.postVisitSummaryRepository = LocalPostVisitSummaryRepository()
         self.noShowDetectionRepository = LocalNoShowDetectionRepository()
+        self.renewalReminderDedupeRepository = LocalRenewalReminderDedupeRepository()
         self.corporateSeatAssignmentRepository = MockCorporateSeatAssignmentRepository()
     }
 
@@ -265,9 +268,14 @@ final class DependencyContainer {
             smsFallbackRepository: smsFallbackRepository
         )
     }
-    /// H4: T-7/T-1 subscription renewal reminders.
+    /// H4: T-7/T-1 subscription renewal reminders, deduped per subscription
+    /// + stage + day — see `RenewalReminderUseCase`'s doc comment for where
+    /// this is actually invoked from.
     func renewalReminderUseCase() -> RenewalReminderUseCase {
-        RenewalReminderUseCase(sendTransactionalNotificationUseCase: sendTransactionalNotificationUseCase())
+        RenewalReminderUseCase(
+            sendTransactionalNotificationUseCase: sendTransactionalNotificationUseCase(),
+            dedupeRepository: renewalReminderDedupeRepository
+        )
     }
     /// K6: lab test reports attached to a visit/pet.
     func getLabTestReportsUseCase() -> GetLabTestReportsUseCase {
