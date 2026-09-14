@@ -473,3 +473,15 @@ protocol IncidentReportRepository: Sendable {
     func fileReport(_ report: IncidentReport) async throws -> IncidentReport
     func myReports(reporterId: UUID) async throws -> [IncidentReport]
 }
+
+/// L2: a prospective vet's document-backed onboarding application. The
+/// applicant can create their own application and read/update it, but only
+/// while it is still `submitted` — once ops has moved it to `underReview`
+/// or beyond, the row is server-side (RLS) locked against further edits
+/// from the applicant. There is no delete — an application is a permanent
+/// record even if rejected.
+protocol VetOnboardingRepository: Sendable {
+    func submit(_ application: VetOnboardingApplication) async throws -> VetOnboardingApplication
+    func myApplications(applicantUserId: UUID) async throws -> [VetOnboardingApplication]
+    func update(_ application: VetOnboardingApplication) async throws -> VetOnboardingApplication
+}

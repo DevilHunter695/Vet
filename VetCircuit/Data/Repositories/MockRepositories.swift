@@ -735,6 +735,32 @@ actor MockLabTestReportRepository: LabTestReportRepository {
     }
 }
 
+actor MockVetOnboardingRepository: VetOnboardingRepository {
+    private var applicationsById: [UUID: VetOnboardingApplication] = [:]
+
+    func submit(_ application: VetOnboardingApplication) async throws -> VetOnboardingApplication {
+        applicationsById[application.id] = application
+        return application
+    }
+
+    func myApplications(applicantUserId: UUID) async throws -> [VetOnboardingApplication] {
+        applicationsById.values.filter { $0.applicantUserId == applicantUserId }
+    }
+
+    func update(_ application: VetOnboardingApplication) async throws -> VetOnboardingApplication {
+        guard let existing = applicationsById[application.id] else {
+            throw DomainError.notFound("Vet onboarding application")
+        }
+        // Mirrors the RLS rule: the applicant may only update the row while
+        // it is still `submitted`.
+        guard existing.status == .submitted else {
+            throw DomainError.validation("This application is already under review and can no longer be edited.")
+        }
+        applicationsById[application.id] = application
+        return application
+    }
+}
+
 actor MockPetDocumentRepository: PetDocumentRepository {
     private var documents: [PetDocument] = []
 

@@ -1671,6 +1671,34 @@ struct PaymentDispute: Identifiable, Codable, Equatable, Hashable {
     var isActive: Bool { status == .open || status == .needsResponse }
 }
 
+// MARK: - Vet onboarding (plan L2) — a prospective vet's document-backed
+// application to join the platform: degree, VCI (Veterinary Council of
+// India) certificate, government ID, police verification, and a photo.
+// This is fundamentally a vet-side submission reviewed by ops/admin; this
+// app has no vet-facing UI surface, so this model/repository/use-case exist
+// so the domain and data layers are real and correct even though no screen
+// in this app drives them (see `SubmitVetOnboardingApplicationUseCase`).
+struct VetOnboardingApplication: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var applicantUserId: UUID
+    var degreeDocumentURL: URL
+    var vciCertificateURL: URL
+    var idDocumentURL: URL
+    var policeVerificationURL: URL
+    var photoURL: URL
+    var status: Status
+    var submittedAt: Date
+    var reviewedAt: Date?
+    var reviewNotes: String?
+
+    enum Status: String, Codable, Equatable, Hashable {
+        case submitted
+        case underReview = "under_review"
+        case approved
+        case rejected
+    }
+}
+
 // MARK: - Domain errors
 
 enum DomainError: Error, LocalizedError, Equatable {

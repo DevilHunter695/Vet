@@ -69,6 +69,9 @@ final class DependencyContainer {
     let smsFallbackRepository: SMSFallbackRepository
     /// K6: lab test reports (read-only; uploaded ops-side).
     let labTestReportRepository: LabTestReportRepository
+    /// L2: document-backed vet onboarding applications (domain/data layer
+    /// only — this app has no vet-facing UI to submit one from).
+    let vetOnboardingRepository: VetOnboardingRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -124,6 +127,7 @@ final class DependencyContainer {
         self.paymentDisputeRepository = MockPaymentDisputeRepository()
         self.smsFallbackRepository = MockSMSFallbackRepository()
         self.labTestReportRepository = MockLabTestReportRepository()
+        self.vetOnboardingRepository = MockVetOnboardingRepository()
     }
 
     // MARK: Use case factories
@@ -224,5 +228,9 @@ final class DependencyContainer {
     /// K6: lab test reports attached to a visit/pet.
     func getLabTestReportsUseCase() -> GetLabTestReportsUseCase {
         GetLabTestReportsUseCase(repository: labTestReportRepository)
+    }
+    /// L2: document-backed vet onboarding (domain/data layer only).
+    func submitVetOnboardingApplicationUseCase() -> SubmitVetOnboardingApplicationUseCase {
+        SubmitVetOnboardingApplicationUseCase(repository: vetOnboardingRepository)
     }
 }

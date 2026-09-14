@@ -393,6 +393,38 @@ final class SupabasePrescriptionRepository: PrescriptionRepository {
     }
 }
 
+final class SupabaseVetOnboardingRepository: VetOnboardingRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func submit(_ application: VetOnboardingApplication) async throws -> VetOnboardingApplication {
+        let insert = SupabaseVetOnboardingInsert(application: application)
+        let rows: [SupabaseVetOnboardingRow] = try await client
+            .from("vet_onboarding_applications").insert(insert).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func myApplications(applicantUserId: UUID) async throws -> [VetOnboardingApplication] {
+        let rows: [SupabaseVetOnboardingRow] = try await client
+            .from("vet_onboarding_applications").select().eq("applicant_user_id", value: applicantUserId)
+            .order("submitted_at", ascending: false).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func update(_ application: VetOnboardingApplication) async throws -> VetOnboardingApplication {
+        let update = SupabaseVetOnboardingUpdate(application: application)
+        let rows: [SupabaseVetOnboardingRow] = try await client
+            .from("vet_onboarding_applications").update(update).eq("id", value: application.id).select().execute().value
+        guard let row = rows.first else {
+            // RLS silently returns 0 rows for an update the policy refuses
+            // (e.g. status has moved past `submitted`) rather than an error.
+            throw DomainError.validation("This application is already under review and can no longer be edited.")
+        }
+        return row.toDomain()
+    }
+}
+
 final class SupabasePetDocumentRepository: PetDocumentRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
@@ -1025,6 +1057,105 @@ private struct SupabasePrescriptionRow: Decodable {
 /// B6: document vault. `filePath` is a `documents` Storage bucket object
 /// path, not a public URL — the app synthesizes a `mock-storage://` URL
 /// client-side until Storage SDK wiring lands (see `SupabasePetDocumentRepository`).
+private struct SupabaseVetOnboardingRow: Decodable {
+    let id: UUID
+    let applicantUserId: UUID
+    let degreeDocumentUrl: URL
+    let vciCertificateUrl: URL
+    let idDocumentUrl: URL
+    let policeVerificationUrl: URL
+    let photoUrl: URL
+    let status: String
+    let submittedAt: Date
+    let reviewedAt: Date?
+    let reviewNotes: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, status
+        case applicantUserId = "applicant_user_id"
+        case degreeDocumentUrl = "degree_document_url"
+        case vciCertificateUrl = "vci_certificate_url"
+        case idDocumentUrl = "id_document_url"
+        case policeVerificationUrl = "police_verification_url"
+        case photoUrl = "photo_url"
+        case submittedAt = "submitted_at"
+        case reviewedAt = "reviewed_at"
+        case reviewNotes = "review_notes"
+    }
+
+    func toDomain() -> VetOnboardingApplication {
+        VetOnboardingApplication(
+            id: id, applicantUserId: applicantUserId, degreeDocumentURL: degreeDocumentUrl,
+            vciCertificateURL: vciCertificateUrl, idDocumentURL: idDocumentUrl,
+            policeVerificationURL: policeVerificationUrl, photoURL: photoUrl,
+            status: VetOnboardingApplication.Status(rawValue: status) ?? .submitted,
+            submittedAt: submittedAt, reviewedAt: reviewedAt, reviewNotes: reviewNotes
+        )
+    }
+}
+
+private struct SupabaseVetOnboardingInsert: Encodable {
+    let id: UUID
+    let applicantUserId: UUID
+    let degreeDocumentUrl: URL
+    let vciCertificateUrl: URL
+    let idDocumentUrl: URL
+    let policeVerificationUrl: URL
+    let photoUrl: URL
+    let status: String
+    let submittedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, status
+        case applicantUserId = "applicant_user_id"
+        case degreeDocumentUrl = "degree_document_url"
+        case vciCertificateUrl = "vci_certificate_url"
+        case idDocumentUrl = "id_document_url"
+        case policeVerificationUrl = "police_verification_url"
+        case photoUrl = "photo_url"
+        case submittedAt = "submitted_at"
+    }
+
+    init(application: VetOnboardingApplication) {
+        id = application.id
+        applicantUserId = application.applicantUserId
+        degreeDocumentUrl = application.degreeDocumentURL
+        vciCertificateUrl = application.vciCertificateURL
+        idDocumentUrl = application.idDocumentURL
+        policeVerificationUrl = application.policeVerificationURL
+        photoUrl = application.photoURL
+        status = application.status.rawValue
+        submittedAt = application.submittedAt
+    }
+}
+
+private struct SupabaseVetOnboardingUpdate: Encodable {
+    let degreeDocumentUrl: URL
+    let vciCertificateUrl: URL
+    let idDocumentUrl: URL
+    let policeVerificationUrl: URL
+    let photoUrl: URL
+    let status: String
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case degreeDocumentUrl = "degree_document_url"
+        case vciCertificateUrl = "vci_certificate_url"
+        case idDocumentUrl = "id_document_url"
+        case policeVerificationUrl = "police_verification_url"
+        case photoUrl = "photo_url"
+    }
+
+    init(application: VetOnboardingApplication) {
+        degreeDocumentUrl = application.degreeDocumentURL
+        vciCertificateUrl = application.vciCertificateURL
+        idDocumentUrl = application.idDocumentURL
+        policeVerificationUrl = application.policeVerificationURL
+        photoUrl = application.photoURL
+        status = application.status.rawValue
+    }
+}
+
 private struct SupabasePetDocumentRow: Decodable {
     let id: UUID
     let petId: UUID

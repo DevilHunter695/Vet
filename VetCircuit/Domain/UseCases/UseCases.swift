@@ -1482,6 +1482,47 @@ struct SendTransactionalNotificationUseCase {
     }
 }
 
+// MARK: - L2: document-backed vet onboarding. The applicant supplies a URL
+// for each of five required documents (already uploaded to Storage by the
+// caller — this use case only validates and writes the reference row); all
+// five are mandatory because a partial application cannot be reviewed.
+struct SubmitVetOnboardingApplicationUseCase {
+    let repository: VetOnboardingRepository
+
+    func submit(applicantUserId: UUID, degreeDocumentURL: URL?, vciCertificateURL: URL?,
+                idDocumentURL: URL?, policeVerificationURL: URL?, photoURL: URL?) async throws -> VetOnboardingApplication {
+        guard let degreeDocumentURL else { throw DomainError.validation("Please upload your degree document.") }
+        guard let vciCertificateURL else { throw DomainError.validation("Please upload your VCI certificate.") }
+        guard let idDocumentURL else { throw DomainError.validation("Please upload a government ID document.") }
+        guard let policeVerificationURL else { throw DomainError.validation("Please upload your police verification certificate.") }
+        guard let photoURL else { throw DomainError.validation("Please upload a photo.") }
+
+        let application = VetOnboardingApplication(
+            id: UUID(), applicantUserId: applicantUserId, degreeDocumentURL: degreeDocumentURL,
+            vciCertificateURL: vciCertificateURL, idDocumentURL: idDocumentURL,
+            policeVerificationURL: policeVerificationURL, photoURL: photoURL,
+            status: .submitted, submittedAt: .now, reviewedAt: nil, reviewNotes: nil
+        )
+        return try await repository.submit(application)
+    }
+
+    func myApplications(applicantUserId: UUID) async throws -> [VetOnboardingApplication] {
+        try await repository.myApplications(applicantUserId: applicantUserId)
+    }
+
+    /// Lets the applicant correct/replace a document reference before ops
+    /// starts reviewing. The repository (mock: in-memory check; Supabase:
+    /// RLS) is the real authority that the application is still
+    /// `submitted` — this is a convenience guard so the caller gets an
+    /// immediate, friendly error instead of a silent no-op.
+    func update(_ application: VetOnboardingApplication) async throws -> VetOnboardingApplication {
+        guard application.status == .submitted else {
+            throw DomainError.validation("This application is already under review and can no longer be edited.")
+        }
+        return try await repository.update(application)
+    }
+}
+
 // MARK: - K6: lab test ordering + report delivery. Ordering reuses the
 // existing catalog/cart/checkout flow (`Service` of `.labTest` category);
 // this use case only surfaces the resulting reports.
