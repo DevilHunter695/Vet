@@ -815,6 +815,14 @@ struct CallSession: Identifiable, Codable, Equatable, Hashable {
 struct CancellationPolicy {
     static let freeWindowHours: Double = 4
 
+    /// F4: how long past a visit's scheduled time it can sit in `.requested`/
+    /// `.confirmed` (never assigned, never started) before the client treats
+    /// it as a no-show rather than "still pending" — long enough that a slow
+    /// assignment isn't mistaken for one, short enough that the 100%-charge
+    /// branch below actually gets applied same-day. Mirrors
+    /// `NoShowPolicy.vetGraceWindowMinutes`'s reasoning for the other direction.
+    static let noShowGraceMinutes: Double = 30
+
     struct Outcome: Equatable {
         var refundPercent: Int       // 0, 50, or 100
         var refundMinorUnits: Int

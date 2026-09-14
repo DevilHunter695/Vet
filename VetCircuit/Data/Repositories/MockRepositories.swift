@@ -595,6 +595,29 @@ actor LocalPostVisitSummaryRepository: PostVisitSummaryRepository {
     }
 }
 
+/// F4: device-local dedupe for `FlagVisitNoShowUseCase` — see the honest gap
+/// noted on `NoShowDetectionRepository`. Used regardless of Mock/Supabase
+/// backend, since there's no server-side equivalent to call, mirroring
+/// `LocalPostVisitSummaryRepository` exactly.
+actor LocalNoShowDetectionRepository: NoShowDetectionRepository {
+    private let defaultsKey = "noShowFlaggedVisitIds"
+
+    func hasFlagged(visitId: UUID) async throws -> Bool {
+        flaggedIds().contains(visitId)
+    }
+
+    func markFlagged(visitId: UUID) async throws {
+        var ids = flaggedIds()
+        ids.insert(visitId)
+        UserDefaults.standard.set(ids.map(\.uuidString), forKey: defaultsKey)
+    }
+
+    private func flaggedIds() -> Set<UUID> {
+        let raw = UserDefaults.standard.stringArray(forKey: defaultsKey) ?? []
+        return Set(raw.compactMap(UUID.init))
+    }
+}
+
 // I7: fabricates a representative completed checklist, mirroring
 // MockLabTestReportRepository/MockInvoiceRepository's "nothing to read
 // server-side, so stand in with something real" stance.

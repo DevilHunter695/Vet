@@ -76,6 +76,8 @@ final class DependencyContainer {
     let visitChecklistRepository: VisitChecklistRepository
     /// I8: device-local dedupe for the post-visit summary push.
     let postVisitSummaryRepository: PostVisitSummaryRepository
+    /// F4: device-local dedupe for client-detected no-show flagging.
+    let noShowDetectionRepository: NoShowDetectionRepository
     /// H7: corporate/RWA seat assignment roster.
     let corporateSeatAssignmentRepository: CorporateSeatAssignmentRepository
 
@@ -140,6 +142,7 @@ final class DependencyContainer {
         self.vetOnboardingRepository = MockVetOnboardingRepository()
         self.visitChecklistRepository = MockVisitChecklistRepository()
         self.postVisitSummaryRepository = LocalPostVisitSummaryRepository()
+        self.noShowDetectionRepository = LocalNoShowDetectionRepository()
         self.corporateSeatAssignmentRepository = MockCorporateSeatAssignmentRepository()
     }
 
@@ -150,6 +153,11 @@ final class DependencyContainer {
     func manageMedicationRemindersUseCase() -> ManageMedicationRemindersUseCase { ManageMedicationRemindersUseCase(repository: medicationReminderRepository) }
     func bookVisitUseCase() -> BookVisitUseCase { BookVisitUseCase(visitRepository: visitRepository) }
     func cancelVisitUseCase() -> CancelVisitUseCase { CancelVisitUseCase(visitRepository: visitRepository, refundRepository: refundRepository) }
+    /// F4: client-detected no-show flagging, called from `VisitHistoryView`'s
+    /// load — see `FlagVisitNoShowUseCase`'s doc comment.
+    func flagVisitNoShowUseCase() -> FlagVisitNoShowUseCase {
+        FlagVisitNoShowUseCase(cancelVisitUseCase: cancelVisitUseCase(), noShowDetectionRepository: noShowDetectionRepository)
+    }
     func rescheduleVisitUseCase() -> RescheduleVisitUseCase { RescheduleVisitUseCase(visitRepository: visitRepository) }
     func startVisitUseCase() -> StartVisitUseCase { StartVisitUseCase(visitOTPRepository: visitOTPRepository, visitRepository: visitRepository) }
     func manageConsentUseCase() -> ManageConsentUseCase { ManageConsentUseCase(consentRepository: consentRepository) }

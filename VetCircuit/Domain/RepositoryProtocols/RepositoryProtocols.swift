@@ -108,6 +108,18 @@ protocol PostVisitSummaryRepository: Sendable {
     func markSent(visitId: UUID) async throws
 }
 
+/// F4: guards `FlagVisitNoShowUseCase` against re-flagging (and re-cancelling
+/// / re-attempting a refund call on) a visit every time the app notices its
+/// scheduled time has passed while it's still `.requested`/`.confirmed`.
+/// Same honest gap as `PostVisitSummaryRepository`: this is a device-local
+/// "have I already flagged this" marker, not a server-side one — a real
+/// deployment would want a scheduled server job doing this the moment the
+/// grace window elapses, not client-detected on next launch.
+protocol NoShowDetectionRepository: Sendable {
+    func hasFlagged(visitId: UUID) async throws -> Bool
+    func markFlagged(visitId: UUID) async throws
+}
+
 protocol InvoiceRepository: Sendable {
     /// G5: GST-compliant invoice per order, generated once a visit completes.
     func invoice(visitId: UUID) async throws -> Invoice?

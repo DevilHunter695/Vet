@@ -107,6 +107,33 @@ struct CancelVisitUseCase {
     }
 }
 
+/// F4: closes the "no-show detection still manual" gap the same way I8
+/// closed its equivalent gap for `SendPostVisitSummaryUseCase` — client
+/// detects it the next time it's open, de-duplicated locally via
+/// `NoShowDetectionRepository`, rather than a server-side cron. A visit
+/// stuck in `.requested`/`.confirmed` past `CancellationPolicy.noShowGraceMinutes`
+/// was never assigned/started, so nothing else in the state machine will
+/// ever move it off that status; this is what actually applies F4's
+/// 100%-charged-on-no-show branch (`CancelVisitUseCase`'s `isPastVisitTime`
+/// case) to it instead of leaving it open forever.
+struct FlagVisitNoShowUseCase {
+    let cancelVisitUseCase: CancelVisitUseCase
+    let noShowDetectionRepository: NoShowDetectionRepository
+
+    @discardableResult
+    func execute(visit: Visit, now: Date = .now) async throws -> Bool {
+        guard visit.status == .requested || visit.status == .confirmed else { return false }
+        let minutesPastScheduled = now.timeIntervalSince(visit.scheduledAt) / 60
+        guard minutesPastScheduled >= CancellationPolicy.noShowGraceMinutes else { return false }
+        guard !(try await noShowDetectionRepository.hasFlagged(visitId: visit.id)) else { return false }
+        try await cancelVisitUseCase.execute(
+            visitId: visit.id, currentStatus: visit.status, scheduledAt: visit.scheduledAt, paymentId: visit.paymentId
+        )
+        try await noShowDetectionRepository.markFlagged(visitId: visit.id)
+        return true
+    }
+}
+
 struct RescheduleVisitUseCase {
     let visitRepository: VisitRepository
 
