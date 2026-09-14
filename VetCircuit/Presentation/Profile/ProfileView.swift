@@ -14,8 +14,10 @@ final class ProfileViewModel {
     private let subscriptionRepository = DependencyContainer.shared.subscriptionRepository
     private let subscribeToPlanUseCase = DependencyContainer.shared.subscribeToPlanUseCase()
     private let getLoyaltyAccountUseCase = DependencyContainer.shared.getLoyaltyAccountUseCase()
+    private let renewalReminderUseCase = DependencyContainer.shared.renewalReminderUseCase()
+    private let dunningStatusUseCase = DependencyContainer.shared.dunningStatusUseCase()
 
-    func load(userId: UUID) async {
+    func load(userId: UUID, currentUser: User?) async {
         do {
             // includeArchived: this list is the pet-management screen, not a
             // booking picker — an archived pet still needs to be visible so
@@ -23,8 +25,23 @@ final class ProfileViewModel {
             pets = try await managePetsUseCase.list(ownerId: userId, includeArchived: true)
             subscription = try await subscriptionRepository.currentSubscription(userId: userId)
             loyaltyAccount = try await getLoyaltyAccountUseCase.execute(userId: userId)
-            if let subscription, subscription.status == .active {
-                PushNotificationManager.shared.scheduleRenewalReminder(subscription: subscription)
+            if let subscription {
+                // H5: the profile tab is a routine, frequently-visited screen
+                // (same trigger-point pattern F4/I8 used on VisitHistoryView),
+                // so check here whether this subscriber's grace period has
+                // quietly expired and downgrade promptly rather than only
+                // when they happen to open subscription management.
+                if try await dunningStatusUseCase.resolveIfGraceExpired(subscriptionId: subscription.id) {
+                    self.subscription = try? await subscriptionRepository.currentSubscription(userId: userId)
+                }
+                if subscription.status == .active {
+                    PushNotificationManager.shared.scheduleRenewalReminder(subscription: subscription)
+                    // H4: same pattern — best-effort T-7/T-1 reminder push,
+                    // deduped locally so it only fires once per stage per day.
+                    if let currentUser {
+                        try? await renewalReminderUseCase.execute(user: currentUser, subscription: subscription)
+                    }
+                }
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -270,7 +287,7 @@ struct ProfileView: View {
             }
             .navigationTitle("Profile")
             .animation(Theme.crossFade, value: viewModel.loyaltyAccount?.points)
-            .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
+            .task { if let user = session.currentUser { await viewModel.load(userId: user.id, currentUser: user) } }
             .sheet(item: $checkoutURL) { url in
                 CheckoutWebView(url: url)
             }
