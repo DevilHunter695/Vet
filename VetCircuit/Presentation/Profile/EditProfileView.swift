@@ -79,8 +79,12 @@ struct EditProfileView: View {
                             .frame(width: 64, height: 64)
                             .overlay(Image(systemName: "person.fill").foregroundStyle(.secondary))
                     }
+                    // Same reason as PetDetailView: PhotosPicker's label
+                    // closure is Sendable-checked, so the main-actor view
+                    // model can't be read from inside it.
+                    let photoButtonTitle = viewModel.photoURL == nil ? "Add photo" : "Change photo"
                     PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                        Text(viewModel.photoURL == nil ? "Add photo" : "Change photo")
+                        Text(photoButtonTitle)
                             .font(.brandCaption)
                     }
                 }

@@ -247,8 +247,14 @@ struct PetDetailView: View {
                             .frame(width: 64, height: 64)
                             .overlay(Image(systemName: "pawprint.fill").foregroundStyle(.secondary))
                     }
+                    // The label is built up front rather than read inside
+                    // PhotosPicker's closure: that closure is checked as
+                    // `Sendable`, so touching the main-actor-isolated view
+                    // model from inside it doesn't compile under strict
+                    // concurrency.
+                    let photoButtonTitle = viewModel.pet.photoURL == nil ? "Add photo" : "Change photo"
                     PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                        Text(viewModel.pet.photoURL == nil ? "Add photo" : "Change photo")
+                        Text(photoButtonTitle)
                             .font(.brandCaption)
                     }
                 }

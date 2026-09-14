@@ -24,6 +24,19 @@ final class CircuitsListViewModel {
     // everything.
     var addresses: [Address] = []
     var selectedAddress: Address?
+    /// C2: the list is supposed to show slot *and* price alongside rating.
+    /// The catalog was already being fetched to drive filtering and then
+    /// thrown away; keeping it lets each row show what a visit actually
+    /// starts at instead of making the customer open a vet to find out.
+    var catalog: [Service] = []
+
+    /// Cheapest thing anyone can book in this area, used as the "from" price
+    /// on every row. Deliberately catalog-wide rather than per-vet: a per-vet
+    /// override (D5) needs a round trip per circuit, and quoting a number the
+    /// row can't stand behind is worse than quoting a floor and saying so.
+    var startingPriceMinorUnits: Int? {
+        catalog.compactMap(\.startingPriceMinorUnits).min()
+    }
 
     private let getCircuitsUseCase = DependencyContainer.shared.getCircuitsUseCase()
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
@@ -64,6 +77,7 @@ final class CircuitsListViewModel {
         await loadAddressesIfNeeded(userId: userId)
         do {
             let catalog = (try? await getCatalogUseCase.execute(vertical: vertical)) ?? []
+            self.catalog = catalog
             var previouslyBooked: Set<UUID> = []
             if let userId, let history = try? await getVisitHistoryUseCase.execute(userId: userId) {
                 previouslyBooked = Set(history.map(\.vetId))
@@ -184,7 +198,10 @@ struct CircuitsListView: View {
                                 }
                                 ForEach(Array(viewModel.circuits.enumerated()), id: \.element.id) { index, circuit in
                                     NavigationLink(value: circuit) {
-                                        CircuitRow(circuit: circuit)
+                                        CircuitRow(
+                                            circuit: circuit,
+                                            startingPriceMinorUnits: viewModel.startingPriceMinorUnits
+                                        )
                                     }
                                     .buttonStyle(PressableStyle())
                                     .appearAnimation(delay: Theme.staggerDelay(index))
@@ -350,7 +367,9 @@ struct CircuitsListView: View {
                     if let circuits = result?.circuits, !circuits.isEmpty {
                         Text("Vets & circuits").font(.brandHeadline).padding(.horizontal, 4)
                         ForEach(circuits) { circuit in
-                            NavigationLink(value: circuit) { CircuitRow(circuit: circuit) }
+                            NavigationLink(value: circuit) {
+                                CircuitRow(circuit: circuit, startingPriceMinorUnits: viewModel.startingPriceMinorUnits)
+                            }
                                 .buttonStyle(PressableStyle())
                         }
                     }
@@ -561,45 +580,157 @@ private struct RecentlyViewedSection: View {
 /// disclosure indicator from an enclosing List).
 struct CircuitRow: View {
     let circuit: Circuit
+    /// C2: the area's floor price. Optional because the catalog may still be
+    /// loading — the row renders without it rather than showing "₹0".
+    var startingPriceMinorUnits: Int? = nil
+
+    /// The soonest slot with capacity left. This is the single most useful
+    /// thing on the row: "can this vet see my dog soon?" is the question the
+    /// list exists to answer.
+    private var nextSlot: ScheduleSlot? {
+        circuit.schedule
+            .filter { $0.isAvailable && $0.startTime > .now }
+            .min { $0.startTime < $1.startTime }
+    }
+
+    private var slotText: String {
+        guard let nextSlot else { return "No open slots this week" }
+        let day = Calendar.current.isDateInToday(nextSlot.startTime)
+            ? "Today"
+            : Calendar.current.isDateInTomorrow(nextSlot.startTime)
+                ? "Tomorrow"
+                : nextSlot.startTime.formatted(.dateTime.weekday(.abbreviated))
+        return "\(day), \(nextSlot.startTime.formatted(date: .omitted, time: .shortened))"
+    }
+
+    private var isScarce: Bool {
+        guard let nextSlot else { return false }
+        return nextSlot.remainingCapacity <= 1
+    }
 
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle().fill(Theme.gradient)
-                Image(systemName: "stethoscope")
-                    .font(.title3)
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 48, height: 48)
-            .shadow(color: Theme.primary.opacity(0.25), radius: 6, y: 3)
+        VStack(spacing: 12) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle().fill(Theme.gradient)
+                    if let photoURL = circuit.vet?.photoURL {
+                        AsyncImage(url: photoURL) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Image(systemName: "stethoscope").font(.title3).foregroundStyle(.white)
+                        }
+                        .clipShape(Circle())
+                    } else {
+                        Image(systemName: "stethoscope")
+                            .font(.title3)
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 50, height: 50)
+                .shadow(color: Theme.primary.opacity(0.3), radius: 8, y: 4)
+                .allowsHitTesting(false)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(circuit.vet?.name ?? "Veterinarian")
-                    .font(.brandHeadline)
-                    .foregroundStyle(.primary)
-                Text(circuit.clusterArea)
-                    .font(.brandCaption)
-                    .foregroundStyle(.secondary)
-                if let vet = circuit.vet {
-                    HStack(spacing: 4) {
-                        Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
-                        Text(String(format: "%.1f", vet.rating) + " (\(vet.reviewCount))")
-                            .font(.caption)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 5) {
+                        Text(circuit.vet?.name ?? "Veterinarian")
+                            .font(.brandHeadline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        // L3: the verified badge sits with the name, where a
+                        // customer decides whether to trust the row.
+                        if circuit.vet?.verificationStatus == .verified {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.caption)
+                                .foregroundStyle(Theme.primaryLight)
+                        }
+                    }
+
+                    HStack(spacing: 6) {
+                        Image(systemName: "mappin.and.ellipse")
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
-                        if vet.verificationStatus == .verified {
-                            Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(.blue)
+                        Text(circuit.clusterArea)
+                            .font(.brandCaption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    if let vet = circuit.vet {
+                        HStack(spacing: 5) {
+                            Image(systemName: "star.fill")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.goldTier)
+                            Text(String(format: "%.1f", vet.rating))
+                                .font(.brandMono(.caption))
+                            Text("(\(vet.reviewCount))")
+                                .font(.brandCaption2)
+                                .foregroundStyle(.secondary)
+                            if let years = vet.yearsOfExperience {
+                                Text("·").foregroundStyle(.tertiary)
+                                Text("\(years) yrs")
+                                    .font(.brandCaption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
+
+                Spacer(minLength: 4)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    if let startingPriceMinorUnits {
+                        Text("from").brandEyebrow()
+                        Text(CurrencyFormatter.rupees(startingPriceMinorUnits))
+                            .font(.brandMono(.callout, weight: .bold))
+                            .foregroundStyle(.primary)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
             }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.tertiary)
+
+            Divider().opacity(0.35)
+
+            HStack(spacing: 10) {
+                Label(slotText, systemImage: "clock.fill")
+                    .font(.brandCaption)
+                    .foregroundStyle(nextSlot == nil ? .secondary : Theme.emeraldLight)
+                    .lineLimit(1)
+
+                Spacer(minLength: 4)
+
+                if isScarce, let nextSlot {
+                    // F2: capacity is per-slot, and "1 spot left" is the kind
+                    // of detail that decides a booking. Shown only when it is
+                    // actually scarce, so it never reads as a growth-hack.
+                    TagChip(
+                        text: nextSlot.remainingCapacity == 1 ? "1 spot left" : "Filling up",
+                        systemImage: "flame.fill", tint: Theme.warning
+                    )
+                } else if let languages = circuit.vet?.languages, !languages.isEmpty {
+                    TagChip(text: languages.prefix(2).joined(separator: ", "), systemImage: "globe", tint: Theme.primary)
+                }
+            }
         }
         .padding(16)
         .glassCard()
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        var parts = [circuit.vet?.name ?? "Veterinarian", circuit.clusterArea]
+        if let vet = circuit.vet {
+            parts.append("rated \(String(format: "%.1f", vet.rating)) from \(vet.reviewCount) reviews")
+            if vet.verificationStatus == .verified { parts.append("verified") }
+        }
+        parts.append("next slot \(slotText)")
+        if let startingPriceMinorUnits {
+            parts.append("from \(CurrencyFormatter.rupees(startingPriceMinorUnits))")
+        }
+        return parts.joined(separator: ", ")
     }
 }
 
