@@ -11,6 +11,9 @@ final class BookingViewModel {
     let serviceCategory: ServiceCategory?
     let serviceId: UUID?
     let variantId: UUID?
+    /// K5: 1-tap follow-up preselects the same pet as the original visit —
+    /// the customer never re-picks it.
+    let preselectedPetId: UUID?
     var pets: [Pet] = []
     var selectedPet: Pet?
     /// F5: user's choice to also create a recurring rule alongside this booking.
@@ -52,11 +55,12 @@ final class BookingViewModel {
         (serviceCategory == .deworming || serviceCategory == .physioSession) && serviceId != nil && variantId != nil
     }
 
-    init(circuit: Circuit, serviceCategory: ServiceCategory? = nil, serviceId: UUID? = nil, variantId: UUID? = nil) {
+    init(circuit: Circuit, serviceCategory: ServiceCategory? = nil, serviceId: UUID? = nil, variantId: UUID? = nil, preselectedPetId: UUID? = nil) {
         self.circuit = circuit
         self.serviceCategory = serviceCategory
         self.serviceId = serviceId
         self.variantId = variantId
+        self.preselectedPetId = preselectedPetId
         self.recurringCadence = serviceCategory == .physioSession ? .weekly : .monthly
     }
 
@@ -97,7 +101,7 @@ final class BookingViewModel {
         currentUserId = ownerId
         do {
             pets = try await managePetsUseCase.list(ownerId: ownerId)
-            selectedPet = pets.first
+            selectedPet = preselectedPetId.flatMap { id in pets.first { $0.id == id } } ?? pets.first
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -142,8 +146,8 @@ struct BookingView: View {
     @State private var hasAcceptedWaiver = false
     private let manageConsentUseCase = DependencyContainer.shared.manageConsentUseCase()
 
-    init(circuit: Circuit, serviceCategory: ServiceCategory? = nil, serviceId: UUID? = nil, variantId: UUID? = nil) {
-        _viewModel = State(initialValue: BookingViewModel(circuit: circuit, serviceCategory: serviceCategory, serviceId: serviceId, variantId: variantId))
+    init(circuit: Circuit, serviceCategory: ServiceCategory? = nil, serviceId: UUID? = nil, variantId: UUID? = nil, preselectedPetId: UUID? = nil) {
+        _viewModel = State(initialValue: BookingViewModel(circuit: circuit, serviceCategory: serviceCategory, serviceId: serviceId, variantId: variantId, preselectedPetId: preselectedPetId))
     }
 
     private func confirmBookingTapped() {

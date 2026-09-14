@@ -258,6 +258,10 @@ actor MockCouponRepository: CouponRepository {
         Coupon(id: UUID(), code: "WINBACK100", discountType: .fixedAmountOff, discountValue: 10_000,
                maxDiscountMinorUnits: nil, validFrom: .distantPast, validUntil: .distantFuture,
                usageLimit: nil, perUserLimit: 1, minSpendMinorUnits: 20_000, campaignName: "Win-back"),
+        // N2: the third named campaign type (first-visit, win-back, cluster-launch).
+        Coupon(id: UUID(), code: "CLUSTERLAUNCH", discountType: .percentageOff, discountValue: 15,
+               maxDiscountMinorUnits: 20_000, validFrom: .distantPast, validUntil: .distantFuture,
+               usageLimit: 500, perUserLimit: nil, minSpendMinorUnits: nil, campaignName: "Cluster launch"),
         Coupon(id: UUID(), code: "EXPIRED10", discountType: .percentageOff, discountValue: 10,
                maxDiscountMinorUnits: nil, validFrom: .distantPast,
                validUntil: Date().addingTimeInterval(-86_400), usageLimit: nil, perUserLimit: nil,
@@ -631,6 +635,24 @@ actor MockChatRepository: ChatRepository {
     }
 
     nonisolated func subscribe(visitId: UUID, onMessage: @escaping @Sendable (ChatMessage) -> Void) -> AnyObject {
+        NSObject() // no-op token; mock has no realtime transport
+    }
+
+    /// J3: flips `readAt` on every message not sent by `readerId`.
+    func markRead(visitId: UUID, readerId: UUID) async throws {
+        guard var thread = messages[visitId] else { return }
+        let now = Date.now
+        for index in thread.indices where thread[index].senderId != readerId && thread[index].readAt == nil {
+            thread[index].readAt = now
+        }
+        messages[visitId] = thread
+    }
+
+    nonisolated func sendTypingIndicator(visitId: UUID, senderId: UUID) async {
+        // No realtime transport in mock mode — nothing to broadcast to.
+    }
+
+    nonisolated func subscribeToTyping(visitId: UUID, onTyping: @escaping @Sendable (UUID) -> Void) -> AnyObject {
         NSObject() // no-op token; mock has no realtime transport
     }
 }

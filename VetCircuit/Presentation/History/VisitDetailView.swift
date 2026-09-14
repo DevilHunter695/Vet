@@ -10,8 +10,11 @@ struct VisitDetailView: View {
     @State private var visitOTP: VisitOTP?
     @State private var showingReportProblem = false
     @State private var showingIncidentReport = false
-    @State private var followUpService: Service?
-    @State private var followUpPet: Pet?
+    /// K5: the same circuit (hence the same vet) as this visit, resolved
+    /// once "Book free follow-up" is tapped — enforced by construction
+    /// rather than left to the customer to re-pick, closing the prior
+    /// "same vet/circuit isn't yet enforced end-to-end" gap.
+    @State private var followUpBooking: FollowUpBooking?
     @State private var showingTip = false
     @State private var hasTipped = false
     // F6: a pending vet-initiated reschedule proposal, if any.
@@ -23,12 +26,17 @@ struct VisitDetailView: View {
     @State private var isReportingNoShow = false
     // G9: an active gateway dispute against this visit's payment, if any.
     @State private var activeDispute: PaymentDispute?
+    // J3: unread-message badge on the "Message your vet" row.
+    @State private var unreadChatCount = 0
+    @Environment(SessionStore.self) private var session
 
     private let startCallUseCase = DependencyContainer.shared.startCallUseCase()
+    private let chatRepository = DependencyContainer.shared.chatRepository
     private let paymentDisputeRepository = DependencyContainer.shared.paymentDisputeRepository
     private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
     private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
+    private let circuitRepository = DependencyContainer.shared.circuitRepository
     private let rescheduleProposalRepository = DependencyContainer.shared.rescheduleProposalRepository
     private let respondToRescheduleProposalUseCase = DependencyContainer.shared.respondToRescheduleProposalUseCase()
     private let reportVetNoShowUseCase = DependencyContainer.shared.reportVetNoShowUseCase()
@@ -148,7 +156,38 @@ struct VisitDetailView: View {
                     .appearAnimation(delay: 0.03)
                 }
 
-                if let notes = visit.notes, !notes.isEmpty {
+                // K1: structured visit record — diagnosis, procedures, meds —
+                // falls back to the legacy free-text `notes` blob for visits
+                // recorded before these columns existed.
+                if visit.hasStructuredRecord {
+                    Card {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("Visit record", systemImage: "note.text")
+                                .font(.brandHeadline)
+                                .foregroundStyle(Theme.primary)
+                            if let diagnosis = visit.diagnosisNotes, !diagnosis.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Diagnosis").font(.brandCaption).foregroundStyle(.secondary)
+                                    Text(diagnosis).font(.brandBody)
+                                }
+                            }
+                            if !visit.proceduresPerformed.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Procedures performed").font(.brandCaption).foregroundStyle(.secondary)
+                                    ForEach(visit.proceduresPerformed, id: \.self) { Text("• \($0)").font(.brandBody) }
+                                }
+                            }
+                            if !visit.medicationsGiven.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Medications given").font(.brandCaption).foregroundStyle(.secondary)
+                                    ForEach(visit.medicationsGiven, id: \.self) { Text("• \($0)").font(.brandBody) }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .appearAnimation(delay: 0.08)
+                } else if let notes = visit.notes, !notes.isEmpty {
                     Card {
                         VStack(alignment: .leading, spacing: 8) {
                             Label("Vet notes", systemImage: "note.text")
@@ -164,7 +203,12 @@ struct VisitDetailView: View {
                 NavigationLink {
                     ChatView(visitId: visit.id)
                 } label: {
-                    ActionRow(title: "Message your vet", systemImage: "message.fill", tint: Theme.primary)
+                    ActionRow(title: "Message your vet", systemImage: "message.fill", tint: Theme.primary, badgeCount: unreadChatCount)
+                }
+                .task {
+                    guard let userId = session.currentUser?.id else { return }
+                    let messages = (try? await chatRepository.history(visitId: visit.id)) ?? []
+                    unreadChatCount = ChatUnreadPolicy.unreadCount(messages: messages, viewerId: userId)
                 }
                 .buttonStyle(PressableStyle())
                 .appearAnimation(delay: 0.1)
@@ -287,9 +331,13 @@ struct VisitDetailView: View {
         .sheet(isPresented: $showingIncidentReport) {
             IncidentReportView(visitId: visit.id)
         }
-        .sheet(item: $followUpService) { service in
+        .sheet(item: $followUpBooking) { booking in
             NavigationStack {
-                ServiceDetailView(service: service, pet: followUpPet, preselectedVariantId: service.variants.first(where: \.isFollowUp)?.id)
+                // K5: booking directly against the original visit's own
+                // `circuit` (not the catalog's add-to-cart flow) is what
+                // actually guarantees the same vet services the follow-up.
+                BookingView(circuit: booking.circuit, serviceCategory: booking.service.category,
+                            serviceId: booking.service.id, variantId: booking.variantId, preselectedPetId: visit.petId)
             }
         }
         .task {
@@ -329,21 +377,33 @@ struct VisitDetailView: View {
         }
     }
 
-    /// K5: resolves the same pet and the consult service's free follow-up
-    /// variant before presenting booking — the customer never re-selects
-    /// either.
+    /// K5: resolves the same circuit (hence the same vet) as this visit,
+    /// the same pet, and the consult service's free follow-up variant
+    /// before presenting booking — the customer never re-selects any of it.
     private func prepareFollowUp() async {
         guard let services = try? await getCatalogUseCase.execute(vertical: .vet),
-              let service = services.first(where: { $0.variants.contains(where: \.isFollowUp) }) else { return }
-        followUpPet = try? await managePetsUseCase.list(ownerId: visit.userId).first { $0.id == visit.petId }
-        followUpService = service
+              let service = services.first(where: { $0.variants.contains(where: \.isFollowUp) }),
+              let variantId = service.variants.first(where: \.isFollowUp)?.id,
+              let circuit = try? await circuitRepository.circuit(id: visit.circuitId) else { return }
+        followUpBooking = FollowUpBooking(circuit: circuit, service: service, variantId: variantId)
     }
+}
+
+/// K5: bundles the resolved circuit/service/variant for the follow-up
+/// booking sheet — `Identifiable` so it can drive `.sheet(item:)`.
+private struct FollowUpBooking: Identifiable {
+    let id = UUID()
+    let circuit: Circuit
+    let service: Service
+    let variantId: UUID
 }
 
 private struct ActionRow: View {
     let title: String
     let systemImage: String
     let tint: Color
+    /// J3: unread-message badge, e.g. on the "Message your vet" row.
+    var badgeCount: Int = 0
 
     var body: some View {
         HStack(spacing: 12) {
@@ -355,6 +415,14 @@ private struct ActionRow: View {
 
             Text(title).font(.brandHeadline).foregroundStyle(.primary)
             Spacer()
+            if badgeCount > 0 {
+                Text("\(badgeCount)")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Color.red, in: Capsule())
+                    .accessibilityLabel("\(badgeCount) unread messages")
+            }
             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
         }
         .padding()

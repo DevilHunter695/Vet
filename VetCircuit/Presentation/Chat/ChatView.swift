@@ -11,20 +11,36 @@ final class ChatViewModel {
     /// J5: nil while the visit is still loading; once known, gates the
     /// input bar and shows the "chat has closed" banner.
     var isChatOpen: Bool = true
+    /// J3: set briefly whenever the other party sends a typing ping.
+    var otherPartyIsTyping: Bool = false
     private var subscriptionToken: AnyObject?
+    private var typingSubscriptionToken: AnyObject?
+    private var typingDismissTask: Task<Void, Never>?
+    private var currentUserId: UUID?
 
     private let sendChatMessageUseCase = DependencyContainer.shared.sendChatMessageUseCase()
     private let chatRepository = DependencyContainer.shared.chatRepository
     private let visitRepository = DependencyContainer.shared.visitRepository
 
+    /// J3: unread count for whoever is *not* `currentUserId` — used by a
+    /// visit-list row to show a chat badge without opening the thread.
+    var unreadCount: Int {
+        guard let currentUserId else { return 0 }
+        return ChatUnreadPolicy.unreadCount(messages: messages, viewerId: currentUserId)
+    }
+
     init(visitId: UUID) { self.visitId = visitId }
 
-    func load() async {
+    func load(currentUserId: UUID) async {
+        self.currentUserId = currentUserId
         do {
             messages = try await chatRepository.history(visitId: visitId)
         } catch {
             errorMessage = error.localizedDescription
         }
+        // J3: read receipts — mark the other party's messages read as soon
+        // as this thread is opened.
+        try? await chatRepository.markRead(visitId: visitId, readerId: currentUserId)
         if let visit = try? await visitRepository.visit(id: visitId) {
             isChatOpen = ChatPolicy.isOpen(visit: visit)
         }
@@ -32,8 +48,29 @@ final class ChatViewModel {
             Task { @MainActor in
                 self?.messages.append(message)
                 Haptics.soft()
+                if let self, let currentUserId = self.currentUserId, message.senderId != currentUserId {
+                    try? await self.chatRepository.markRead(visitId: self.visitId, readerId: currentUserId)
+                }
             }
         }
+        typingSubscriptionToken = chatRepository.subscribeToTyping(visitId: visitId) { [weak self] senderId in
+            Task { @MainActor in
+                guard let self, senderId != self.currentUserId else { return }
+                self.otherPartyIsTyping = true
+                self.typingDismissTask?.cancel()
+                self.typingDismissTask = Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(3))
+                    if !Task.isCancelled { self.otherPartyIsTyping = false }
+                }
+            }
+        }
+    }
+
+    /// J3: called as the customer types — a lightweight, unstored ping so
+    /// the other side can show "…is typing".
+    func notifyTyping() {
+        guard let currentUserId else { return }
+        Task { await chatRepository.sendTypingIndicator(visitId: visitId, senderId: currentUserId) }
     }
 
     func send() async {
@@ -74,8 +111,22 @@ struct ChatView: View {
                 ScrollView {
                     LazyVStack(spacing: 10) {
                         ForEach(viewModel.messages) { message in
-                            ChatBubble(message: message, isMine: message.senderId == session.currentUser?.id)
-                                .id(message.id)
+                            let isMine = message.senderId == session.currentUser?.id
+                            VStack(alignment: isMine ? .trailing : .leading, spacing: 2) {
+                                ChatBubble(message: message, isMine: isMine)
+                                // J3: read receipt — shown only on the sender's own bubbles.
+                                if isMine && message.readAt != nil {
+                                    Text("Read").font(.caption2).foregroundStyle(.secondary).padding(.trailing, 4)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+                            .id(message.id)
+                        }
+                        if viewModel.otherPartyIsTyping {
+                            HStack {
+                                Text("Typing…").font(.brandCaption).foregroundStyle(.secondary).italic()
+                                Spacer()
+                            }
                         }
                     }
                     .padding()
@@ -127,6 +178,7 @@ struct ChatView: View {
                     .background(Color(.secondarySystemBackground), in: Capsule())
                     .accessibilityLabel("Message input")
                     .disabled(!viewModel.isChatOpen)
+                    .onChange(of: viewModel.draft) { _, _ in viewModel.notifyTyping() }
 
                 let canSend = viewModel.isChatOpen && !viewModel.draft.trimmingCharacters(in: .whitespaces).isEmpty
                 Button {
@@ -150,7 +202,7 @@ struct ChatView: View {
         }
         .navigationTitle("Chat")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await viewModel.load() }
+        .task { await viewModel.load(currentUserId: session.currentUser?.id ?? UUID()) }
         .sheet(isPresented: $showingContactSupport) {
             ContactSupportView(visitId: viewModel.visitId)
         }

@@ -1861,16 +1861,22 @@ private struct SupabaseVisitRow: Decodable {
     let completedAt: Date?
     let notes: String?
     let paymentId: UUID?
+    /// K1: structured visit record (0046_visit_record_structured.sql).
+    let diagnosisNotes: String?
+    let proceduresPerformed: [String]?
+    let medicationsGiven: [String]?
 
     enum CodingKeys: String, CodingKey {
         case id, userId = "user_id", petId = "pet_id", vetId = "vet_id", circuitId = "circuit_id"
         case status, scheduledAt = "scheduled_at", completedAt = "completed_at", notes, paymentId = "payment_id"
+        case diagnosisNotes = "diagnosis_notes", proceduresPerformed = "procedures_performed", medicationsGiven = "medications_given"
     }
 
     func toDomain() -> Visit {
         Visit(id: id, userId: userId, petId: petId, vetId: vetId, circuitId: circuitId,
               status: Visit.VisitStatus(rawValue: status) ?? .requested,
-              scheduledAt: scheduledAt, completedAt: completedAt, notes: notes, paymentId: paymentId)
+              scheduledAt: scheduledAt, completedAt: completedAt, notes: notes, paymentId: paymentId,
+              diagnosisNotes: diagnosisNotes, proceduresPerformed: proceduresPerformed ?? [], medicationsGiven: medicationsGiven ?? [])
     }
 }
 

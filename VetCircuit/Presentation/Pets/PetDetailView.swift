@@ -334,7 +334,7 @@ struct PetDetailView: View {
                     Text("No vaccination records yet.").font(.brandCaption).foregroundStyle(.secondary)
                 } else {
                     ForEach(viewModel.vaccinations) { vaccination in
-                        VaccinationRow(vaccination: vaccination)
+                        VaccinationRow(vaccination: vaccination, petName: viewModel.pet.name)
                     }
                 }
 
@@ -409,14 +409,7 @@ struct PetDetailView: View {
                 Label("Prescriptions", systemImage: "pills.fill")
                     .font(.brandHeadline).foregroundStyle(Theme.primary)
                 ForEach(viewModel.prescriptions) { prescription in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(prescription.medicationName) — \(prescription.dosage)").font(.brandBody)
-                        if let instructions = prescription.instructions {
-                            Text(instructions).font(.brandCaption).foregroundStyle(.secondary)
-                        }
-                        Text(prescription.issuedAt.formatted(date: .abbreviated, time: .omitted))
-                            .font(.brandCaption).foregroundStyle(.tertiary)
-                    }
+                    PrescriptionRow(prescription: prescription, petName: viewModel.pet.name)
                     if prescription.id != viewModel.prescriptions.last?.id { Divider() }
                 }
             }
@@ -443,6 +436,8 @@ struct PetDetailView: View {
 
 private struct VaccinationRow: View {
     let vaccination: Vaccination
+    let petName: String
+    @State private var certificateURL: PDFShareURL?
 
     private var color: Color {
         switch vaccination.dueStatus() {
@@ -468,8 +463,52 @@ private struct VaccinationRow: View {
                     .font(.brandCaption.weight(.semibold))
                     .foregroundStyle(color)
             }
+            // K4: vaccination certificate PDF, generated on-device.
+            Button {
+                Haptics.tap()
+                certificateURL = PDFShareURL.write(vaccination.certificatePDF(petName: petName), suggestedName: "\(vaccination.vaccineName)-certificate")
+            } label: {
+                Image(systemName: "square.and.arrow.up").foregroundStyle(Theme.primary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Share vaccination certificate")
         }
         .padding(.vertical, 4)
+        .sheet(item: $certificateURL) { item in
+            ShareSheet(activityItems: [item.url])
+        }
+    }
+}
+
+private struct PrescriptionRow: View {
+    let prescription: Prescription
+    let petName: String
+    @State private var documentURL: PDFShareURL?
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(prescription.medicationName) — \(prescription.dosage)").font(.brandBody)
+                if let instructions = prescription.instructions {
+                    Text(instructions).font(.brandCaption).foregroundStyle(.secondary)
+                }
+                Text(prescription.issuedAt.formatted(date: .abbreviated, time: .omitted))
+                    .font(.brandCaption).foregroundStyle(.tertiary)
+            }
+            Spacer()
+            // K2: prescription PDF, generated on-device from this structured record.
+            Button {
+                Haptics.tap()
+                documentURL = PDFShareURL.write(prescription.documentPDF(petName: petName), suggestedName: "\(prescription.medicationName)-prescription")
+            } label: {
+                Image(systemName: "square.and.arrow.up").foregroundStyle(Theme.primary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Share prescription PDF")
+        }
+        .sheet(item: $documentURL) { item in
+            ShareSheet(activityItems: [item.url])
+        }
     }
 }
 

@@ -21,12 +21,14 @@ final class ReferralViewModel {
         }
     }
 
-    func sendInvite(userId: UUID) async {
+    func sendInvite(userId: UUID, referrerPhone: String?) async {
         errorMessage = nil
         isSending = true
         defer { isSending = false }
         do {
-            let referral = try await sendReferralUseCase.execute(userId: userId, phone: invitePhone)
+            // N1: fraud guard — blocks self-referral, re-inviting the same
+            // number, and a daily invite cap.
+            let referral = try await sendReferralUseCase.execute(userId: userId, phone: invitePhone, referrerPhone: referrerPhone, existingReferrals: referrals)
             withAnimation(Theme.springSoft) { referrals.insert(referral, at: 0) }
             invitePhone = ""
             Haptics.success()
@@ -72,7 +74,7 @@ struct ReferralView: View {
                         .keyboardType(.phonePad)
                     Button("Invite") {
                         Haptics.tap()
-                        Task { if let user = session.currentUser { await viewModel.sendInvite(userId: user.id) } }
+                        Task { if let user = session.currentUser { await viewModel.sendInvite(userId: user.id, referrerPhone: user.phone) } }
                     }
                     .disabled(viewModel.invitePhone.isEmpty || viewModel.isSending)
                 }

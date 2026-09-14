@@ -207,6 +207,20 @@ struct Visit: Identifiable, Codable, Equatable, Hashable {
     var completedAt: Date?
     var notes: String?
     var paymentId: UUID?
+    /// K1: structured visit record. `diagnosisNotes`/`proceduresPerformed`/
+    /// `medicationsGiven` are the vet-written record proper; `notes` (above)
+    /// is kept as a legacy free-text fallback for visits recorded before
+    /// this existed. Written by the attending vet / ops side (out of this
+    /// app's scope); the customer app only ever displays them.
+    var diagnosisNotes: String?
+    var proceduresPerformed: [String] = []
+    var medicationsGiven: [String] = []
+
+    /// True once there's anything structured to show, so the UI can fall
+    /// back to the legacy `notes` blob when there isn't.
+    var hasStructuredRecord: Bool {
+        diagnosisNotes?.isEmpty == false || !proceduresPerformed.isEmpty || !medicationsGiven.isEmpty
+    }
 
     /// Appendix B's 8-state machine (up from v1's 5) — the extra states are
     /// what let the timeline (I2) show "assigned", "arrived", and
