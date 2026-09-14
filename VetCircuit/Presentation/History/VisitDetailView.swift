@@ -10,8 +10,11 @@ struct VisitDetailView: View {
     @State private var visitOTP: VisitOTP?
     @State private var showingReportProblem = false
     @State private var showingIncidentReport = false
-    @State private var followUpService: Service?
-    @State private var followUpPet: Pet?
+    /// K5: the same circuit (hence the same vet) as this visit, resolved
+    /// once "Book free follow-up" is tapped — enforced by construction
+    /// rather than left to the customer to re-pick, closing the prior
+    /// "same vet/circuit isn't yet enforced end-to-end" gap.
+    @State private var followUpBooking: FollowUpBooking?
     @State private var showingTip = false
     @State private var hasTipped = false
     // F6: a pending vet-initiated reschedule proposal, if any.
@@ -33,6 +36,7 @@ struct VisitDetailView: View {
     private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
     private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
+    private let circuitRepository = DependencyContainer.shared.circuitRepository
     private let rescheduleProposalRepository = DependencyContainer.shared.rescheduleProposalRepository
     private let respondToRescheduleProposalUseCase = DependencyContainer.shared.respondToRescheduleProposalUseCase()
     private let reportVetNoShowUseCase = DependencyContainer.shared.reportVetNoShowUseCase()
@@ -327,9 +331,13 @@ struct VisitDetailView: View {
         .sheet(isPresented: $showingIncidentReport) {
             IncidentReportView(visitId: visit.id)
         }
-        .sheet(item: $followUpService) { service in
+        .sheet(item: $followUpBooking) { booking in
             NavigationStack {
-                ServiceDetailView(service: service, pet: followUpPet, preselectedVariantId: service.variants.first(where: \.isFollowUp)?.id)
+                // K5: booking directly against the original visit's own
+                // `circuit` (not the catalog's add-to-cart flow) is what
+                // actually guarantees the same vet services the follow-up.
+                BookingView(circuit: booking.circuit, serviceCategory: booking.service.category,
+                            serviceId: booking.service.id, variantId: booking.variantId, preselectedPetId: visit.petId)
             }
         }
         .task {
@@ -369,15 +377,25 @@ struct VisitDetailView: View {
         }
     }
 
-    /// K5: resolves the same pet and the consult service's free follow-up
-    /// variant before presenting booking — the customer never re-selects
-    /// either.
+    /// K5: resolves the same circuit (hence the same vet) as this visit,
+    /// the same pet, and the consult service's free follow-up variant
+    /// before presenting booking — the customer never re-selects any of it.
     private func prepareFollowUp() async {
         guard let services = try? await getCatalogUseCase.execute(vertical: .vet),
-              let service = services.first(where: { $0.variants.contains(where: \.isFollowUp) }) else { return }
-        followUpPet = try? await managePetsUseCase.list(ownerId: visit.userId).first { $0.id == visit.petId }
-        followUpService = service
+              let service = services.first(where: { $0.variants.contains(where: \.isFollowUp) }),
+              let variantId = service.variants.first(where: \.isFollowUp)?.id,
+              let circuit = try? await circuitRepository.circuit(id: visit.circuitId) else { return }
+        followUpBooking = FollowUpBooking(circuit: circuit, service: service, variantId: variantId)
     }
+}
+
+/// K5: bundles the resolved circuit/service/variant for the follow-up
+/// booking sheet — `Identifiable` so it can drive `.sheet(item:)`.
+private struct FollowUpBooking: Identifiable {
+    let id = UUID()
+    let circuit: Circuit
+    let service: Service
+    let variantId: UUID
 }
 
 private struct ActionRow: View {
