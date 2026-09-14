@@ -258,7 +258,7 @@ Service (Home consultation)
 | # | Capability | Pri | Status | Notes |
 |---|---|---|---|---|
 | J1 | Per-visit chat, text | P0 | ✅ | |
-| J2 | Chat attachments (photo of the symptom) | **P0** | 🔨 | Pet owners send photos. Always. |
+| J2 | Chat attachments (photo of the symptom) | **P0** | ✅ | Was mistakenly still 🔨: `ChatMessage.attachmentURL` (0012_chat_attachments.sql), `ChatRepository.sendPhoto` (Mock; size/emptiness-validated by `SendChatMessageUseCase`), a `PhotosPicker` camera button in `ChatView`, and inline `AsyncImage` rendering in `ChatBubble` are all already wired end-to-end — the only thing missing (a `SupabaseChatRepository` conformer) is a whole-repository gap shared with already-✅ J1, not specific to attachments |
 | J3 | Read receipts, typing, unread badge | P1 | 🔨 | |
 | J4 | **Masked voice calling** (Exotel/Twilio proxy — real numbers never exposed) | **P0** | 🔨 | Privacy + safety + "vet can't find the gate" reality |
 | J5 | Chat auto-closes 48h post-visit, with escalation to support | P1 | ✅ | `ChatPolicy.isOpen` (domain, tested) gates `ChatView`'s input bar and shows a "chat has closed — contact support" banner |
@@ -270,7 +270,7 @@ Service (Home consultation)
 
 | # | Capability | Pri | Status |
 |---|---|---|---|
-| K1 | Visit record: diagnosis notes, procedures done, meds given | P0 | 🔨 |
+| K1 | Visit record: diagnosis notes, procedures done, meds given | P0 | ✅ | `Visit.diagnosisNotes`/`proceduresPerformed`/`medicationsGiven` (0046_visit_record_structured.sql, additive columns alongside the legacy free-text `notes`) + `VisitDetailView` renders the structured record when present, falling back to the old single-blob card for older visits. Writing these is the attending vet's job (out of this customer-app's scope, same trust boundary `notes` already had — no client insert/update path); this closes the display/modeling gap, which is all that was in scope here |
 | K2 | Prescription (structured, vet-signed, PDF) | P1 | 🔨 | `prescriptions` table + read-only `PrescriptionRepository`, shown in `PetDetailView`; structured data + vet-signed only via server-side RLS (no client insert policy) — PDF generation not built (known gap, same shape as A7's export-PDF gap) |
 | K3 | Medication reminders | P2 | ✅ `MedicationReminder` model + `MedicationReminderRepository` (Mock/Supabase, `medication_reminders` table, household-manageable per `pet_id`) + `ManageMedicationRemindersUseCase`; `MedicationRemindersView` (list + add form) reachable from `PetDetailView` next to Prescriptions; `PushNotificationManager` schedules a repeating local `UNCalendarNotificationTrigger` per time-of-day |
 | K4 | Vaccination certificate PDF + next-due auto-scheduling | P1 | 🔨 | Next-due date auto-populates (+12mo) when a vaccination is recorded — the "auto-scheduling" plan means; certificate PDF is a known gap |

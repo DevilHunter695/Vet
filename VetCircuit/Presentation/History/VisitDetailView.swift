@@ -148,7 +148,38 @@ struct VisitDetailView: View {
                     .appearAnimation(delay: 0.03)
                 }
 
-                if let notes = visit.notes, !notes.isEmpty {
+                // K1: structured visit record — diagnosis, procedures, meds —
+                // falls back to the legacy free-text `notes` blob for visits
+                // recorded before these columns existed.
+                if visit.hasStructuredRecord {
+                    Card {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("Visit record", systemImage: "note.text")
+                                .font(.brandHeadline)
+                                .foregroundStyle(Theme.primary)
+                            if let diagnosis = visit.diagnosisNotes, !diagnosis.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Diagnosis").font(.brandCaption).foregroundStyle(.secondary)
+                                    Text(diagnosis).font(.brandBody)
+                                }
+                            }
+                            if !visit.proceduresPerformed.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Procedures performed").font(.brandCaption).foregroundStyle(.secondary)
+                                    ForEach(visit.proceduresPerformed, id: \.self) { Text("• \($0)").font(.brandBody) }
+                                }
+                            }
+                            if !visit.medicationsGiven.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Medications given").font(.brandCaption).foregroundStyle(.secondary)
+                                    ForEach(visit.medicationsGiven, id: \.self) { Text("• \($0)").font(.brandBody) }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .appearAnimation(delay: 0.08)
+                } else if let notes = visit.notes, !notes.isEmpty {
                     Card {
                         VStack(alignment: .leading, spacing: 8) {
                             Label("Vet notes", systemImage: "note.text")
