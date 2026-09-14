@@ -164,7 +164,8 @@ actor MockQuoteRepository: QuoteRepository {
                 // H6: a credit pays for one visit — applied to the first
                 // line item only, never every line in a multi-item cart.
                 entitlementCreditApplied: applyEntitlementCredit && index == 0,
-                vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits
+                vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits,
+                quantity: item.quantity
             )
             preSubtotal += PricingEngine.quote(input).totalMinorUnits
         }
@@ -200,7 +201,8 @@ actor MockQuoteRepository: QuoteRepository {
                 couponDiscountMinorUnits: isFirst ? couponDiscount : 0,
                 walletBalanceMinorUnits: isFirst ? walletBalance : 0,
                 entitlementCreditApplied: applyEntitlementCredit && isFirst,
-                vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits
+                vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits,
+                quantity: item.quantity
             )
             let breakdown = PricingEngine.quote(input)
             lineItems.append(contentsOf: breakdown.lineItems)
@@ -246,6 +248,18 @@ actor MockWalletRepository: WalletRepository {
 
     func entries(userId: UUID) async throws -> [WalletLedgerEntry] {
         seededEntries(userId: userId).sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// E5: not part of `WalletRepository` — called directly (concrete type,
+    /// not the protocol) only by `MockLoyaltyRepository.redeemPoints`, so a
+    /// local-dev redemption actually moves the mock wallet balance too,
+    /// mirroring what the real `redeem_loyalty_points` Postgres function
+    /// does atomically server-side.
+    func creditFromLoyaltyRedemption(userId: UUID, amountMinorUnits: Int) {
+        var entries = seededEntries(userId: userId)
+        entries.append(WalletLedgerEntry(id: UUID(), userId: userId, amountMinorUnits: amountMinorUnits,
+                                          reason: "Loyalty points redeemed", relatedVisitId: nil, relatedRefundId: nil, createdAt: .now))
+        entriesByUser[userId] = entries
     }
 }
 
@@ -348,6 +362,12 @@ actor MockAddressRepository: AddressRepository {
         return servedClusters.first {
             abs($0.lat - latitude) < thresholdDegrees && abs($0.lng - longitude) < thresholdDegrees
         }?.area
+    }
+
+    /// C7: same list `matchCluster` checks against, ~3km (the mock's
+    /// `thresholdDegrees`) converted to a radius for the map to draw.
+    func listServedClusters() async throws -> [ServedCluster] {
+        servedClusters.map { ServedCluster(area: $0.area, latitude: $0.lat, longitude: $0.lng, radiusKm: 3) }
     }
 }
 
@@ -525,8 +545,8 @@ actor MockSubscriptionRepository: SubscriptionRepository {
 }
 
 actor MockPaymentRepository: PaymentRepository {
-    func createCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL {
-        URL(string: "https://checkout.example.com/visit/\(visitId)")!
+    func createCheckout(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> URL {
+        URL(string: "https://checkout.example.com/visit/\(visitId)?quote=\(quoteId)&amount=\(amountMinorUnits)")!
     }
 
     func createCheckout(forSubscription plan: Subscription.PlanType) async throws -> URL {
@@ -699,6 +719,12 @@ actor MockPetRepository: PetRepository {
 
     func deletePet(id: UUID) async throws {
         pets.removeAll { $0.id == id }
+    }
+
+    func updatePhoto(petId: UUID, data: Data) async throws -> Pet {
+        guard let index = pets.firstIndex(where: { $0.id == petId }) else { throw DomainError.notFound("Pet") }
+        pets[index].photoURL = URL(string: "https://mock.local/pet-photos/\(petId)/\(UUID().uuidString).jpg")
+        return pets[index]
     }
 }
 
@@ -921,6 +947,13 @@ actor MockCallRepository: CallRepository {
 
 actor MockLoyaltyRepository: LoyaltyRepository {
     private var accounts: [UUID: LoyaltyAccount] = [:]
+    // E5: concrete type, not the protocol — see `creditFromLoyaltyRedemption`'s
+    // doc comment for why redemption needs the extra non-protocol method.
+    private let walletRepository: MockWalletRepository?
+
+    init(walletRepository: MockWalletRepository? = nil) {
+        self.walletRepository = walletRepository
+    }
 
     func account(userId: UUID) async throws -> LoyaltyAccount {
         accounts[userId] ?? LoyaltyAccount(userId: userId, points: 0, tier: .bronze)
@@ -931,6 +964,18 @@ actor MockLoyaltyRepository: LoyaltyRepository {
         current.points += points
         current.tier = .forPoints(current.points)
         accounts[userId] = current
+        return current
+    }
+
+    func redeemPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount {
+        var current = try await account(userId: userId)
+        guard LoyaltyRedemptionPolicy.validate(points: points, availablePoints: current.points) == nil else {
+            throw DomainError.validation("Not enough points to redeem.")
+        }
+        current.points -= points
+        current.tier = .forPoints(current.points)
+        accounts[userId] = current
+        await walletRepository?.creditFromLoyaltyRedemption(userId: userId, amountMinorUnits: LoyaltyRedemptionPolicy.minorUnits(forPoints: points))
         return current
     }
 }

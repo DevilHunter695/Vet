@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import PhotosUI
 
 /// B2: the pet health-record screen the app lacked entirely — everything
 /// before this lived as a name+species row in `ProfileView`. B3/B4/K2 (weight
@@ -47,14 +48,25 @@ final class PetDetailViewModel {
         }
     }
 
-    func addWeight(_ weightKg: Double) async {
+    func addWeight(_ weightKg: Double, temperatureCelsius: Double? = nil, heartRateBpm: Int? = nil) async {
         do {
-            let entry = try await managePetWeightsUseCase.addEntry(petId: pet.id, weightKg: weightKg)
+            let entry = try await managePetWeightsUseCase.addEntry(petId: pet.id, weightKg: weightKg,
+                                                                     temperatureCelsius: temperatureCelsius, heartRateBpm: heartRateBpm)
             withAnimation(Theme.springSoft) { weightHistory.append(entry) }
             pet.weightKg = weightKg
             Haptics.success()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// B2: uploads a newly-picked photo and swaps it into `pet.photoURL`.
+    func updatePhoto(data: Data) async {
+        do {
+            pet = try await managePetsUseCase.updatePhoto(petId: pet.id, data: data)
+            Haptics.success()
+        } catch {
+            errorMessage = "Couldn't upload that photo."
         }
     }
 
@@ -108,7 +120,10 @@ struct PetDetailView: View {
     @State private var viewModel: PetDetailViewModel
     @State private var showingAddWeight = false
     @State private var newWeightText = ""
+    @State private var newTemperatureText = ""
+    @State private var newHeartRateText = ""
     @State private var showingArchiveConfirm = false
+    @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var pendingArchiveReason: Pet.ArchiveReason = .other
     @State private var bookVaccinationService: Service?
     @State private var shareFileURL: URL?
@@ -217,6 +232,33 @@ struct PetDetailView: View {
                 Label("Pet details", systemImage: "pawprint.fill")
                     .font(.brandHeadline).foregroundStyle(Theme.primary)
 
+                // B2: photo upload — PhotosPicker → JPEG data → ManagePetsUseCase.updatePhoto.
+                HStack {
+                    if let photoURL = viewModel.pet.photoURL {
+                        AsyncImage(url: photoURL) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Circle().fill(Color(.tertiarySystemFill))
+                        }
+                        .frame(width: 64, height: 64)
+                        .clipShape(Circle())
+                    } else {
+                        Circle().fill(Color(.tertiarySystemFill))
+                            .frame(width: 64, height: 64)
+                            .overlay(Image(systemName: "pawprint.fill").foregroundStyle(.secondary))
+                    }
+                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        Text(viewModel.pet.photoURL == nil ? "Add photo" : "Change photo")
+                            .font(.brandCaption)
+                    }
+                }
+                .onChange(of: selectedPhotoItem) { _, newItem in
+                    Task {
+                        guard let newItem, let data = try? await newItem.loadTransferable(type: Data.self) else { return }
+                        await viewModel.updatePhoto(data: data)
+                    }
+                }
+
                 LabeledContent("Species", value: viewModel.pet.species.rawValue.capitalized)
                 if let breed = viewModel.pet.breed, !breed.isEmpty {
                     LabeledContent("Breed", value: breed)
@@ -288,6 +330,18 @@ struct PetDetailView: View {
                     if let latest = viewModel.weightHistory.last {
                         Text("Latest: \(latest.weightKg, specifier: "%.1f") kg on \(latest.recordedAt.formatted(date: .abbreviated, time: .omitted))")
                             .font(.brandCaption).foregroundStyle(.secondary)
+                        // B3: vitals beyond weight — shown only when present.
+                        if latest.temperatureCelsius != nil || latest.heartRateBpm != nil {
+                            HStack(spacing: 12) {
+                                if let temp = latest.temperatureCelsius {
+                                    Label("\(temp, specifier: "%.1f")°C", systemImage: "thermometer.medium")
+                                }
+                                if let hr = latest.heartRateBpm {
+                                    Label("\(hr) bpm", systemImage: "heart.fill")
+                                }
+                            }
+                            .font(.brandCaption).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -300,15 +354,25 @@ struct PetDetailView: View {
             Form {
                 TextField("Weight in kg", text: $newWeightText)
                     .keyboardType(.decimalPad)
+                // B3: vitals beyond weight — optional, so a plain owner
+                // logging weight at home never has to fill these in.
+                TextField("Temperature in °C (optional)", text: $newTemperatureText)
+                    .keyboardType(.decimalPad)
+                TextField("Heart rate in bpm (optional)", text: $newHeartRateText)
+                    .keyboardType(.numberPad)
             }
             .navigationTitle("Add weight")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         if let value = Double(newWeightText) {
+                            let temperature = Double(newTemperatureText)
+                            let heartRate = Int(newHeartRateText)
                             Task {
-                                await viewModel.addWeight(value)
+                                await viewModel.addWeight(value, temperatureCelsius: temperature, heartRateBpm: heartRate)
                                 newWeightText = ""
+                                newTemperatureText = ""
+                                newHeartRateText = ""
                                 showingAddWeight = false
                             }
                         }

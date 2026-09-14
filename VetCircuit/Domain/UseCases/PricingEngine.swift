@@ -27,29 +27,36 @@ enum PricingEngine {
         /// vet+service/variant — takes precedence over the catalog default.
         /// Ignored when `entitlementCreditApplied` zeroes the base instead.
         var vetOverridePriceMinorUnits: Int? = nil
+        /// E1: repeat this line N times ("2 grooming sessions") — multiplies
+        /// the base/multi-pet/add-on cost, same as booking the line N times
+        /// separately would. Travel fee stays flat (one trip either way);
+        /// an entitlement credit is never multiplied (it pays for one visit).
+        var quantity: Int = 1
     }
 
     static func quote(_ input: Input) -> PriceBreakdown {
         var lineItems: [PriceLineItem] = []
+        let quantity = max(1, input.quantity)
+        let qtySuffix = quantity > 1 ? " ×\(quantity)" : ""
 
-        let base = input.entitlementCreditApplied
-            ? 0
-            : (input.vetOverridePriceMinorUnits ?? input.variant.priceMinorUnits)
-
+        // NB: `base` must be visible below (subtotalBeforePeak) regardless of
+        // which branch runs, so it's computed once at this scope rather than
+        // declared inside the `else` — a credit zeroes it, never multiplied.
+        let base = input.entitlementCreditApplied ? 0 : (input.vetOverridePriceMinorUnits ?? input.variant.priceMinorUnits) * quantity
         if input.entitlementCreditApplied {
             lineItems.append(PriceLineItem(label: "\(input.variant.name) (subscription credit)", amountMinorUnits: 0))
         } else {
-            lineItems.append(PriceLineItem(label: input.variant.name, amountMinorUnits: base))
+            lineItems.append(PriceLineItem(label: "\(input.variant.name)\(qtySuffix)", amountMinorUnits: base))
         }
 
-        let multiPet = input.additionalPetCount * input.variant.additionalPetPriceMinorUnits
+        let multiPet = input.additionalPetCount * input.variant.additionalPetPriceMinorUnits * quantity
         if multiPet > 0 {
-            lineItems.append(PriceLineItem(label: "Additional pet(s) ×\(input.additionalPetCount)", amountMinorUnits: multiPet))
+            lineItems.append(PriceLineItem(label: "Additional pet(s) ×\(input.additionalPetCount)\(qtySuffix)", amountMinorUnits: multiPet))
         }
 
-        let addonsTotal = input.addons.reduce(0) { $0 + $1.priceMinorUnits }
+        let addonsTotal = input.addons.reduce(0) { $0 + $1.priceMinorUnits } * quantity
         for addon in input.addons {
-            lineItems.append(PriceLineItem(label: addon.name, amountMinorUnits: addon.priceMinorUnits))
+            lineItems.append(PriceLineItem(label: "\(addon.name)\(qtySuffix)", amountMinorUnits: addon.priceMinorUnits * quantity))
         }
 
         if input.travelFeeMinorUnits > 0 {

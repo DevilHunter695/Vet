@@ -17,27 +17,64 @@ final class CircuitsListViewModel {
     /// filter sheet and sort menu both read/write the same source of truth.
     var filter = CircuitFilter()
     var sort: CircuitSortOption = .soonest
+    // C1: address-first discovery — replaces v1's free-text "area". The
+    // circuits list is scoped to whichever address is selected, not the
+    // whole city; an unserved address yields zero circuits (the empty state
+    // routes to Addresses/waitlist, C10) instead of silently showing
+    // everything.
+    var addresses: [Address] = []
+    var selectedAddress: Address?
 
     private let getCircuitsUseCase = DependencyContainer.shared.getCircuitsUseCase()
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
     private let getVisitHistoryUseCase = DependencyContainer.shared.getVisitHistoryUseCase()
     private let searchUseCase = DependencyContainer.shared.searchUseCase()
     private let rebookLastVisitUseCase = DependencyContainer.shared.rebookLastVisitUseCase()
+    private let manageAddressesUseCase = DependencyContainer.shared.manageAddressesUseCase()
 
     var isSearching: Bool { !searchArea.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// C1: loads the user's addresses (if not already loaded) and picks a
+    /// default: the address flagged `isDefault`, else the first one — so a
+    /// fresh launch already scopes discovery to somewhere real rather than
+    /// showing every circuit in every cluster.
+    private func loadAddressesIfNeeded(userId: UUID?) async {
+        guard let userId, addresses.isEmpty else { return }
+        await refreshAddresses(userId: userId)
+    }
+
+    /// Re-fetches addresses (e.g. after the "Manage addresses" sheet is
+    /// dismissed, where one may have just been added or its cluster
+    /// re-matched) and re-picks a default if the previous selection vanished.
+    func refreshAddresses(userId: UUID?) async {
+        guard let userId else { return }
+        addresses = (try? await manageAddressesUseCase.list(ownerId: userId)) ?? []
+        if let selectedAddress, addresses.contains(where: { $0.id == selectedAddress.id }) { return }
+        selectedAddress = addresses.first { $0.isDefault } ?? addresses.first
+    }
+
+    func selectAddress(_ address: Address) {
+        selectedAddress = address
+    }
 
     func load(vertical: Vertical, userId: UUID?) async {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
+        await loadAddressesIfNeeded(userId: userId)
         do {
             let catalog = (try? await getCatalogUseCase.execute(vertical: vertical)) ?? []
             var previouslyBooked: Set<UUID> = []
             if let userId, let history = try? await getVisitHistoryUseCase.execute(userId: userId) {
                 previouslyBooked = Set(history.map(\.vetId))
             }
+            // No address on file yet (e.g. brand-new account) falls back to
+            // area: nil so discovery isn't a dead end before onboarding adds
+            // one; an address that exists but isn't served (`clusterArea ==
+            // nil`) deliberately scopes to a cluster no circuit will match.
+            let area = selectedAddress?.clusterArea ?? (addresses.isEmpty ? nil : "__unserved__")
             circuits = try await getCircuitsUseCase.execute(
-                area: nil, vertical: vertical,
+                area: area, vertical: vertical,
                 filter: filter, sort: sort, catalog: catalog, previouslyBookedVetIds: previouslyBooked
             )
             recentCircuits = RecentlyViewedStore.shared.recentCircuits(from: circuits)
@@ -70,6 +107,7 @@ struct CircuitsListView: View {
     @Environment(PendingDeepLinkStore.self) private var pendingDeepLink
     @State private var viewModel = CircuitsListViewModel()
     @State private var showingFilters = false
+    @State private var showingAddresses = false
     @State private var rebookDestination: Circuit?
     @AppStorage("vc.selected_vertical") private var selectedVerticalRaw: String = Vertical.vet.rawValue
 
@@ -99,11 +137,17 @@ struct CircuitsListView: View {
                 } else if viewModel.isSearching {
                     searchResultsList
                 } else if viewModel.circuits.isEmpty {
+                    // C1/C10: an unserved (or unselected) address is a
+                    // "come back once we launch here" moment, not a dead end
+                    // — route to Addresses, where each unserved address
+                    // already offers a waitlist join (AddressListView).
                     EmptyStateView(
                         systemImage: "map", title: "No circuits available in your area yet",
-                        message: "We're expanding fast. Join the waitlist and we'll notify you the moment a vet starts a circuit nearby.",
-                        actionTitle: "Join waitlist"
-                    ) { }
+                        message: viewModel.addresses.isEmpty
+                            ? "Add an address to see the circuits serving it."
+                            : "We're expanding fast. Join the waitlist on your address and we'll notify you the moment a vet starts a circuit nearby.",
+                        actionTitle: viewModel.addresses.isEmpty ? "Add an address" : "View addresses"
+                    ) { showingAddresses = true }
                 } else {
                     ScrollView {
                         VStack(spacing: 14) {
@@ -164,11 +208,39 @@ struct CircuitsListView: View {
             .animation(Theme.crossFade, value: viewModel.circuits.map(\.id))
             .navigationTitle(selectedVertical.displayName)
             .toolbar {
+                // C1: address-first discovery — the picker is the primary way
+                // to change what "your area" means, not a hidden setting.
+                ToolbarItem(placement: .principal) {
+                    Menu {
+                        ForEach(viewModel.addresses) { address in
+                            Button {
+                                viewModel.selectAddress(address)
+                                reload()
+                            } label: {
+                                Label(address.label, systemImage: viewModel.selectedAddress?.id == address.id ? "checkmark" : "")
+                            }
+                        }
+                        Divider()
+                        Button("Manage addresses") { showingAddresses = true }
+                    } label: {
+                        Label(viewModel.selectedAddress?.label ?? "Choose an address", systemImage: "mappin.and.ellipse")
+                            .font(.brandCaption)
+                    }
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     NavigationLink {
                         ServiceCatalogView(vertical: selectedVertical, pet: MockData.user.pets.first)
                     } label: {
                         Label("Services", systemImage: "list.bullet.rectangle")
+                    }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    // C7: map view of cluster coverage.
+                    NavigationLink {
+                        CoverageMapView()
+                    } label: {
+                        Label("Coverage map", systemImage: "map")
+                            .labelStyle(.iconOnly)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -228,6 +300,14 @@ struct CircuitsListView: View {
             .onChange(of: viewModel.sort) { reload() }
             .sheet(isPresented: $showingFilters) {
                 CircuitFilterSheet(filter: $viewModel.filter) { reload() }
+            }
+            .sheet(isPresented: $showingAddresses, onDismiss: {
+                Task {
+                    await viewModel.refreshAddresses(userId: session.currentUser?.id)
+                    reload()
+                }
+            }) {
+                NavigationStack { AddressListView() }
             }
             // N7: `vetcircuit://book/<circuitId>` — resolved against the
             // already-loaded circuit list, since this tab is the only one

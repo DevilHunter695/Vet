@@ -103,3 +103,40 @@ struct GeneratePetHealthSummaryUseCaseTests {
         #expect(data.prefix(4) == Data("%PDF".utf8))
     }
 }
+
+// B3: weight & vitals (temperature/heart rate beyond just weight).
+
+@Suite("ManagePetWeightsUseCase vitals")
+struct ManagePetWeightsUseCaseVitalsTests {
+    @Test("accepts a weight-only entry with no vitals")
+    func acceptsWeightOnly() async throws {
+        let useCase = ManagePetWeightsUseCase(repository: MockPetWeightRepository())
+        let entry = try await useCase.addEntry(petId: UUID(), weightKg: 12.5)
+        #expect(entry.temperatureCelsius == nil)
+        #expect(entry.heartRateBpm == nil)
+    }
+
+    @Test("records temperature and heart rate when supplied")
+    func recordsVitals() async throws {
+        let useCase = ManagePetWeightsUseCase(repository: MockPetWeightRepository())
+        let entry = try await useCase.addEntry(petId: UUID(), weightKg: 12.5, temperatureCelsius: 38.5, heartRateBpm: 90)
+        #expect(entry.temperatureCelsius == 38.5)
+        #expect(entry.heartRateBpm == 90)
+    }
+
+    @Test("rejects an implausible temperature")
+    func rejectsImplausibleTemperature() async {
+        let useCase = ManagePetWeightsUseCase(repository: MockPetWeightRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.addEntry(petId: UUID(), weightKg: 12.5, temperatureCelsius: 60)
+        }
+    }
+
+    @Test("rejects an implausible heart rate")
+    func rejectsImplausibleHeartRate() async {
+        let useCase = ManagePetWeightsUseCase(repository: MockPetWeightRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.addEntry(petId: UUID(), weightKg: 12.5, heartRateBpm: 1000)
+        }
+    }
+}

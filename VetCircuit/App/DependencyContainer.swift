@@ -89,12 +89,16 @@ final class DependencyContainer {
         self.callRepository = MockCallRepository()
         self.referralRepository = MockReferralRepository()
         self.triageRepository = MockTriageRepository()
-        self.loyaltyRepository = MockLoyaltyRepository()
         self.catalogRepository = MockCatalogRepository()
         self.addressRepository = MockAddressRepository()
         self.slotHoldRepository = MockSlotHoldRepository()
         self.cartRepository = MockCartRepository()
-        self.walletRepository = MockWalletRepository()
+        let mockWalletRepository = MockWalletRepository()
+        self.walletRepository = mockWalletRepository
+        // E5: concrete `MockWalletRepository` reference so a mock point
+        // redemption can actually credit the mock wallet too — see
+        // `MockWalletRepository.creditFromLoyaltyRedemption`'s doc comment.
+        self.loyaltyRepository = MockLoyaltyRepository(walletRepository: mockWalletRepository)
         self.couponRepository = MockCouponRepository()
         self.quoteRepository = MockQuoteRepository(couponRepository: couponRepository, walletRepository: walletRepository)
         self.refundRepository = MockRefundRepository()
@@ -160,8 +164,12 @@ final class DependencyContainer {
     func sendReferralUseCase() -> SendReferralUseCase { SendReferralUseCase(referralRepository: referralRepository) }
     func runTriageUseCase() -> RunTriageUseCase { RunTriageUseCase(triageRepository: triageRepository) }
     func getLoyaltyAccountUseCase() -> GetLoyaltyAccountUseCase { GetLoyaltyAccountUseCase(loyaltyRepository: loyaltyRepository) }
+    /// E5: loyalty point redemption at checkout.
+    func redeemLoyaltyPointsUseCase() -> RedeemLoyaltyPointsUseCase { RedeemLoyaltyPointsUseCase(loyaltyRepository: loyaltyRepository) }
     func getCatalogUseCase() -> GetCatalogUseCase { GetCatalogUseCase(catalogRepository: catalogRepository) }
     func manageAddressesUseCase() -> ManageAddressesUseCase { ManageAddressesUseCase(addressRepository: addressRepository) }
+    /// C7: served-cluster coverage for the map view.
+    func getServedClustersUseCase() -> GetServedClustersUseCase { GetServedClustersUseCase(addressRepository: addressRepository) }
     func holdSlotUseCase() -> HoldSlotUseCase { HoldSlotUseCase(circuitRepository: circuitRepository, slotHoldRepository: slotHoldRepository) }
     func manageCartUseCase() -> ManageCartUseCase { ManageCartUseCase(cartRepository: cartRepository) }
     func getQuoteUseCase() -> GetQuoteUseCase {

@@ -106,13 +106,15 @@ final class SupabaseCartRepository: CartRepository {
                 let variantId: UUID
                 let petIds: [UUID]
                 let addonIds: [UUID]
+                let quantity: Int
                 enum CodingKeys: String, CodingKey {
                     case cartId = "cart_id", serviceId = "service_id", variantId = "variant_id"
-                    case petIds = "pet_ids", addonIds = "addon_ids"
+                    case petIds = "pet_ids", addonIds = "addon_ids", quantity
                 }
             }
             let inserts = cart.items.map {
-                ItemInsert(cartId: cart.id, serviceId: $0.serviceId, variantId: $0.variantId, petIds: $0.petIds, addonIds: $0.addonIds)
+                ItemInsert(cartId: cart.id, serviceId: $0.serviceId, variantId: $0.variantId, petIds: $0.petIds,
+                           addonIds: $0.addonIds, quantity: $0.quantity)
             }
             try await client.from("cart_items").insert(inserts).execute()
         }
@@ -209,6 +211,48 @@ final class SupabaseWalletRepository: WalletRepository {
         let rows: [Row] = try await client.from("wallet_ledger").select()
             .eq("user_id", value: userId).order("created_at", ascending: false).execute().value
         return rows.map { $0.toDomain() }
+    }
+}
+
+/// Note: not yet wired into `DependencyContainer` (loyalty stays Mock-only
+/// there today, unlike most other repositories) — added so the Supabase
+/// side of E5's point redemption exists in code, matching this codebase's
+/// convention of shipping both conformers even before the container branches
+/// on `RemoteAppConfig.isBackendConfigured`.
+final class SupabaseLoyaltyRepository: LoyaltyRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    private struct Row: Decodable {
+        let userId: UUID
+        let points: Int
+        let tier: String
+        enum CodingKeys: String, CodingKey { case userId = "user_id", points, tier }
+        func toDomain() -> LoyaltyAccount { LoyaltyAccount(userId: userId, points: points, tier: LoyaltyAccount.Tier(rawValue: tier) ?? .bronze) }
+    }
+
+    func account(userId: UUID) async throws -> LoyaltyAccount {
+        let rows: [Row] = try await client.from("loyalty_accounts").select().eq("user_id", value: userId).execute().value
+        return rows.first?.toDomain() ?? LoyaltyAccount(userId: userId, points: 0, tier: .bronze)
+    }
+
+    /// Server/trigger-owned column per 0001_init.sql's RLS comment ("points
+    /// are only ever awarded server-side... never directly writable by the
+    /// client") — this exists to satisfy the protocol; a real client build
+    /// should never actually call it, only a completed-visit trigger should.
+    func awardPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount {
+        throw DomainError.validation("Points are awarded server-side only.")
+    }
+
+    /// E5: single RPC does both mutations atomically (deduct points, credit
+    /// wallet_ledger) — see 0050_redeem_loyalty_points.sql. Never two
+    /// separate client writes, which could partially fail.
+    func redeemPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount {
+        let rows: [Row] = try await client.rpc("redeem_loyalty_points", params: [
+            "p_user_id": userId.uuidString, "p_points": String(points),
+        ]).execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
     }
 }
 
@@ -327,6 +371,15 @@ final class SupabaseAddressRepository: AddressRepository {
         let result: String? = try await client.rpc("match_cluster", params: ["p_lat": latitude, "p_lng": longitude]).execute().value
         return result
     }
+
+    /// C7: backs a map view of cluster coverage — reads the same
+    /// `circuit_cluster_centers` table `match_cluster()` already uses
+    /// server-side (0004_addresses.sql), via a public-read view that adds
+    /// the radius the geofence function hardcodes (0048_served_clusters_view.sql).
+    func listServedClusters() async throws -> [ServedCluster] {
+        let rows: [SupabaseServedClusterRow] = try await client.from("served_clusters").select().execute().value
+        return rows.map { $0.toDomain() }
+    }
 }
 
 final class SupabasePetRepository: PetRepository {
@@ -357,6 +410,24 @@ final class SupabasePetRepository: PetRepository {
     func deletePet(id: UUID) async throws {
         try await client.from("pets").delete().eq("id", value: id).execute()
     }
+
+    // B2: same shape/discipline as `SupabasePetDocumentRepository.upload` —
+    // TODO(Storage SDK): actually push `data` to the `documents` bucket at
+    // this path (`client.storage.from("documents").upload(path, data: data)`)
+    // before writing `photo_url`; today only the reference column is real.
+    func updatePhoto(petId: UUID, data: Data) async throws -> Pet {
+        let path = "pet-photos/\(petId)/\(UUID().uuidString).jpg"
+        let update = SupabasePetPhotoUpdate(photoUrl: path)
+        let rows: [SupabasePetRow] = try await client
+            .from("pets").update(update).eq("id", value: petId).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Pet") }
+        return row.toDomain()
+    }
+}
+
+private struct SupabasePetPhotoUpdate: Encodable {
+    let photoUrl: String
+    enum CodingKeys: String, CodingKey { case photoUrl = "photo_url" }
 }
 
 /// B3: weight/vitals history.
@@ -924,16 +995,18 @@ private struct SupabasePetRow: Decodable {
     let chronicConditions: String?
     let archivedAt: Date?
     let archiveReason: String?
+    let photoUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, species, breed, dob, sex, allergies
         case ownerId = "owner_id", isNeutered = "is_neutered", weightKg = "weight_kg"
         case microchipNumber = "microchip_number", chronicConditions = "chronic_conditions"
-        case archivedAt = "archived_at", archiveReason = "archive_reason"
+        case archivedAt = "archived_at", archiveReason = "archive_reason", photoUrl = "photo_url"
     }
 
     func toDomain() -> Pet {
         Pet(id: id, ownerId: ownerId, name: name, species: Pet.Species(rawValue: species) ?? .other, breed: breed, dateOfBirth: dob,
+            photoURL: photoUrl.flatMap(URL.init(string:)),
             sex: sex.flatMap(Pet.Sex.init(rawValue:)), isNeutered: isNeutered, weightKg: weightKg,
             microchipNumber: microchipNumber, allergies: allergies, chronicConditions: chronicConditions,
             archivedAt: archivedAt, archiveReason: archiveReason.flatMap(Pet.ArchiveReason.init(rawValue:)))
@@ -954,12 +1027,13 @@ private struct SupabasePetInsert: Encodable {
     let chronicConditions: String?
     let archivedAt: Date?
     let archiveReason: String?
+    let photoUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case name, species, breed, dob, sex, allergies
         case ownerId = "owner_id", isNeutered = "is_neutered", weightKg = "weight_kg"
         case microchipNumber = "microchip_number", chronicConditions = "chronic_conditions"
-        case archivedAt = "archived_at", archiveReason = "archive_reason"
+        case archivedAt = "archived_at", archiveReason = "archive_reason", photoUrl = "photo_url"
     }
 
     init(pet: Pet) {
@@ -976,6 +1050,7 @@ private struct SupabasePetInsert: Encodable {
         chronicConditions = pet.chronicConditions
         archivedAt = pet.archivedAt
         archiveReason = pet.archiveReason?.rawValue
+        photoUrl = pet.photoURL?.absoluteString
     }
 }
 
@@ -984,23 +1059,38 @@ private struct SupabasePetWeightRow: Decodable {
     let petId: UUID
     let weightKg: Double
     let recordedAt: Date
+    let temperatureCelsius: Double?
+    let heartRateBpm: Int?
 
-    enum CodingKeys: String, CodingKey { case id, petId = "pet_id", weightKg = "weight_kg", recordedAt = "recorded_at" }
+    enum CodingKeys: String, CodingKey {
+        case id, petId = "pet_id", weightKg = "weight_kg", recordedAt = "recorded_at"
+        case temperatureCelsius = "temperature_celsius", heartRateBpm = "heart_rate_bpm"
+    }
 
-    func toDomain() -> PetWeightEntry { PetWeightEntry(id: id, petId: petId, weightKg: weightKg, recordedAt: recordedAt) }
+    func toDomain() -> PetWeightEntry {
+        PetWeightEntry(id: id, petId: petId, weightKg: weightKg, recordedAt: recordedAt,
+                        temperatureCelsius: temperatureCelsius, heartRateBpm: heartRateBpm)
+    }
 }
 
 private struct SupabasePetWeightInsert: Encodable {
     let petId: UUID
     let weightKg: Double
     let recordedAt: Date
+    let temperatureCelsius: Double?
+    let heartRateBpm: Int?
 
-    enum CodingKeys: String, CodingKey { case petId = "pet_id", weightKg = "weight_kg", recordedAt = "recorded_at" }
+    enum CodingKeys: String, CodingKey {
+        case petId = "pet_id", weightKg = "weight_kg", recordedAt = "recorded_at"
+        case temperatureCelsius = "temperature_celsius", heartRateBpm = "heart_rate_bpm"
+    }
 
     init(entry: PetWeightEntry) {
         petId = entry.petId
         weightKg = entry.weightKg
         recordedAt = entry.recordedAt
+        temperatureCelsius = entry.temperatureCelsius
+        heartRateBpm = entry.heartRateBpm
     }
 }
 
@@ -1470,12 +1560,15 @@ private struct SupabaseCartItemRow: Decodable {
     let variantId: UUID
     let petIds: [UUID]
     let addonIds: [UUID]
+    let quantity: Int?
 
     enum CodingKeys: String, CodingKey {
-        case id, serviceId = "service_id", variantId = "variant_id", petIds = "pet_ids", addonIds = "addon_ids"
+        case id, serviceId = "service_id", variantId = "variant_id", petIds = "pet_ids", addonIds = "addon_ids", quantity
     }
 
-    func toDomain() -> CartItem { CartItem(id: id, serviceId: serviceId, variantId: variantId, petIds: petIds, addonIds: addonIds) }
+    func toDomain() -> CartItem {
+        CartItem(id: id, serviceId: serviceId, variantId: variantId, petIds: petIds, addonIds: addonIds, quantity: quantity ?? 1)
+    }
 }
 
 private struct SupabaseSlotHoldRow: Decodable {
@@ -1512,6 +1605,17 @@ private struct SupabaseAddressRow: Decodable {
                 accessNotes: accessNotes, latitude: latitude, longitude: longitude,
                 clusterArea: clusterArea, isDefault: isDefault)
     }
+}
+
+private struct SupabaseServedClusterRow: Decodable {
+    let area: String
+    let latitude: Double
+    let longitude: Double
+    let radiusKm: Double
+
+    enum CodingKeys: String, CodingKey { case area, latitude, longitude, radiusKm = "radius_km" }
+
+    func toDomain() -> ServedCluster { ServedCluster(area: area, latitude: latitude, longitude: longitude, radiusKm: radiusKm) }
 }
 
 private struct SupabaseAddressInsert: Encodable {

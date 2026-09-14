@@ -26,6 +26,10 @@ struct Pet: Identifiable, Codable, Equatable, Hashable {
     var species: Species
     var breed: String?
     var dateOfBirth: Date?
+    // B2: a signed URL into the same private `documents` bucket B6 already
+    // uses (path `pet-photos/<petId>/<uuid>.jpg`) — set by `updatePhoto`,
+    // never edited as a plain text field.
+    var photoURL: URL? = nil
     // B2: the fields a real pet health record needs beyond "what is it" —
     // sex/neuter status feed vaccination eligibility, weight/allergies matter
     // to the vet before a visit even starts.
@@ -464,6 +468,12 @@ struct Payment: Identifiable, Codable, Equatable, Hashable {
     var currency: String
     var status: Status
     var gatewayReference: String?
+    /// E6: the signed quote this payment/order was checked out against —
+    /// nil only for the subscription/tip checkout paths, which don't go
+    /// through a cart quote. A per-visit checkout always has one (enforced
+    /// by `StartCheckoutUseCase`'s signature, which takes a `Quote`, not a
+    /// raw amount).
+    var quoteId: UUID? = nil
 
     enum Status: String, Codable {
         case pending, succeeded, failed, refunded
@@ -523,6 +533,34 @@ enum Vertical: String, Codable, CaseIterable, Identifiable {
         case .elderCare: return "figure.wave"
         case .physio: return "figure.strengthtraining.traditional"
         }
+    }
+}
+
+// MARK: - E5: loyalty point redemption at checkout — converts points into
+// wallet credit (which CartView's existing "use wallet balance" toggle
+// already spends) rather than a parallel discount mechanism, so pricing has
+// exactly one place that applies a balance, not two.
+enum LoyaltyRedemptionPolicy {
+    /// 1 point = ₹0.50 (50 paise) — arbitrary but fixed, same shape as
+    /// `CancellationPolicy`'s hardcoded 4h window: a real deployment would
+    /// tune this, the important part is client and server agree on one number.
+    static let minorUnitsPerPoint = 50
+    /// Redeeming a handful of points isn't worth a ledger row.
+    static let minimumRedeemablePoints = 100
+
+    static func minorUnits(forPoints points: Int) -> Int { max(0, points) * minorUnitsPerPoint }
+
+    /// Pure validation — mirrors `SubscriptionManagementPolicy.validate`'s
+    /// shape: nil means allowed, otherwise the reason it isn't.
+    static func validate(points: Int, availablePoints: Int) -> DomainError? {
+        guard points > 0 else { return .validation("Enter a number of points to redeem.") }
+        guard points >= minimumRedeemablePoints else {
+            return .validation("Redeem at least \(minimumRedeemablePoints) points at a time.")
+        }
+        guard points <= availablePoints else {
+            return .validation("You only have \(availablePoints) points available.")
+        }
+        return nil
     }
 }
 
@@ -588,6 +626,18 @@ struct Address: Identifiable, Codable, Equatable, Hashable {
     /// Whether this address falls inside a served circuit cluster — an
     /// unmatched address should route to the waitlist (C10), not a dead end.
     var isServed: Bool { clusterArea != nil }
+}
+
+// MARK: - C7: served cluster coverage (for a map view) — the same notion
+// `AddressRepository.matchCluster` point-tests against, just enumerable so a
+// map can draw it instead of only answering "is this one point inside".
+
+struct ServedCluster: Identifiable, Codable, Equatable, Hashable {
+    var id: String { area }
+    var area: String
+    var latitude: Double
+    var longitude: Double
+    var radiusKm: Double
 }
 
 // MARK: - Account deletion & data export (plan §A6-A7)
@@ -843,6 +893,10 @@ struct CartItem: Identifiable, Codable, Equatable, Hashable {
     var variantId: UUID
     var petIds: [UUID]           // 1 or more pets on this line item (D6: multi-pet)
     var addonIds: [UUID] = []
+    // E1: repeat this exact line item N times (e.g. "2 grooming sessions") —
+    // distinct from D6's multi-pet, which is "this one visit, more than one
+    // pet". Always >= 1; `ManageCartUseCase.setQuantity` enforces that.
+    var quantity: Int = 1
 }
 
 struct Cart: Identifiable, Codable, Equatable, Hashable {
@@ -1304,6 +1358,11 @@ struct PetWeightEntry: Identifiable, Codable, Equatable, Hashable {
     var petId: UUID
     var weightKg: Double
     var recordedAt: Date
+    // B3: vitals beyond weight — both optional since not every reading has a
+    // vet's thermometer/stethoscope behind it (an owner logging weight at
+    // home shouldn't be blocked from entering just weight).
+    var temperatureCelsius: Double? = nil
+    var heartRateBpm: Int? = nil
 }
 
 /// B4 (P0) + K4: a vaccination given (or due). `nextDueAt` is what the N3

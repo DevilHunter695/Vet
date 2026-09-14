@@ -351,6 +351,11 @@ struct ManagePetsUseCase {
         try await petRepository.deletePet(id: id)
     }
 
+    /// B2: uploads a new pet photo, returning the pet with `photoURL` set.
+    func updatePhoto(petId: UUID, data: Data) async throws -> Pet {
+        try await petRepository.updatePhoto(petId: petId, data: data)
+    }
+
     /// B8: soft-delete with sensitive copy handled at the call site — this
     /// just stamps the flag, never touches the pet's visit history.
     func archive(_ pet: Pet, reason: Pet.ArchiveReason, now: Date = .now) async throws -> Pet {
@@ -377,11 +382,21 @@ struct ManagePetWeightsUseCase {
         try await repository.history(petId: petId).sorted { $0.recordedAt < $1.recordedAt }
     }
 
-    func addEntry(petId: UUID, weightKg: Double, recordedAt: Date = .now) async throws -> PetWeightEntry {
+    /// B3: `temperatureCelsius`/`heartRateBpm` are optional vitals beyond
+    /// weight — an owner logging weight at home won't have a thermometer or
+    /// stethoscope reading, so neither is required.
+    func addEntry(petId: UUID, weightKg: Double, temperatureCelsius: Double? = nil, heartRateBpm: Int? = nil, recordedAt: Date = .now) async throws -> PetWeightEntry {
         guard weightKg > 0 else {
             throw DomainError.validation("Enter a valid weight.")
         }
-        return try await repository.addEntry(PetWeightEntry(id: UUID(), petId: petId, weightKg: weightKg, recordedAt: recordedAt))
+        if let temperatureCelsius, !(30...45).contains(temperatureCelsius) {
+            throw DomainError.validation("Enter a plausible temperature (30-45°C).")
+        }
+        if let heartRateBpm, !(20...300).contains(heartRateBpm) {
+            throw DomainError.validation("Enter a plausible heart rate (20-300 bpm).")
+        }
+        return try await repository.addEntry(PetWeightEntry(id: UUID(), petId: petId, weightKg: weightKg, recordedAt: recordedAt,
+                                                              temperatureCelsius: temperatureCelsius, heartRateBpm: heartRateBpm))
     }
 }
 
@@ -618,14 +633,22 @@ struct ManageMedicationRemindersUseCase {
     }
 }
 
+/// E6: server-authoritative quote → checkout. The signature is the
+/// enforcement: there is no overload that takes a raw amount, so a checkout
+/// can only ever be started with a real, server-issued `Quote` — never a
+/// client-computed rupee figure (Appendix C's central rule, applied at the
+/// one place money actually changes hands).
 struct StartCheckoutUseCase {
     let paymentRepository: PaymentRepository
 
-    func execute(visitId: UUID, amountMinorUnits: Int) async throws -> URL {
-        guard amountMinorUnits > 0 else {
+    func execute(visitId: UUID, quote: Quote) async throws -> URL {
+        guard !quote.isExpired else {
+            throw DomainError.validation("This price quote has expired — refresh it and try again.")
+        }
+        guard quote.breakdown.totalMinorUnits > 0 else {
             throw DomainError.validation("Invalid amount.")
         }
-        return try await paymentRepository.createCheckout(forVisit: visitId, amountMinorUnits: amountMinorUnits)
+        return try await paymentRepository.createCheckout(forVisit: visitId, quoteId: quote.id, amountMinorUnits: quote.breakdown.totalMinorUnits)
     }
 }
 
@@ -656,6 +679,21 @@ struct GetLoyaltyAccountUseCase {
 
     func execute(userId: UUID) async throws -> LoyaltyAccount {
         try await loyaltyRepository.account(userId: userId)
+    }
+}
+
+/// E5: loyalty point redemption — validates against the caller's own real
+/// balance (never a client-supplied one) before asking the repository to
+/// perform the redemption.
+struct RedeemLoyaltyPointsUseCase {
+    let loyaltyRepository: LoyaltyRepository
+
+    func execute(userId: UUID, points: Int) async throws -> LoyaltyAccount {
+        let account = try await loyaltyRepository.account(userId: userId)
+        if let error = LoyaltyRedemptionPolicy.validate(points: points, availablePoints: account.points) {
+            throw error
+        }
+        return try await loyaltyRepository.redeemPoints(userId: userId, points: points)
     }
 }
 
@@ -739,6 +777,20 @@ struct ManageCartUseCase {
     func removeItem(id: UUID, from cart: Cart) async throws -> Cart {
         var cart = cart
         cart.items.removeAll { $0.id == id }
+        return try await cartRepository.save(cart)
+    }
+
+    /// E1: change quantity — a line's quantity can never drop below 1
+    /// (that's what "remove" is for) or be set to something absurd.
+    func setQuantity(_ quantity: Int, forItemId id: UUID, in cart: Cart) async throws -> Cart {
+        guard (1...20).contains(quantity) else {
+            throw DomainError.validation("Quantity must be between 1 and 20.")
+        }
+        var cart = cart
+        guard let index = cart.items.firstIndex(where: { $0.id == id }) else {
+            throw DomainError.notFound("Cart item")
+        }
+        cart.items[index].quantity = quantity
         return try await cartRepository.save(cart)
     }
 
@@ -892,6 +944,17 @@ struct HoldSlotUseCase {
             throw DomainError.slotUnavailable
         }
         return try await slotHoldRepository.placeHold(slotId: slotId, userId: userId)
+    }
+}
+
+/// C7: map view of cluster coverage — a thin read-only wrapper, same shape as
+/// `GetLabTestReportsUseCase`, so the presentation layer never talks to
+/// `AddressRepository` directly for something it only ever reads.
+struct GetServedClustersUseCase {
+    let addressRepository: AddressRepository
+
+    func execute() async throws -> [ServedCluster] {
+        try await addressRepository.listServedClusters()
     }
 }
 

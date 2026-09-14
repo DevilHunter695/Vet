@@ -96,7 +96,11 @@ protocol SubscriptionRepository: Sendable {
 }
 
 protocol PaymentRepository: Sendable {
-    func createCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL
+    /// E6: `quoteId` is the enforcement point — an order (this checkout)
+    /// must reference a valid, unexpired, signed quote, never an arbitrary
+    /// client-supplied amount. `StartCheckoutUseCase` is the only caller and
+    /// derives `amountMinorUnits` from `quote.breakdown.totalMinorUnits`.
+    func createCheckout(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> URL
     func createCheckout(forSubscription plan: Subscription.PlanType) async throws -> URL
     func paymentStatus(paymentId: UUID) async throws -> Payment.Status
     /// E11: tagged distinctly from a regular visit charge (payments.kind =
@@ -165,6 +169,12 @@ protocol PetRepository: Sendable {
     func addPet(_ pet: Pet) async throws -> Pet
     func updatePet(_ pet: Pet) async throws -> Pet
     func deletePet(id: UUID) async throws
+    /// B2: uploads `data` as the pet's photo and returns the pet with
+    /// `photoURL` set to wherever it landed — mirrors `PetDocumentRepository.upload`'s
+    /// shape (bytes in, updated reference out) rather than a separate
+    /// two-step "upload then updatePet(photoURL:)" the UI would have to
+    /// coordinate itself.
+    func updatePhoto(petId: UUID, data: Data) async throws -> Pet
 }
 
 // MARK: - Pet health records (plan §3 B, §3 K)
@@ -314,6 +324,10 @@ protocol AddressRepository: Sendable {
     /// Server-side geofence check: does a lat/lng fall inside a served cluster?
     /// Returns the matched cluster area name, or nil if uncovered.
     func matchCluster(latitude: Double, longitude: Double) async throws -> String?
+    /// C7: the served clusters themselves (name/centre/coverage radius),
+    /// for a map view of cluster coverage — the same source of truth
+    /// `matchCluster` checks against, just enumerable instead of point-tested.
+    func listServedClusters() async throws -> [ServedCluster]
 }
 
 protocol CatalogRepository: Sendable {
@@ -332,6 +346,14 @@ protocol LoyaltyRepository: Sendable {
     func account(userId: UUID) async throws -> LoyaltyAccount
     /// Called when a visit completes; awards points and returns the updated account.
     func awardPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount
+    /// E5: redeems `points` into wallet credit (at `LoyaltyRedemptionPolicy`'s
+    /// rate) and returns the updated account. The one client-facing surface
+    /// onto the otherwise server-write-only wallet ledger — scoped to "spend
+    /// your own points", never a general-purpose credit — mirrors
+    /// `wallet_ledger`'s "no client insert policy at all" discipline (0026)
+    /// by doing both mutations inside a single server-side function rather
+    /// than exposing a generic wallet-write method on the client.
+    func redeemPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount
 }
 
 // MARK: - D5: per-vet service overrides — public read (customers need to see

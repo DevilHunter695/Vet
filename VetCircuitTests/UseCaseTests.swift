@@ -618,6 +618,96 @@ struct GetLoyaltyAccountUseCaseTests {
     }
 }
 
+// E5: loyalty point redemption at checkout.
+
+@Suite("LoyaltyRedemptionPolicy")
+struct LoyaltyRedemptionPolicyTests {
+    @Test("converts points to minor units at the fixed rate")
+    func convertsPoints() {
+        #expect(LoyaltyRedemptionPolicy.minorUnits(forPoints: 100) == 5_000)
+    }
+
+    @Test("rejects redeeming below the minimum")
+    func rejectsBelowMinimum() {
+        #expect(LoyaltyRedemptionPolicy.validate(points: 50, availablePoints: 500) != nil)
+    }
+
+    @Test("rejects redeeming more than available")
+    func rejectsOverAvailable() {
+        #expect(LoyaltyRedemptionPolicy.validate(points: 500, availablePoints: 100) != nil)
+    }
+
+    @Test("allows a valid redemption")
+    func allowsValidRedemption() {
+        #expect(LoyaltyRedemptionPolicy.validate(points: 200, availablePoints: 500) == nil)
+    }
+}
+
+@Suite("RedeemLoyaltyPointsUseCase")
+struct RedeemLoyaltyPointsUseCaseTests {
+    @Test("redeems points and moves them into wallet credit")
+    func redeemsAndCreditsWallet() async throws {
+        let walletRepo = MockWalletRepository()
+        let loyaltyRepo = MockLoyaltyRepository(walletRepository: walletRepo)
+        let userId = UUID()
+        _ = try await loyaltyRepo.awardPoints(userId: userId, points: 500)
+        let balanceBefore = try await walletRepo.balanceMinorUnits(userId: userId)
+
+        let useCase = RedeemLoyaltyPointsUseCase(loyaltyRepository: loyaltyRepo)
+        let account = try await useCase.execute(userId: userId, points: 200)
+
+        #expect(account.points == 300)
+        let balanceAfter = try await walletRepo.balanceMinorUnits(userId: userId)
+        #expect(balanceAfter == balanceBefore + LoyaltyRedemptionPolicy.minorUnits(forPoints: 200))
+    }
+
+    @Test("rejects redeeming more points than the account has")
+    func rejectsOverdraw() async throws {
+        let loyaltyRepo = MockLoyaltyRepository()
+        let userId = UUID()
+        _ = try await loyaltyRepo.awardPoints(userId: userId, points: 100)
+
+        let useCase = RedeemLoyaltyPointsUseCase(loyaltyRepository: loyaltyRepo)
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(userId: userId, points: 500)
+        }
+    }
+}
+
+// E6: server-authoritative quote gates checkout — the type signature itself
+// (Quote, not a raw amount) is the enforcement point.
+@Suite("StartCheckoutUseCase")
+struct StartCheckoutUseCaseTests {
+    private func makeQuote(expired: Bool, totalMinorUnits: Int = 10_000) -> Quote {
+        Quote(id: UUID(), cartId: UUID(),
+              breakdown: PriceBreakdown(lineItems: [], totalMinorUnits: totalMinorUnits),
+              signature: "sig", expiresAt: expired ? Date().addingTimeInterval(-60) : Date().addingTimeInterval(600))
+    }
+
+    @Test("rejects an expired quote")
+    func rejectsExpiredQuote() async {
+        let useCase = StartCheckoutUseCase(paymentRepository: MockPaymentRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(visitId: UUID(), quote: makeQuote(expired: true))
+        }
+    }
+
+    @Test("rejects a zero-amount quote")
+    func rejectsZeroAmount() async {
+        let useCase = StartCheckoutUseCase(paymentRepository: MockPaymentRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(visitId: UUID(), quote: makeQuote(expired: false, totalMinorUnits: 0))
+        }
+    }
+
+    @Test("a valid quote produces a checkout URL")
+    func validQuoteChecksOut() async throws {
+        let useCase = StartCheckoutUseCase(paymentRepository: MockPaymentRepository())
+        let url = try await useCase.execute(visitId: UUID(), quote: makeQuote(expired: false))
+        #expect(url.absoluteString.contains("quote="))
+    }
+}
+
 @Suite("RunTriageUseCase")
 struct RunTriageUseCaseTests {
     @Test("rejects empty symptom description")
@@ -727,6 +817,25 @@ struct PricingEngineTests {
         let breakdown = PricingEngine.quote(.init(variant: variant, addons: [], additionalPetCount: 0, travelFeeMinorUnits: 0, walletBalanceMinorUnits: 999_999))
         #expect(breakdown.totalMinorUnits == 0)
     }
+
+    // E1: change quantity — multiplies base/multi-pet/add-ons, not travel fee.
+    @Test("quantity multiplies the base price and add-ons, not the travel fee")
+    func quantityMultipliesBaseAndAddons() {
+        let addon = Addon(id: UUID(), name: "Nail trim", priceMinorUnits: 10_000)
+        let breakdown = PricingEngine.quote(.init(
+            variant: variant, addons: [addon], additionalPetCount: 0, travelFeeMinorUnits: 4_500, gstRate: 0, quantity: 2
+        ))
+        #expect(breakdown.totalMinorUnits == 59_900 * 2 + 10_000 * 2 + 4_500)
+    }
+
+    @Test("an entitlement credit is never multiplied by quantity")
+    func entitlementCreditIgnoresQuantity() {
+        let breakdown = PricingEngine.quote(.init(
+            variant: variant, addons: [], additionalPetCount: 0, travelFeeMinorUnits: 0, gstRate: 0,
+            entitlementCreditApplied: true, quantity: 3
+        ))
+        #expect(breakdown.totalMinorUnits == 0)
+    }
 }
 
 @Suite("ManageCartUseCase + GetQuoteUseCase")
@@ -741,6 +850,40 @@ struct CartAndQuoteUseCaseTests {
         await #expect(throws: DomainError.self) {
             _ = try await useCase.addItem(item, to: cart)
         }
+    }
+
+    // E1: change quantity / clear cart.
+    @Test("setQuantity rejects out-of-range values and updates a valid one")
+    func setQuantityValidatesRange() async throws {
+        let repo = MockCartRepository()
+        let useCase = ManageCartUseCase(cartRepository: repo)
+        var cart = try await useCase.current(userId: UUID())
+        let item = CartItem(id: UUID(), serviceId: UUID(), variantId: UUID(), petIds: [UUID()])
+        cart = try await useCase.addItem(item, to: cart)
+
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.setQuantity(0, forItemId: item.id, in: cart)
+        }
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.setQuantity(21, forItemId: item.id, in: cart)
+        }
+
+        let updated = try await useCase.setQuantity(3, forItemId: item.id, in: cart)
+        #expect(updated.items.first?.quantity == 3)
+    }
+
+    @Test("clear empties the cart")
+    func clearEmptiesCart() async throws {
+        let repo = MockCartRepository()
+        let useCase = ManageCartUseCase(cartRepository: repo)
+        let userId = UUID()
+        var cart = try await useCase.current(userId: userId)
+        cart = try await useCase.addItem(CartItem(id: UUID(), serviceId: UUID(), variantId: UUID(), petIds: [UUID()]), to: cart)
+        #expect(!cart.items.isEmpty)
+
+        try await useCase.clear(userId: userId)
+        let cleared = try await useCase.current(userId: userId)
+        #expect(cleared.items.isEmpty)
     }
 
     @Test("rejects a quote for an empty cart")

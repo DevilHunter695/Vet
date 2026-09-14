@@ -20,6 +20,11 @@ final class CartViewModel {
     // comes back from the quote, never trusted from this fetch.
     var walletBalanceMinorUnits = 0
     var useWalletBalance = false
+    // E5: loyalty point redemption converts into wallet credit, which the
+    // toggle above already spends at quote time — this just moves points.
+    var loyaltyPoints = 0
+    var redeemPointsInput = ""
+    var redeemMessage: String?
     /// E9: reuse a saved gateway-tokenized card/UPI method instead of
     /// re-entering one each time. Purely a UI selection today — the actual
     /// hosted checkout URL flow (StartCheckoutUseCase) doesn't yet take a
@@ -30,6 +35,8 @@ final class CartViewModel {
     private let getQuoteUseCase = DependencyContainer.shared.getQuoteUseCase()
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
     private let getWalletBalanceUseCase = DependencyContainer.shared.getWalletBalanceUseCase()
+    private let getLoyaltyAccountUseCase = DependencyContainer.shared.getLoyaltyAccountUseCase()
+    private let redeemLoyaltyPointsUseCase = DependencyContainer.shared.redeemLoyaltyPointsUseCase()
 
     func load(userId: UUID) async {
         isLoading = true
@@ -41,12 +48,30 @@ final class CartViewModel {
             async let elderServices = getCatalogUseCase.execute(vertical: .elderCare)
             async let physioServices = getCatalogUseCase.execute(vertical: .physio)
             async let balanceResult = getWalletBalanceUseCase.balance(userId: userId)
+            async let loyaltyResult = getLoyaltyAccountUseCase.execute(userId: userId)
             cart = try await cartResult
             services = try await vetServices + elderServices + physioServices
             walletBalanceMinorUnits = try await balanceResult
+            loyaltyPoints = try await loyaltyResult.points
             couponCodeInput = cart?.couponCode ?? ""
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// E5: redeem loyalty points into wallet credit, then refresh both
+    /// balances so the "use wallet balance" toggle immediately reflects it.
+    func redeemPoints(userId: UUID) async {
+        guard let points = Int(redeemPointsInput) else { return }
+        do {
+            let account = try await redeemLoyaltyPointsUseCase.execute(userId: userId, points: points)
+            loyaltyPoints = account.points
+            walletBalanceMinorUnits = try await getWalletBalanceUseCase.balance(userId: userId)
+            redeemPointsInput = ""
+            redeemMessage = "Redeemed \(points) points into your wallet."
+            Haptics.success()
+        } catch {
+            redeemMessage = error.localizedDescription
         }
     }
 
@@ -54,6 +79,28 @@ final class CartViewModel {
         guard let cart else { return }
         do {
             self.cart = try await manageCartUseCase.removeItem(id: item.id, from: cart)
+            quote = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// E1: change quantity on a cart line.
+    func setQuantity(_ quantity: Int, for item: CartItem) async {
+        guard let cart else { return }
+        do {
+            self.cart = try await manageCartUseCase.setQuantity(quantity, forItemId: item.id, in: cart)
+            quote = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// E1: clear the whole cart in one action.
+    func clearCart(userId: UUID) async {
+        do {
+            try await manageCartUseCase.clear(userId: userId)
+            cart = Cart(id: cart?.id ?? UUID(), userId: userId)
             quote = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -109,11 +156,25 @@ struct CartView: View {
                             CartItemRow(
                                 name: viewModel.service(for: item)?.name ?? "Service",
                                 variantName: viewModel.variant(for: item)?.name ?? "",
-                                price: viewModel.variant(for: item).map { CurrencyFormatter.rupees($0.priceMinorUnits) } ?? ""
+                                price: viewModel.variant(for: item).map { CurrencyFormatter.rupees($0.priceMinorUnits * item.quantity) } ?? "",
+                                quantity: Binding(
+                                    get: { item.quantity },
+                                    set: { newValue in Task { await viewModel.setQuantity(newValue, for: item) } }
+                                )
                             ) {
                                 Haptics.warning()
                                 Task { await viewModel.remove(item) }
                             }
+                        }
+
+                        if cart.items.count > 1, let user = session.currentUser {
+                            Button(role: .destructive) {
+                                Haptics.warning()
+                                Task { await viewModel.clearCart(userId: user.id) }
+                            } label: {
+                                Label("Clear cart", systemImage: "trash")
+                            }
+                            .font(.brandCaption)
                         }
 
                         CouponEntryRow(code: $viewModel.couponCodeInput, message: viewModel.couponMessage) {
@@ -129,6 +190,25 @@ struct CartView: View {
                             )) {
                                 Text("Use \(CurrencyFormatter.rupees(viewModel.walletBalanceMinorUnits)) wallet balance")
                                     .font(.brandBody)
+                            }
+                            .padding()
+                            .glassCard()
+                        }
+
+                        // E5: loyalty point redemption at checkout.
+                        if viewModel.loyaltyPoints >= LoyaltyRedemptionPolicy.minimumRedeemablePoints, let user = session.currentUser {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("\(viewModel.loyaltyPoints) loyalty points available").font(.brandBody)
+                                HStack {
+                                    TextField("Points to redeem", text: $viewModel.redeemPointsInput)
+                                        .keyboardType(.numberPad)
+                                        .textFieldStyle(.roundedBorder)
+                                    Button("Redeem") { Task { await viewModel.redeemPoints(userId: user.id) } }
+                                        .disabled(Int(viewModel.redeemPointsInput) == nil)
+                                }
+                                if let redeemMessage = viewModel.redeemMessage {
+                                    Text(redeemMessage).font(.brandCaption).foregroundStyle(.secondary)
+                                }
                             }
                             .padding()
                             .glassCard()
@@ -162,6 +242,9 @@ private struct CartItemRow: View {
     let name: String
     let variantName: String
     let price: String
+    // E1: change quantity — repeats this exact line item, distinct from
+    // D6's per-line pet multi-select.
+    @Binding var quantity: Int
     let onRemove: () -> Void
 
     var body: some View {
@@ -169,6 +252,9 @@ private struct CartItemRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(name).font(.brandHeadline)
                 Text(variantName).font(.brandCaption).foregroundStyle(.secondary)
+                Stepper("Qty: \(quantity)", value: $quantity, in: 1...20)
+                    .font(.brandCaption)
+                    .fixedSize()
             }
             Spacer()
             Text(price).font(.brandBody).foregroundStyle(.secondary)

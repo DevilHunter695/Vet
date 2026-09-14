@@ -33,18 +33,30 @@ function computeLineItemsForItem(
   additionalPetCount: number,
   travelFeeMinorUnits: number,
   entitlementCreditApplied = false,
+  vetOverridePriceMinorUnits: number | null = null,
+  quantity = 1,
 ): LineItem[] {
   const lineItems: LineItem[] = [];
+  const qty = Math.min(20, Math.max(1, quantity));
+  const qtySuffix = qty > 1 ? ` ×${qty}` : "";
   if (entitlementCreditApplied) {
     lineItems.push({ label: `${variant.name} (subscription credit)`, amountMinorUnits: 0 });
   } else {
-    lineItems.push({ label: variant.name, amountMinorUnits: variant.price_minor_units });
+    // D5: a vet's own price override (vet_service_overrides) takes
+    // precedence over the catalog default — mirrors PricingEngine.swift's
+    // `vetOverridePriceMinorUnits ?? variant.priceMinorUnits`.
+    // E1: quantity multiplies base/multi-pet/add-ons, same as
+    // PricingEngine.swift — travel fee stays flat, a credit is never multiplied.
+    const base = (vetOverridePriceMinorUnits ?? variant.price_minor_units) * qty;
+    lineItems.push({ label: `${variant.name}${qtySuffix}`, amountMinorUnits: base });
   }
 
-  const multiPet = additionalPetCount * variant.additional_pet_price_minor_units;
-  if (multiPet > 0) lineItems.push({ label: `Additional pet(s) ×${additionalPetCount}`, amountMinorUnits: multiPet });
+  const multiPet = additionalPetCount * variant.additional_pet_price_minor_units * qty;
+  if (multiPet > 0) lineItems.push({ label: `Additional pet(s) ×${additionalPetCount}${qtySuffix}`, amountMinorUnits: multiPet });
 
-  for (const addon of addons) lineItems.push({ label: addon.name, amountMinorUnits: addon.price_minor_units });
+  for (const addon of addons) {
+    lineItems.push({ label: `${addon.name}${qtySuffix}`, amountMinorUnits: addon.price_minor_units * qty });
+  }
 
   if (travelFeeMinorUnits > 0) lineItems.push({ label: "Travel fee", amountMinorUnits: travelFeeMinorUnits });
 
@@ -71,6 +83,24 @@ Deno.serve(async (req) => {
   let lineItems: LineItem[] = [];
   let total = 0;
   const travelFeeMinorUnits = cart.circuit_id ? 0 : 4500; // 0 if slot is on an existing circuit run (density dividend)
+
+  // D5: per-vet service availability & pricing overrides — fetched once for
+  // the cart's circuit's vet (mirrors GetQuoteUseCase.execute client-side)
+  // rather than re-derived client-side and merely trusted here.
+  let overrides: any[] = [];
+  if (cart.circuit_id) {
+    const { data: circuit } = await supabase.from("circuits").select("vet_id").eq("id", cart.circuit_id).single();
+    if (circuit) {
+      const { data: overrideRows } = await supabase
+        .from("vet_service_overrides")
+        .select("*")
+        .eq("vet_id", circuit.vet_id);
+      overrides = overrideRows ?? [];
+    }
+  }
+  function overrideFor(serviceId: string, variantId: string) {
+    return overrides.find((o) => o.service_id === serviceId && (o.variant_id === null || o.variant_id === variantId));
+  }
 
   // H6: the client's `apply_entitlement_credit` is only a hint — eligibility
   // is re-derived here from the caller's own active subscription and its
@@ -101,9 +131,22 @@ Deno.serve(async (req) => {
     const { data: addons } = await supabase.from("addons").select("*").in("id", item.addon_ids ?? []);
     const additionalPetCount = Math.max(0, (item.pet_ids?.length ?? 1) - 1);
 
+    // D5: a vet who has opted out of a service entirely (is_offered: false)
+    // can't have it quoted on their circuit — never silently falls back to
+    // the catalog default.
+    const override = overrideFor(variant.service_id, item.variant_id);
+    if (override && override.is_offered === false) {
+      return new Response(
+        JSON.stringify({ code: "VALIDATION", message: "This vet no longer offers one of the services in your cart." }),
+        { status: 400 },
+      );
+    }
+
     const itemLines = computeLineItemsForItem(
       variant, addons ?? [], additionalPetCount, travelFeeMinorUnits,
       entitlementEligible && index === 0,
+      override?.price_override_minor_units ?? null,
+      item.quantity ?? 1,
     );
     lineItems = lineItems.concat(itemLines);
     total += itemLines.reduce((sum, li) => sum + li.amountMinorUnits, 0);
