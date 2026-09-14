@@ -221,7 +221,7 @@ Service (Home consultation)
 | G1 | Hosted checkout (Razorpay), **never raw card data** | P0 | ✅ | PCI scope avoided by construction |
 | G2 | **Webhook-only confirmation**, signature-verified, idempotent | P0 | ✅ | Already in `payment-webhook` — keep this discipline everywhere |
 | G3 | Payment retry on failure + clear failure states | P0 | 🔨 | |
-| G4 | **Refunds** (full/partial), initiated by ops, tracked to gateway | **P0** | 🔨 | You cannot launch without a refund path |
+| G4 | **Refunds** (full/partial), initiated by ops, tracked to gateway | **P0** | ✅ | `CancelVisitUseCase` (partial, per `CancellationPolicy`) and `ReportVetNoShowUseCase` (full) both issue refunds through `RefundRepository`; `IssueSupportRefundUseCase` covers the ops-initiated case. Every path calls the `issue-refund` Edge Function (service-role key) — `refunds` is select-only under RLS for every client role, so no client can ever insert one directly. Was mistagged 🔨: verified this is fully wired end to end. |
 | G5 | GST-compliant invoice PDF per order | **P0** | 🔨 | Legal requirement once registered |
 | G6 | Wallet + double-entry ledger | P1 | 🔨 | `wallet_ledger` (append-only, mirrors `vet_ledger`) + balance view + CartView "use wallet balance" toggle; nothing yet writes the debit when a wallet-funded booking completes — checkout/payment-capture is still open |
 | G7 | **Vet payouts**: earnings view, weekly payout run, reconciliation | **P0 (partner)** | 🔨 | Vets quit over late/unclear pay faster than over anything else |
@@ -234,7 +234,7 @@ Service (Home consultation)
 |---|---|---|---|
 | H1 | Plan catalog with visible inclusions & fair-use limits | P0 | 🔨 |
 | H2 | Purchase via gateway **recurring mandate (UPI Autopay / e-mandate)** | P0 | 🔨 |
-| H3 | Manage: upgrade, downgrade, **pause**, **cancel**, view next renewal | **P0** | 🔨 |
+| H3 | Manage: upgrade, downgrade, **pause**, **cancel**, view next renewal | **P0** | ✅ | `SubscriptionManagementPolicy` (pure, tested) validates every transition — plan-tier direction for upgrade/downgrade, corporate seat floor before pause, already-cancelled guard — and `ManageSubscriptionUseCase` enforces it before writing. `ManageSubscriptionView` exposes all five actions plus the next renewal date, with plan §9-style consequence copy before each confirm. Was mistagged 🔨: verified this is fully built. |
 | H4 | Renewal reminders (T-7, T-1) + receipt | P0 | 🔨 |
 | H5 | Dunning: failed renewal → retry ladder → grace → downgrade | P1 | 🔨 |
 | H6 | Subscription credits consumed by bookings (entitlement engine) | P1 | ✅ | `SubscriptionEntitlement` + pure `EntitlementPolicy` (monthly/quarterly/annual = 1 credit/month, corporate = 1/seat/month), wired into `PricingEngine.Input.entitlementCreditApplied` (Appendix C's "entitlement" line) via `GetQuoteUseCase`. Client only proposes; 0028_subscription_entitlements.sql's `consume_subscription_credit()` is the real, atomic authority |
@@ -248,7 +248,7 @@ Service (Home consultation)
 | I2 | Status timeline w/ timestamps (requested → confirmed → assigned → en route → arrived → in progress → completed) | P0 | 🔨 | 8-state enum + legal-transition table done; timestamped timeline UI still uses badges, not a full timeline view |
 | I3 | **Live Activity + Dynamic Island** for "vet en route / ETA" | P1 | 🔨 | iOS-native differentiator; huge perceived-quality win. `VetEnRouteAttributes` + `Activity<T>.request` call site wired from LiveTrackingView. **Known gap:** no Widget Extension target exists yet (project.yml is single-target) — nothing renders on the Lock Screen/Island until that target is added in Xcode; see VetEnRouteActivity.swift |
 | I4 | Live map tracking with ETA | P1 | 🔨 | |
-| I5 | **Start-of-visit OTP** (customer reads 4-digit code to vet) | **P0** | 🔨 | Anti-fraud + proof-of-service. Cheap, high value. |
+| I5 | **Start-of-visit OTP** (customer reads 4-digit code to vet) | **P0** | ✅ | `VisitOTPRepository.generateOTP` fires once a visit reaches `arrived`; `VisitDetailView` displays the 4-digit code in a dedicated card. `StartVisitUseCase.verify` (tested) validates the code and moves the visit `arrived` → `in_progress` server-side. The vet actually keying the code in stays on the vet's own device — there is no vet-mode surface in this app (matches F9) — so nothing more is this app's to build. |
 | I6 | Digital consent/liability waiver accepted in-app before first visit | **P0** | ✅ | Legal shield |
 | I7 | Visit checklist completed by vet → becomes the customer's record | P0 | 🔨 | |
 | I8 | Post-visit summary push + in-app detail | P0 | 🔨 | |
