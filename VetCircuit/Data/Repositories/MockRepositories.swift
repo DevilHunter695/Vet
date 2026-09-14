@@ -680,6 +680,10 @@ actor MockPaymentRepository: PaymentRepository {
         return URL(string: "https://checkout.example.com/visit/\(visitId)?quote=\(quoteId)&amount=\(amountMinorUnits)")!
     }
 
+    func createCheckout(forVisit visitId: UUID, retryingPaymentId: UUID, amountMinorUnits: Int) async throws -> URL {
+        URL(string: "https://checkout.example.com/visit/\(visitId)?retry=\(retryingPaymentId)&amount=\(amountMinorUnits)")!
+    }
+
     func createCheckout(forSubscription plan: Subscription.PlanType) async throws -> URL {
         URL(string: "https://checkout.example.com/subscription/\(plan.rawValue)")!
     }

@@ -137,6 +137,10 @@ protocol PaymentRepository: Sendable {
     /// client-supplied amount. `StartCheckoutUseCase` is the only caller and
     /// derives `amountMinorUnits` from `quote.breakdown.totalMinorUnits`.
     func createCheckout(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> URL
+    /// G3: a payment retry re-charges the same already-agreed amount for an
+    /// existing payment — no new quote is being negotiated, so this stays a
+    /// distinct overload rather than fabricating a client-side `Quote`.
+    func createCheckout(forVisit visitId: UUID, retryingPaymentId: UUID, amountMinorUnits: Int) async throws -> URL
     func createCheckout(forSubscription plan: Subscription.PlanType) async throws -> URL
     func paymentStatus(paymentId: UUID) async throws -> Payment.Status
     /// G6/E8: the id of the payment most recently created by

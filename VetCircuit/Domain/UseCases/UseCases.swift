@@ -835,9 +835,9 @@ struct BookingCheckoutUseCase {
 struct RetryPaymentUseCase {
     let paymentRepository: PaymentRepository
 
-    /// Takes a fresh `Quote` (not a raw amount) for the same reason
-    /// `StartCheckoutUseCase` does — a retry is still a new order and must
-    /// stay gated on a real, unexpired, signed quote (Appendix C).
+    /// Mid-checkout retry (`BookingView`/`CartView`, still holding the
+    /// original `Quote`): a retry there is still a new order and must stay
+    /// gated on a real, unexpired, signed quote (Appendix C).
     func execute(visitId: UUID, paymentId: UUID, quote: Quote, priorAttempts: Int) async throws -> URL {
         let status = try await paymentRepository.paymentStatus(paymentId: paymentId)
         let outcome = PaymentRetryPolicy.evaluate(status: status, priorAttempts: priorAttempts)
@@ -848,6 +848,18 @@ struct RetryPaymentUseCase {
             throw DomainError.validation("This price quote has expired — refresh it and try again.")
         }
         return try await paymentRepository.createCheckout(forVisit: visitId, quoteId: quote.id, amountMinorUnits: quote.breakdown.totalMinorUnits)
+    }
+
+    /// Post-booking retry (`VisitDetailView`, no quote in scope): re-charges
+    /// the same already-agreed amount for an existing payment — no new quote
+    /// is being negotiated here.
+    func execute(visitId: UUID, paymentId: UUID, amountMinorUnits: Int, priorAttempts: Int) async throws -> URL {
+        let status = try await paymentRepository.paymentStatus(paymentId: paymentId)
+        let outcome = PaymentRetryPolicy.evaluate(status: status, priorAttempts: priorAttempts)
+        guard outcome.canRetry else {
+            throw DomainError.validation(outcome.reason ?? "This payment can't be retried right now.")
+        }
+        return try await paymentRepository.createCheckout(forVisit: visitId, retryingPaymentId: paymentId, amountMinorUnits: amountMinorUnits)
     }
 }
 

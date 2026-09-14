@@ -44,6 +44,11 @@ actor FakePaymentRepository: PaymentRepository {
         return URL(string: "https://checkout.example.com/visit/\(visitId)")!
     }
 
+    func createCheckout(forVisit visitId: UUID, retryingPaymentId: UUID, amountMinorUnits: Int) async throws -> URL {
+        checkoutCallCount += 1
+        return URL(string: "https://checkout.example.com/visit/\(visitId)")!
+    }
+
     func createCheckout(forSubscription plan: Subscription.PlanType) async throws -> URL {
         URL(string: "https://checkout.example.com/subscription/\(plan.rawValue)")!
     }
