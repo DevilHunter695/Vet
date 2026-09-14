@@ -343,7 +343,14 @@ struct BookingView: View {
             VStack(alignment: .leading, spacing: 20) {
                 if let vet = viewModel.circuit.vet {
                     NavigationLink {
-                        VetDetailView(vet: vet, clusterArea: viewModel.circuit.clusterArea)
+                        // C5's "next 7 days" availability section reads
+                        // `upcomingSlots`; without this it was always empty,
+                        // since a `Vet` alone carries no schedule.
+                        VetDetailView(
+                            vet: vet,
+                            clusterArea: viewModel.circuit.clusterArea,
+                            upcomingSlots: viewModel.circuit.schedule
+                        )
                     } label: {
                         Card {
                             VStack(alignment: .leading, spacing: 6) {

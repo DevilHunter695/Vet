@@ -10,17 +10,11 @@ struct VerifiedBadge: View {
     var body: some View {
         switch status {
         case .verified:
-            Label("VCI Verified", systemImage: "checkmark.seal.fill")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.blue)
+            TagChip(text: "VCI Verified", systemImage: "checkmark.seal.fill", tint: Theme.primaryLight)
         case .pending:
-            Label("Verification pending", systemImage: "clock.badge.exclamationmark")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.orange)
+            TagChip(text: "Verification pending", systemImage: "clock.badge.exclamationmark", tint: Theme.warning)
         case .rejected:
-            Label("Not verified", systemImage: "xmark.seal.fill")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.red)
+            TagChip(text: "Not verified", systemImage: "xmark.seal.fill", tint: Theme.danger)
         }
     }
 }
@@ -124,7 +118,7 @@ struct VetDetailView: View {
                 Text(vet.name).font(.brandTitle)
                 VerifiedBadge(status: vet.verificationStatus)
                 HStack(spacing: 4) {
-                    Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                    Image(systemName: "star.fill").font(.caption2).foregroundStyle(Theme.goldTier)
                     Text(String(format: "%.1f", vet.rating) + " (\(vet.reviewCount) reviews)")
                         .font(.brandCaption).foregroundStyle(.secondary)
                 }
@@ -186,7 +180,7 @@ struct VetDetailView: View {
                     let fraction = histogram.totalCount == 0 ? 0 : Double(count) / Double(histogram.totalCount)
                     HStack(spacing: 8) {
                         Text("\(stars)").font(.caption).monospacedDigit().frame(width: 12)
-                        Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                        Image(systemName: "star.fill").font(.caption2).foregroundStyle(Theme.goldTier)
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
                                 Capsule().fill(Color(.systemGray5))
@@ -211,7 +205,7 @@ struct VetDetailView: View {
                     HStack(spacing: 2) {
                         ForEach(0..<5, id: \.self) { index in
                             Image(systemName: index < review.rating ? "star.fill" : "star")
-                                .font(.caption2).foregroundStyle(.yellow)
+                                .font(.caption2).foregroundStyle(Theme.goldTier)
                         }
                     }
                     if let comment = review.comment {
