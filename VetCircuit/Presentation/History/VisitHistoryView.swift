@@ -15,6 +15,7 @@ final class VisitHistoryViewModel {
     private let cancelVisitUseCase = DependencyContainer.shared.cancelVisitUseCase()
     private let vaccinationRepository = DependencyContainer.shared.vaccinationRepository
     private let sendPostVisitSummaryUseCase = DependencyContainer.shared.sendPostVisitSummaryUseCase()
+    private let flagVisitNoShowUseCase = DependencyContainer.shared.flagVisitNoShowUseCase()
 
     func load(userId: UUID, currentUser: User?) async {
         isLoading = true
@@ -29,6 +30,15 @@ final class VisitHistoryViewModel {
             if let currentUser {
                 for visit in visits where visit.status == .completed {
                     try? await sendPostVisitSummaryUseCase.execute(user: currentUser, visit: visit)
+                }
+            }
+            // F4: same pattern as the post-visit summary push above — flag
+            // (and cancel, per CancellationPolicy's 100%-charged branch) any
+            // visit that's sat in requested/confirmed past its scheduled
+            // time, deduped locally so it's only acted on once.
+            for index in visits.indices where visits[index].status == .requested || visits[index].status == .confirmed {
+                if let flagged = try? await flagVisitNoShowUseCase.execute(visit: visits[index]), flagged {
+                    withAnimation(Theme.springSoft) { visits[index].status = .cancelledByUser }
                 }
             }
         } catch {
