@@ -283,11 +283,11 @@ Service (Home consultation)
 
 | # | Capability | Pri | Status | Notes |
 |---|---|---|---|---|
-| L1 | Manual VCI registration verification before a vet goes live | P0 | 🔨 | Do this by hand, every time, forever |
+| L1 | Manual VCI registration verification before a vet goes live | P0 | 🔨 | Do this by hand, every time, forever. Genuinely out of this pass's reach: this is a human ops action performed before/outside any app surface (no code verifies a VCI registration, nor should it), and the app-side result of that action — a vet's `verificationStatus`, gating whether they're bookable at all — is already ✅ under L3. There is no vet-facing or admin-facing UI in this app (Sections P/Q, explicitly out of scope) where a "mark verified" action could live even if it were in scope; this row stays 🔨 rather than ⛔ only because unlike L7 it isn't purely commercial/legal, it also has a real (already-built) code-side consumer in L3 |
 | L2 | Document-backed onboarding: degree, VCI cert, ID, police verification, photo | P0 | ⛔ | |
 | L3 | "Verified" badge + credentials visible on vet profile | P0 | ✅ | `VerifiedBadge` on `VetDetailView`, the booking-flow vet card, and the circuit list row. Also closed a real gap: `CircuitRepository.listCircuits` previously surfaced unverified vets in the booking flow at all — it now filters to `verificationStatus == .verified` server-query-side (Supabase) / actor-side (mock), per L1's "verified before going live". |
 | L4 | **SOS button + share-my-visit link** during an in-home visit | P1 | ✅ | `SOSUseCase`/`ShareVisitLinkUseCase`, prominent (but confirm-gated) button in `LiveTrackingView`; reuses N7's `DeepLinkParser`/`vetcircuit://visit/<id>` link, shares via system share sheet |
-| L5 | Incident reporting (both directions) + vet suspension flow | P1 | 🔨 | `IncidentReport`/`IncidentReportRepository` + `FileIncidentReportUseCase`, customer-side "Report an incident" in `VisitDetailView` (0027_incident_reports.sql: reporter reads/writes own only). Vet-side entry point and the ops-console vet suspension action itself are out of scope for this app — known gap |
+| L5 | Incident reporting (both directions) + vet suspension flow | P1 | 🔨 | Customer-side direction is fully done: `IncidentReport`/`IncidentReportRepository` + `FileIncidentReportUseCase`, "Report an incident" in `VisitDetailView` (0027_incident_reports.sql: reporter reads/writes own only). Remaining gap is structural, not an oversight: the vet-side "report a customer" direction needs a vet-facing UI (Section P, explicitly out of scope for this app), and "vet suspension flow" is an ops-console action (Section Q, also explicitly out of scope) — neither has anywhere to live in this customer-only app, so this stays 🔨 rather than a false ✅ |
 | L6 | Review moderation (profanity, PII, defamation) | P1 | ⛔ | |
 | L7 | Professional indemnity / liability insurance requirement for vets | P1 | ⛔ | Commercial, not code — but blocks launch legally |
 | L8 | Clear "not an emergency service" disclaimer + escalation routing | **P0** | ✅ | Full disclaimer on `EmergencyView`; a brief caption version under `CircuitsListView`'s "Not sure?"/emergency entry points too, so it's not only reachable via the emergency path. |
@@ -298,7 +298,7 @@ Service (Home consultation)
 |---|---|---|---|
 | M1 | Help centre / FAQ (remote content, not app-updated) | P0 | ✅ | `HelpCenterView` (grouped by category, searchable) + `HelpRepository`, backed by public-read `help_articles` (migration 0020); Mock repo ships ~10 FAQ entries |
 | M2 | In-app "Contact support" → ticket with visit context attached | P0 | ✅ | `ContactSupportView`/`MyTicketsView` + `SupportRepository` against `support_tickets` (0020) — owner read/insert, no client update, mirroring `refunds` |
-| M3 | Ops ticket queue + SLA + canned responses | P0 | 🔨 |
+| M3 | Ops ticket queue + SLA + canned responses | P0 | 🔨 | Structurally out of scope for this app: a queue/SLA/canned-responses workspace is an ops-side tool (Section Q, the ops console — explicitly out of scope here, belongs to admin-web). This customer app already writes into the shared `support_tickets` table it would read from (`SupportRepository`/M2), so the data path exists; the ops UI to work the queue does not and should not be built here |
 | M4 | Refund/credit issuance from a ticket, with audit trail | P0 | ✅ |
 | M5 | Call support (business hours) | P1 | ✅ |
 
