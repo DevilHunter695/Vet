@@ -510,6 +510,20 @@ protocol AppNotificationRepository: Sendable {
     /// `NotificationPreferencesRepository`'s per-channel opt-in/out toggles.
     func notifications(userId: UUID) async throws -> [AppNotification]
     func markRead(id: UUID) async throws
+
+    /// N3: rows the `lifecycle-notifications` Edge Function queued
+    /// (`sent_at is null`) that `DrainLifecycleNotificationQueueUseCase`
+    /// still needs to push. Unlike F4/I8/H4's device-local dedupe flags, the
+    /// "already handled" marker here is the server-side `sent_at` column
+    /// itself (0019_notifications_and_vaccinations.sql) — no separate
+    /// dedupe repository is needed because the source of truth already
+    /// lives in this same table/row.
+    func unsentNotifications(userId: UUID) async throws -> [AppNotification]
+    /// Marks a queued row delivered once it has actually been pushed
+    /// through `SendTransactionalNotificationUseCase`. Permitted by the
+    /// existing "notifications mark own read" RLS policy (0022), which is
+    /// scoped to the row's own `user_id` but not to any particular column.
+    func markSent(id: UUID) async throws
 }
 
 // MARK: - A9 household sharing

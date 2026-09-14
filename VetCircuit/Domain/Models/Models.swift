@@ -1260,6 +1260,13 @@ enum TransactionalNotificationCategory: String, Codable, CaseIterable, Sendable 
     case visitCompleted = "visit_completed"
     /// H4: T-7/T-1 subscription renewal reminders.
     case subscriptionRenewalDue = "subscription_renewal_due"
+    /// N3: vaccination due / renewal / dormant-60d / abandoned-cart lifecycle
+    /// pushes queued server-side by the `lifecycle-notifications` Edge
+    /// Function (see `DrainLifecycleNotificationQueueUseCase`). One shared
+    /// category covers all four `AppNotification.Category` lifecycle kinds —
+    /// they all follow the same booking-updates opt-in/out toggle, so there's
+    /// no policy reason to split them further.
+    case lifecycleReminder = "lifecycle_reminder"
 }
 
 // MARK: - H4: renewal reminders (T-7, T-1) + receipt.

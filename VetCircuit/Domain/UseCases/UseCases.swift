@@ -1955,6 +1955,36 @@ struct SubmitVetOnboardingApplicationUseCase {
     }
 }
 
+/// N3: drains the `notifications` queue that `lifecycle-notifications`
+/// (vaccination due, renewal, dormant-60d, abandoned-cart detection) writes
+/// server-side with `sent_at` left null. Closed the same way F4/I8/H4 closed
+/// their equivalent gaps — a routine, frequently-visited screen
+/// (`ProfileView`'s load) drains it client-side rather than a real
+/// server-side push-send cron (plan §6.5), which remains the honest,
+/// accepted limit. Unlike those three, the "already handled" state lives
+/// server-side already (`sent_at`), so there's no separate dedupe
+/// repository to invent: marking a row sent here is itself the dedupe.
+struct DrainLifecycleNotificationQueueUseCase {
+    let repository: AppNotificationRepository
+    let sendTransactionalNotificationUseCase: SendTransactionalNotificationUseCase
+
+    /// - Returns: how many queued notifications were pushed this call.
+    @discardableResult
+    func execute(user: User) async throws -> Int {
+        let queued = try await repository.unsentNotifications(userId: user.id)
+        var sent = 0
+        for notification in queued {
+            _ = try await sendTransactionalNotificationUseCase.execute(
+                user: user, category: .lifecycleReminder,
+                body: "\(notification.title) — \(notification.body)"
+            )
+            try await repository.markSent(id: notification.id)
+            sent += 1
+        }
+        return sent
+    }
+}
+
 /// I8: post-visit summary push. `PostVisitSummaryRepository` is the guard
 /// against re-sending it every time the app happens to notice the visit is
 /// still completed (there is no server-side "has this been sent" flag —

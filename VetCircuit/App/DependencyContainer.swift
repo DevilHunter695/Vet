@@ -297,4 +297,13 @@ final class DependencyContainer {
     func manageCorporateSeatsUseCase() -> ManageCorporateSeatsUseCase {
         ManageCorporateSeatsUseCase(repository: corporateSeatAssignmentRepository)
     }
+    /// N3: drains the server-queued lifecycle notification queue (see
+    /// `DrainLifecycleNotificationQueueUseCase`'s doc comment for where
+    /// this is actually invoked from).
+    func drainLifecycleNotificationQueueUseCase() -> DrainLifecycleNotificationQueueUseCase {
+        DrainLifecycleNotificationQueueUseCase(
+            repository: appNotificationRepository,
+            sendTransactionalNotificationUseCase: sendTransactionalNotificationUseCase()
+        )
+    }
 }

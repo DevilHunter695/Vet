@@ -1549,6 +1549,19 @@ actor MockAppNotificationRepository: AppNotificationRepository {
         guard let index = stored.firstIndex(where: { $0.id == id }) else { return }
         stored[index].readAt = .now
     }
+
+    /// N3: the seeded vaccination-due row above has `sentAt` already set, so
+    /// nothing drains by default — set a row's `sentAt` to nil in a test to
+    /// exercise `DrainLifecycleNotificationQueueUseCase`.
+    func unsentNotifications(userId: UUID) async throws -> [AppNotification] {
+        seedIfNeeded(userId: userId)
+        return stored.filter { $0.userId == userId && $0.sentAt == nil }.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    func markSent(id: UUID) async throws {
+        guard let index = stored.firstIndex(where: { $0.id == id }) else { return }
+        stored[index].sentAt = .now
+    }
 }
 
 // MARK: - A9 household

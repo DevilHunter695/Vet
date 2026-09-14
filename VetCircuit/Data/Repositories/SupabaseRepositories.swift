@@ -2479,6 +2479,20 @@ final class SupabaseAppNotificationRepository: AppNotificationRepository {
         try await client.from("notifications").update(["read_at": ISO8601DateFormatter().string(from: Date())])
             .eq("id", value: id).execute()
     }
+
+    /// N3: rows `lifecycle-notifications` queued (`sent_at is null`) for
+    /// this user, still waiting to be drained.
+    func unsentNotifications(userId: UUID) async throws -> [AppNotification] {
+        let rows: [SupabaseAppNotificationRow] = try await client.from("notifications")
+            .select().eq("user_id", value: userId).is("sent_at", value: nil)
+            .order("created_at", ascending: true).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func markSent(id: UUID) async throws {
+        try await client.from("notifications").update(["sent_at": ISO8601DateFormatter().string(from: Date())])
+            .eq("id", value: id).execute()
+    }
 }
 
 private struct SupabaseHelpArticleRow: Decodable {
