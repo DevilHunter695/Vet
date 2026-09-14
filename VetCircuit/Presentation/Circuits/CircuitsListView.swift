@@ -695,7 +695,7 @@ struct CircuitRow: View {
             HStack(spacing: 10) {
                 Label(slotText, systemImage: "clock.fill")
                     .font(.brandCaption)
-                    .foregroundStyle(nextSlot == nil ? .secondary : Theme.emeraldLight)
+                    .foregroundStyle(nextSlot == nil ? Color.secondary : Theme.emeraldLight)
                     .lineLimit(1)
 
                 Spacer(minLength: 4)

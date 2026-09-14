@@ -721,7 +721,7 @@ private struct SlotChip: View {
                 if slot.remainingCapacity <= 2 {
                     Text("\(slot.remainingCapacity) left")
                         .font(.system(size: 9, design: .rounded).weight(.medium))
-                        .foregroundStyle(isSelected ? .white.opacity(0.85) : AnyShapeStyle(Theme.warning))
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Theme.warning)
                 }
             }
             .padding(.horizontal, 14)
@@ -766,7 +766,7 @@ private struct SelectableRow: View {
                 if let systemImage {
                     Image(systemName: systemImage)
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(isSelected ? .white : AnyShapeStyle(Theme.primary))
+                        .foregroundStyle(isSelected ? Color.white : Theme.primary)
                         .frame(width: 38, height: 38)
                         .background {
                             Circle()
