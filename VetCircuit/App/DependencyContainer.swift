@@ -72,6 +72,12 @@ final class DependencyContainer {
     /// L2: document-backed vet onboarding applications (domain/data layer
     /// only — this app has no vet-facing UI to submit one from).
     let vetOnboardingRepository: VetOnboardingRepository
+    /// I7: the vet's in-visit checklist, read-only from the customer side.
+    let visitChecklistRepository: VisitChecklistRepository
+    /// I8: device-local dedupe for the post-visit summary push.
+    let postVisitSummaryRepository: PostVisitSummaryRepository
+    /// H7: corporate/RWA seat assignment roster.
+    let corporateSeatAssignmentRepository: CorporateSeatAssignmentRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -132,6 +138,9 @@ final class DependencyContainer {
         self.smsFallbackRepository = MockSMSFallbackRepository()
         self.labTestReportRepository = MockLabTestReportRepository()
         self.vetOnboardingRepository = MockVetOnboardingRepository()
+        self.visitChecklistRepository = MockVisitChecklistRepository()
+        self.postVisitSummaryRepository = LocalPostVisitSummaryRepository()
+        self.corporateSeatAssignmentRepository = MockCorporateSeatAssignmentRepository()
     }
 
     // MARK: Use case factories
@@ -155,10 +164,14 @@ final class DependencyContainer {
     func manageSubscriptionUseCase() -> ManageSubscriptionUseCase {
         ManageSubscriptionUseCase(subscriptionRepository: subscriptionRepository)
     }
+    /// H5: dunning — read-only retry/grace status, and grace-expiry resolution.
+    func dunningStatusUseCase() -> DunningStatusUseCase { DunningStatusUseCase(subscriptionRepository: subscriptionRepository) }
     func sendChatMessageUseCase() -> SendChatMessageUseCase { SendChatMessageUseCase(chatRepository: chatRepository) }
     func submitReviewUseCase() -> SubmitReviewUseCase { SubmitReviewUseCase(reviewRepository: reviewRepository) }
     func managePetsUseCase() -> ManagePetsUseCase { ManagePetsUseCase(petRepository: petRepository) }
     func startCheckoutUseCase() -> StartCheckoutUseCase { StartCheckoutUseCase(paymentRepository: paymentRepository) }
+    /// G3: payment retry on failure.
+    func retryPaymentUseCase() -> RetryPaymentUseCase { RetryPaymentUseCase(paymentRepository: paymentRepository) }
     func trackVetUseCase() -> TrackVetUseCase { TrackVetUseCase(liveTrackingRepository: liveTrackingRepository) }
     func startCallUseCase() -> StartCallUseCase { StartCallUseCase(callRepository: callRepository) }
     func sendReferralUseCase() -> SendReferralUseCase { SendReferralUseCase(referralRepository: referralRepository) }
@@ -233,6 +246,10 @@ final class DependencyContainer {
             smsFallbackRepository: smsFallbackRepository
         )
     }
+    /// H4: T-7/T-1 subscription renewal reminders.
+    func renewalReminderUseCase() -> RenewalReminderUseCase {
+        RenewalReminderUseCase(sendTransactionalNotificationUseCase: sendTransactionalNotificationUseCase())
+    }
     /// K6: lab test reports attached to a visit/pet.
     func getLabTestReportsUseCase() -> GetLabTestReportsUseCase {
         GetLabTestReportsUseCase(repository: labTestReportRepository)
@@ -240,5 +257,17 @@ final class DependencyContainer {
     /// L2: document-backed vet onboarding (domain/data layer only).
     func submitVetOnboardingApplicationUseCase() -> SubmitVetOnboardingApplicationUseCase {
         SubmitVetOnboardingApplicationUseCase(repository: vetOnboardingRepository)
+    }
+    /// I7: the vet's in-visit checklist, once it becomes the customer's record.
+    func getVisitChecklistUseCase() -> GetVisitChecklistUseCase {
+        GetVisitChecklistUseCase(repository: visitChecklistRepository)
+    }
+    /// I8: post-visit summary push, de-duplicated on-device.
+    func sendPostVisitSummaryUseCase() -> SendPostVisitSummaryUseCase {
+        SendPostVisitSummaryUseCase(sendTransactionalNotificationUseCase: sendTransactionalNotificationUseCase(), postVisitSummaryRepository: postVisitSummaryRepository)
+    }
+    /// H7: corporate/RWA seat assignment.
+    func manageCorporateSeatsUseCase() -> ManageCorporateSeatsUseCase {
+        ManageCorporateSeatsUseCase(repository: corporateSeatAssignmentRepository)
     }
 }

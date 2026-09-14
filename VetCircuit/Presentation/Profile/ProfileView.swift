@@ -149,25 +149,10 @@ struct ProfileView: View {
                             ManageSubscriptionView()
                         }
                     } else {
-                        ForEach([Subscription.PlanType.monthly, .quarterly, .annual], id: \.self) { plan in
-                            Button("Subscribe — \(plan.displayName)") {
-                                Haptics.confirm()
-                                Task {
-                                    if let user = session.currentUser {
-                                        checkoutURL = await viewModel.subscribe(userId: user.id, plan: plan)
-                                    }
-                                }
-                            }
-                        }
-
-                        NavigationLink("Corporate / RWA bulk plan") {
-                            CorporatePlanView { seatCount in
-                                Task {
-                                    if let user = session.currentUser {
-                                        checkoutURL = await viewModel.subscribe(userId: user.id, plan: .corporate, seatCount: seatCount)
-                                    }
-                                }
-                            }
+                        // H1: full inclusions + fair-use limits shown before
+                        // purchase, rather than a bare "Subscribe" button.
+                        NavigationLink("View plans") {
+                            PlanCatalogView()
                         }
                     }
                 }

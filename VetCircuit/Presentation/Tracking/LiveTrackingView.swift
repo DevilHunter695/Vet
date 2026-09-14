@@ -55,8 +55,7 @@ final class LiveTrackingViewModel {
     }
 
     /// I3: mirrors this screen's own state onto the Lock Screen/Dynamic
-    /// Island — see VetEnRouteActivity.swift for the widget-extension gap
-    /// this depends on to actually render anywhere.
+    /// Island via VetEnRouteActivityManager (VetEnRouteActivity.swift).
     private func startLiveActivity() {
         #if canImport(ActivityKit)
         if #available(iOS 16.1, *) {
@@ -68,7 +67,7 @@ final class LiveTrackingViewModel {
     private func updateLiveActivity() async {
         #if canImport(ActivityKit)
         if #available(iOS 16.1, *) {
-            await VetEnRouteActivityManager.update(etaMinutes: location?.etaMinutes, status: .enRoute)
+            VetEnRouteActivityManager.update(etaMinutes: location?.etaMinutes, status: .enRoute)
         }
         #endif
     }

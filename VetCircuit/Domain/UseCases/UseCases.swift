@@ -259,6 +259,98 @@ struct ManageSubscriptionUseCase {
     }
 }
 
+/// H5: dunning — surfaces the retry-ladder/grace state read-only ("payment
+/// failed, retrying...") and, once grace has expired, performs the
+/// auto-downgrade `DunningPolicy` calls for. The actual "a renewal charge
+/// just failed" trigger is a gateway webhook (no gateway is wired into this
+/// codebase), so `recordFailure` exists for that future caller/scheduled job
+/// (plan §6.5) to invoke — this use case's real job today is reading and
+/// resolving whatever dunning state already exists.
+struct DunningStatusUseCase {
+    let subscriptionRepository: SubscriptionRepository
+
+    /// Called by the (not-yet-wired) renewal-failure webhook or a scheduled
+    /// job each time a charge fails; advances the retry ladder into grace.
+    @discardableResult
+    func recordFailure(subscriptionId: UUID, now: Date = .now) async throws -> DunningPolicy.Outcome {
+        let existing = try await subscriptionRepository.dunningState(subscriptionId: subscriptionId)
+        let outcome = DunningPolicy.onChargeFailed(state: existing, subscriptionId: subscriptionId, now: now)
+        switch outcome {
+        case .retryScheduled(let state), .graceStarted(let state):
+            try await subscriptionRepository.recordDunningState(state)
+        case .downgraded:
+            break
+        }
+        return outcome
+    }
+
+    /// Read-only status for the customer app: nil once there's no unresolved
+    /// dunning state, otherwise the current retry/grace snapshot to show as
+    /// "payment failed, retrying on <date>" / "your plan will downgrade on <date>".
+    func currentStatus(subscriptionId: UUID) async throws -> DunningState? {
+        try await subscriptionRepository.dunningState(subscriptionId: subscriptionId)
+    }
+
+    /// The scheduled job (plan §6.5) calls this once grace has elapsed with
+    /// no successful charge — downgrades the subscription rather than
+    /// leaving it past-due indefinitely, and clears the dunning state.
+    @discardableResult
+    func resolveIfGraceExpired(subscriptionId: UUID, now: Date = .now) async throws -> Bool {
+        guard let state = try await subscriptionRepository.dunningState(subscriptionId: subscriptionId),
+              DunningPolicy.shouldAutoDowngrade(state: state, now: now) else {
+            return false
+        }
+        _ = try await subscriptionRepository.changePlan(subscriptionId: subscriptionId, to: DunningPolicy.downgradeTarget)
+        try await subscriptionRepository.recordDunningState(DunningState(subscriptionId: subscriptionId, failedAttempts: 0, nextRetryAt: nil, gracePeriodEndsAt: nil))
+        return true
+    }
+}
+
+/// H4: renewal reminders (T-7, T-1). `RenewalReminderPolicy` decides whether
+/// today is a reminder day; this wires that into the existing transactional
+/// notification pipeline (J8) rather than inventing a second one. Like J8
+/// itself, actually *invoking* this once a day is a scheduled job (plan
+/// §6.5) — no cron exists in this codebase to call it, so it's exercised
+/// from wherever a daily check will eventually live (or a test).
+struct RenewalReminderUseCase {
+    let sendTransactionalNotificationUseCase: SendTransactionalNotificationUseCase
+
+    @discardableResult
+    func execute(user: User, subscription: Subscription, now: Date = .now) async throws -> RenewalReminderPolicy.Stage? {
+        guard subscription.status == .active, let stage = RenewalReminderPolicy.dueStage(renewalDate: subscription.renewalDate, now: now) else {
+            return nil
+        }
+        let body: String = {
+            switch stage {
+            case .sevenDaysBefore: return "Your \(subscription.planType.displayName) plan renews in 7 days."
+            case .oneDayBefore: return "Your \(subscription.planType.displayName) plan renews tomorrow."
+            }
+        }()
+        _ = try await sendTransactionalNotificationUseCase.execute(user: user, category: .subscriptionRenewalDue, body: body)
+        return stage
+    }
+}
+
+/// H7: corporate/RWA seat assignment — the roster of who fills each of a
+/// corporate subscription's billed seats.
+struct ManageCorporateSeatsUseCase {
+    let repository: CorporateSeatAssignmentRepository
+
+    func list(subscriptionId: UUID) async throws -> [CorporateSeatAssignment] {
+        try await repository.assignments(subscriptionId: subscriptionId)
+    }
+
+    func assign(subscriptionId: UUID, phone: String, seatCount: Int) async throws -> CorporateSeatAssignment {
+        let trimmed = phone.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { throw DomainError.validation("Enter a phone number.") }
+        return try await repository.assignSeat(subscriptionId: subscriptionId, phone: trimmed, seatCount: seatCount)
+    }
+
+    func unassign(id: UUID) async throws {
+        try await repository.unassignSeat(id: id)
+    }
+}
+
 struct SendChatMessageUseCase {
     let chatRepository: ChatRepository
 
@@ -649,6 +741,22 @@ struct StartCheckoutUseCase {
             throw DomainError.validation("Invalid amount.")
         }
         return try await paymentRepository.createCheckout(forVisit: visitId, quoteId: quote.id, amountMinorUnits: quote.breakdown.totalMinorUnits)
+    }
+}
+
+/// G3: payment retry on failure, with a clear stopping point instead of an
+/// endless "try again" loop — `PaymentRetryPolicy` decides whether another
+/// attempt is even offered before this ever calls the gateway again.
+struct RetryPaymentUseCase {
+    let paymentRepository: PaymentRepository
+
+    func execute(visitId: UUID, paymentId: UUID, amountMinorUnits: Int, priorAttempts: Int) async throws -> URL {
+        let status = try await paymentRepository.paymentStatus(paymentId: paymentId)
+        let outcome = PaymentRetryPolicy.evaluate(status: status, priorAttempts: priorAttempts)
+        guard outcome.canRetry else {
+            throw DomainError.validation(outcome.reason ?? "This payment can't be retried right now.")
+        }
+        return try await paymentRepository.createCheckout(forVisit: visitId, amountMinorUnits: amountMinorUnits)
     }
 }
 
@@ -1631,6 +1739,28 @@ struct SubmitVetOnboardingApplicationUseCase {
     }
 }
 
+/// I8: post-visit summary push. `PostVisitSummaryRepository` is the guard
+/// against re-sending it every time the app happens to notice the visit is
+/// still completed (there is no server-side "has this been sent" flag —
+/// see the honest gap on the repository protocol).
+struct SendPostVisitSummaryUseCase {
+    let sendTransactionalNotificationUseCase: SendTransactionalNotificationUseCase
+    let postVisitSummaryRepository: PostVisitSummaryRepository
+
+    @discardableResult
+    func execute(user: User, visit: Visit) async throws -> Bool {
+        guard visit.status == .completed, !(try await postVisitSummaryRepository.hasSent(visitId: visit.id)) else {
+            return false
+        }
+        let body = visit.notes?.isEmpty == false
+            ? "Your visit summary is ready: \(visit.notes!)"
+            : "Your visit summary is ready — tap to see the full record."
+        _ = try await sendTransactionalNotificationUseCase.execute(user: user, category: .visitCompleted, body: body)
+        try await postVisitSummaryRepository.markSent(visitId: visit.id)
+        return true
+    }
+}
+
 // MARK: - K6: lab test ordering + report delivery. Ordering reuses the
 // existing catalog/cart/checkout flow (`Service` of `.labTest` category);
 // this use case only surfaces the resulting reports.
@@ -1643,6 +1773,17 @@ struct GetLabTestReportsUseCase {
 
     func forVisit(_ visitId: UUID) async throws -> [LabTestReport] {
         try await repository.reports(visitId: visitId)
+    }
+}
+
+/// I7: the vet's in-visit checklist, once it becomes the customer's record —
+/// sorted by `sortOrder` so it reads as the order the vet actually worked
+/// through it.
+struct GetVisitChecklistUseCase {
+    let repository: VisitChecklistRepository
+
+    func execute(visitId: UUID) async throws -> [VisitChecklistItem] {
+        try await repository.items(visitId: visitId).sorted { $0.sortOrder < $1.sortOrder }
     }
 }
 

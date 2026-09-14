@@ -30,6 +30,10 @@ protocol VisitRepository: Sendable {
     func rescheduleVisit(visitId: UUID, newSlot: ScheduleSlot) async throws -> Visit
     /// The amount actually paid for this visit, needed to compute a refund.
     func paidAmountMinorUnits(visitId: UUID) async throws -> Int
+    /// I2: the timestamped status timeline, oldest first — server-recorded
+    /// (0046_visit_status_events.sql), since the client never knew *when*
+    /// a past transition happened, only what the current status is.
+    func statusHistory(visitId: UUID) async throws -> [VisitStatusEvent]
 }
 
 protocol AccountRepository: Sendable {
@@ -70,6 +74,23 @@ protocol PaymentDisputeRepository: Sendable {
     /// never has more than one, but this stays a list for the same reason
     /// `RefundRepository.refunds` does.
     func disputes(visitId: UUID) async throws -> [PaymentDispute]
+}
+
+/// I7: read-only from the customer side — see the type comment on
+/// `VisitChecklistItem`.
+protocol VisitChecklistRepository: Sendable {
+    func items(visitId: UUID) async throws -> [VisitChecklistItem]
+}
+
+/// I8: guards `SendPostVisitSummaryUseCase` against re-sending the same
+/// visit's push every time the app notices it's completed. Honest gap:
+/// this is a device-local "have I sent this" flag, not a server-side one —
+/// a real deployment would want the completion trigger (and its
+/// idempotency) to live server-side, next to whatever marks a visit
+/// `completed` in the first place, not client-detected on next launch.
+protocol PostVisitSummaryRepository: Sendable {
+    func hasSent(visitId: UUID) async throws -> Bool
+    func markSent(visitId: UUID) async throws
 }
 
 protocol InvoiceRepository: Sendable {
@@ -376,6 +397,17 @@ protocol RescheduleProposalRepository: Sendable {
     func pendingProposal(visitId: UUID) async throws -> RescheduleProposal?
     func create(_ proposal: RescheduleProposal) async throws -> RescheduleProposal
     func respond(id: UUID, accept: Bool) async throws -> RescheduleProposal
+}
+
+/// H7: corporate/RWA seat assignment — who fills each of a corporate
+/// subscription's billed seats. `SubscriptionManagementPolicy`'s seat-floor
+/// rule stays the money-side authority; this is purely the roster.
+protocol CorporateSeatAssignmentRepository: Sendable {
+    func assignments(subscriptionId: UUID) async throws -> [CorporateSeatAssignment]
+    /// Throws if every seat is already filled — enforced against
+    /// `Subscription.seatCount`, the real (billed) ceiling.
+    func assignSeat(subscriptionId: UUID, phone: String, seatCount: Int) async throws -> CorporateSeatAssignment
+    func unassignSeat(id: UUID) async throws
 }
 
 protocol NotificationPreferencesRepository: Sendable {

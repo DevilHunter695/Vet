@@ -9,6 +9,8 @@ final class ManageSubscriptionViewModel {
     var subscription: Subscription?
     var errorMessage: String?
     var pendingAction: PendingAction?
+    // H5: dunning — read-only "payment failed, retrying..." status.
+    var dunningState: DunningState?
 
     /// Illustrative individual-plan pricing for the confirmation copy (plan
     /// §9 rule 3: consequences stated in money and time) — mirrors
@@ -38,10 +40,33 @@ final class ManageSubscriptionViewModel {
 
     private let manageSubscriptionUseCase = DependencyContainer.shared.manageSubscriptionUseCase()
     private let subscriptionRepository = DependencyContainer.shared.subscriptionRepository
+    private let dunningStatusUseCase = DependencyContainer.shared.dunningStatusUseCase()
+    private let renewalReminderUseCase = DependencyContainer.shared.renewalReminderUseCase()
 
-    func load(userId: UUID) async {
+    /// H4's "receipt" half: what the last (or upcoming) renewal actually
+    /// charged — same illustrative pricing used everywhere else on this
+    /// screen, since there's no live pricing catalog service.
+    var lastReceipt: SubscriptionReceipt? {
+        guard let subscription else { return nil }
+        return SubscriptionReceipt(
+            id: UUID(), subscriptionId: subscription.id, planType: subscription.planType,
+            amountMinorUnits: ManageSubscriptionViewModel.priceMinorUnits(for: subscription.planType),
+            chargedAt: subscription.renewalDate
+        )
+    }
+
+    func load(userId: UUID, currentUser: User?) async {
         do {
             subscription = try await subscriptionRepository.currentSubscription(userId: userId)
+            if let subscriptionId = subscription?.id {
+                dunningState = try await dunningStatusUseCase.currentStatus(subscriptionId: subscriptionId)
+            }
+            // H4: best-effort T-7/T-1 reminder check on view load — the
+            // honest gap is that nothing calls this once a day on its own;
+            // see RenewalReminderUseCase's doc comment.
+            if let subscription, let currentUser {
+                try? await renewalReminderUseCase.execute(user: currentUser, subscription: subscription)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -90,9 +115,37 @@ struct ManageSubscriptionView: View {
                     LabeledContent("Renews", value: subscription.renewalDate.formatted(date: .abbreviated, time: .omitted))
                     if subscription.planType.isBulk {
                         LabeledContent("Seats", value: "\(subscription.seatCount)")
+                        // H7: who fills each billed seat.
+                        NavigationLink("Assign seats") {
+                            CorporateSeatAssignmentView(subscription: subscription)
+                        }
                     }
                 }
                 .appearAnimation()
+
+                // H4: receipt for the current/upcoming billing cycle.
+                if let receipt = viewModel.lastReceipt {
+                    Section("Receipt") {
+                        LabeledContent("Plan", value: receipt.planType.displayName)
+                        LabeledContent("Amount", value: CurrencyFormatter.rupees(receipt.amountMinorUnits))
+                        LabeledContent("Billed", value: receipt.chargedAt.formatted(date: .abbreviated, time: .omitted))
+                    }
+                }
+
+                // H5: dunning — a failed renewal charge is retrying, or has
+                // moved into its grace window, rather than the customer
+                // finding out only when the plan silently downgrades.
+                if let dunning = viewModel.dunningState {
+                    Section {
+                        if let nextRetryAt = dunning.nextRetryAt {
+                            Label("Payment failed — retrying on \(nextRetryAt.formatted(date: .abbreviated, time: .omitted))", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Theme.warning)
+                        } else if let graceEndsAt = dunning.gracePeriodEndsAt {
+                            Label("Payment failed — your plan downgrades on \(graceEndsAt.formatted(date: .abbreviated, time: .omitted)) unless it's resolved", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Theme.danger)
+                        }
+                    }
+                }
 
                 if subscription.status == .active {
                     Section("Change plan") {
@@ -162,7 +215,7 @@ struct ManageSubscriptionView: View {
         }
         .navigationTitle("Manage subscription")
         .navigationBarTitleDisplayMode(.inline)
-        .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
+        .task { if let user = session.currentUser { await viewModel.load(userId: user.id, currentUser: user) } }
         .confirmationDialog(
             "Are you sure?",
             isPresented: Binding(get: { viewModel.pendingAction != nil }, set: { if !$0 { viewModel.pendingAction = nil } }),

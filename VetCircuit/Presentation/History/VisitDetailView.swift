@@ -29,9 +29,16 @@ struct VisitDetailView: View {
     // J3: unread-message badge on the "Message your vet" row.
     @State private var unreadChatCount = 0
     @Environment(SessionStore.self) private var session
+    // G3: payment retry on failure.
+    @State private var paymentStatus: Payment.Status?
+    @State private var retryAttempts = 0
+    @State private var isRetryingPayment = false
+    @State private var retryErrorMessage: String?
 
     private let startCallUseCase = DependencyContainer.shared.startCallUseCase()
     private let chatRepository = DependencyContainer.shared.chatRepository
+    private let paymentRepository = DependencyContainer.shared.paymentRepository
+    private let retryPaymentUseCase = DependencyContainer.shared.retryPaymentUseCase()
     private let paymentDisputeRepository = DependencyContainer.shared.paymentDisputeRepository
     private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
@@ -51,19 +58,28 @@ struct VisitDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Card {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("Visit status").font(.brandHeadline)
-                            Spacer()
-                            StatusBadge(status: visit.status)
+                NavigationLink {
+                    VisitTimelineView(visitId: visit.id)
+                } label: {
+                    Card {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("Visit status").font(.brandHeadline)
+                                Spacer()
+                                StatusBadge(status: visit.status)
+                            }
+                            Text(visit.scheduledAt.formatted(date: .long, time: .shortened))
+                                .font(.brandBody)
+                                .foregroundStyle(.secondary)
+                            // I2: entry point to the full timestamped timeline.
+                            Label("View full timeline", systemImage: "list.bullet.clipboard")
+                                .font(.brandCaption)
+                                .foregroundStyle(Theme.primary)
                         }
-                        Text(visit.scheduledAt.formatted(date: .long, time: .shortened))
-                            .font(.brandBody)
-                            .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .buttonStyle(PressableStyle())
                 .appearAnimation()
 
                 // G9: a gateway dispute (chargeback) was opened against this
@@ -73,6 +89,27 @@ struct VisitDetailView: View {
                 if let activeDispute {
                     PaymentDisputeStatusView(dispute: activeDispute)
                         .appearAnimation(delay: 0.01)
+                }
+
+                // G3: payment retry on failure — a clear failure state with a
+                // bounded number of retries instead of a dead checkout link.
+                if paymentStatus == .failed {
+                    Card {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Payment failed", systemImage: "exclamationmark.circle.fill")
+                                .font(.brandHeadline).foregroundStyle(Theme.danger)
+                            Text("Your payment for this visit didn't go through.")
+                                .font(.brandCaption).foregroundStyle(.secondary)
+                            if let retryErrorMessage {
+                                Text(retryErrorMessage).font(.brandCaption).foregroundStyle(Theme.danger)
+                            }
+                            PrimaryButton(title: "Retry payment", isLoading: isRetryingPayment) {
+                                Task { await retryPayment() }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .appearAnimation(delay: 0.015)
                 }
 
                 // F6: vet-initiated reschedule accept/decline banner.
@@ -272,6 +309,25 @@ struct VisitDetailView: View {
                 }
 
                 if visit.status == .completed {
+                    // I7: the vet's in-visit checklist, now the customer's record.
+                    NavigationLink {
+                        VisitChecklistView(visitId: visit.id)
+                    } label: {
+                        ActionRow(title: "Visit checklist", systemImage: "checklist", tint: Theme.success)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .appearAnimation(delay: 0.085)
+
+                    // G5: GST-compliant invoice, rendered on-device from the
+                    // server-issued Invoice row.
+                    NavigationLink {
+                        InvoiceView(visit: visit)
+                    } label: {
+                        ActionRow(title: "View invoice", systemImage: "doc.text.fill", tint: Theme.primary)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .appearAnimation(delay: 0.09)
+
                     PrimaryButton(title: "Rate this visit") { showingReview = true }
                         .appearAnimation(delay: 0.1)
 
@@ -346,6 +402,28 @@ struct VisitDetailView: View {
             }
             pendingProposal = try? await rescheduleProposalRepository.pendingProposal(visitId: visit.id)
             activeDispute = try? await paymentDisputeRepository.disputes(visitId: visit.id).first { $0.isActive }
+            if let paymentId = visit.paymentId {
+                paymentStatus = try? await paymentRepository.paymentStatus(paymentId: paymentId)
+            }
+        }
+    }
+
+    /// G3: re-launches hosted checkout for this visit's payment, bounded by
+    /// `PaymentRetryPolicy`'s attempt cap.
+    private func retryPayment() async {
+        guard let paymentId = visit.paymentId else { return }
+        isRetryingPayment = true
+        retryErrorMessage = nil
+        defer { isRetryingPayment = false }
+        do {
+            let paidMinorUnits = try await DependencyContainer.shared.visitRepository.paidAmountMinorUnits(visitId: visit.id)
+            let url = try await retryPaymentUseCase.execute(
+                visitId: visit.id, paymentId: paymentId, amountMinorUnits: paidMinorUnits, priorAttempts: retryAttempts
+            )
+            retryAttempts += 1
+            await UIApplication.shared.open(url)
+        } catch {
+            retryErrorMessage = error.localizedDescription
         }
     }
 

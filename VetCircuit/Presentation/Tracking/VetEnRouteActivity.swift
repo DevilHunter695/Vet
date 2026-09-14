@@ -6,33 +6,35 @@ import Foundation
 // MARK: - I3 Live Activity / Dynamic Island for "vet en route" (plan §3 I3,
 // P1 — "iOS-native differentiator, huge perceived-quality win").
 //
-// KNOWN GAP, flagged per the task brief rather than guessed at: a Live
-// Activity's Dynamic Island/Lock Screen UI is rendered by a **Widget
-// Extension target**, which does not exist in this project — `project.yml`
-// (repo root) defines a single `VetCircuit` application target and a
-// `VetCircuitTests` bundle, nothing else. Adding a `widget` target to
-// XcodeGen's config is a real Xcode-project change (a new target, its own
-// Info.plist/entitlements, an App Group for the widget-extension/main-app
-// hand-off) that risks silently breaking the existing single-target build if
-// guessed at without being able to run `xcodegen generate` + a real build
-// here. Per the brief: "getting this half right with a clear flag beats a
-// confident guess that silently breaks CI."
-//
-// What *is* committed and safe: the `ActivityAttributes` contract and the
-// call site that starts/updates/ends the Activity from the main app target
-// (ActivityKit's `Activity<T>.request` works from the app target without a
-// widget extension present — it just has nothing to render on the Lock
-// Screen/Island until the extension exists). Once a widget extension target
-// is added in Xcode (or a maintainer is confident enough in the XcodeGen
-// diff to add it directly), it imports this same `VetEnRouteAttributes` type
-// (shared via a target membership on this file, or a small shared framework)
-// and supplies the actual `ActivityConfiguration` SwiftUI views.
+// `VetEnRouteAttributes` is defined identically here and in
+// VetCircuitWidget/VetEnRouteAttributes.swift — there's no shared-framework
+// target in this project, so (mirroring `SharedVisitSummary`'s existing
+// app/widget duplication for N6) each target keeps its own copy of the same
+// Codable layout, which is all ActivityKit needs to agree on the wire
+// format. VetCircuitWidget/VetEnRouteLiveActivity.swift supplies the actual
+// Lock Screen/Dynamic Island `ActivityConfiguration` views, now that a
+// widget extension target exists (it didn't when this row was last audited).
 #if canImport(ActivityKit)
 @available(iOS 16.1, *)
 struct VetEnRouteAttributes: ActivityAttributes {
+    /// Mirrors `Visit.VisitStatus`'s en-route-adjacent cases only — kept
+    /// separate rather than reusing that enum directly since the widget
+    /// extension's copy of this file can't import the main app's Domain layer.
+    enum LiveStatus: String, Codable, Hashable {
+        case enRoute, arrived, inProgress
+
+        var displayText: String {
+            switch self {
+            case .enRoute: return "Vet en route"
+            case .arrived: return "Vet has arrived"
+            case .inProgress: return "Visit in progress"
+            }
+        }
+    }
+
     struct ContentState: Codable, Hashable {
         var etaMinutes: Int?
-        var status: Visit.VisitStatus
+        var status: LiveStatus
     }
 
     var visitId: UUID
@@ -47,13 +49,25 @@ struct VetEnRouteAttributes: ActivityAttributes {
 enum VetEnRouteActivityManager {
     private static var currentActivity: Activity<VetEnRouteAttributes>?
 
+    /// Maps the real domain status to the widget-safe mirror — nil for any
+    /// status this Activity has no business representing (it only exists
+    /// while a visit is actively en route/arrived/in progress).
+    private static func liveStatus(for status: Visit.VisitStatus) -> VetEnRouteAttributes.LiveStatus? {
+        switch status {
+        case .enRoute: return .enRoute
+        case .arrived: return .arrived
+        case .inProgress: return .inProgress
+        default: return nil
+        }
+    }
+
     static func start(visitId: UUID, vetName: String, etaMinutes: Int?, status: Visit.VisitStatus) {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled, let liveStatus = liveStatus(for: status) else { return }
         // A visit can only have one live tracking session at a time; ending
         // any stale activity first avoids the Island showing two vets.
         end()
         let attributes = VetEnRouteAttributes(visitId: visitId, vetName: vetName)
-        let state = VetEnRouteAttributes.ContentState(etaMinutes: etaMinutes, status: status)
+        let state = VetEnRouteAttributes.ContentState(etaMinutes: etaMinutes, status: liveStatus)
         do {
             currentActivity = try Activity.request(attributes: attributes, content: .init(state: state, staleDate: nil))
         } catch {
@@ -63,10 +77,10 @@ enum VetEnRouteActivityManager {
         }
     }
 
-    static func update(etaMinutes: Int?, status: Visit.VisitStatus) async {
-        guard let currentActivity else { return }
-        let state = VetEnRouteAttributes.ContentState(etaMinutes: etaMinutes, status: status)
-        await currentActivity.update(.init(state: state, staleDate: nil))
+    static func update(etaMinutes: Int?, status: Visit.VisitStatus) {
+        guard let currentActivity, let liveStatus = liveStatus(for: status) else { return }
+        let state = VetEnRouteAttributes.ContentState(etaMinutes: etaMinutes, status: liveStatus)
+        Task { await currentActivity.update(.init(state: state, staleDate: nil)) }
     }
 
     static func end() {

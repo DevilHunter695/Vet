@@ -414,6 +414,13 @@ actor MockVisitRepository: VisitRepository {
     /// `book_visit()` — a slot can never be oversold even under concurrent
     /// calls, since actor isolation serializes access to this dictionary.
     private var bookedCountBySlot: [UUID: Int] = [:]
+    // I2: mirrors 0046_visit_status_events.sql's trigger — every status this
+    // repository ever set, timestamped, oldest first.
+    private var statusEvents: [UUID: [VisitStatusEvent]] = [:]
+
+    private func logStatusEvent(visitId: UUID, status: Visit.VisitStatus) {
+        statusEvents[visitId, default: []].append(VisitStatusEvent(id: UUID(), visitId: visitId, status: status, occurredAt: .now))
+    }
 
     func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String) async throws -> Visit {
         if let existingVisitId = visitsByIdempotencyKey[idempotencyKey],
@@ -431,6 +438,7 @@ actor MockVisitRepository: VisitRepository {
         visits.append(visit)
         visitsByIdempotencyKey[idempotencyKey] = visit.id
         bookedCountBySlot[slot.id] = alreadyBooked + 1
+        logStatusEvent(visitId: visit.id, status: .requested)
         return visit
     }
 
@@ -446,12 +454,36 @@ actor MockVisitRepository: VisitRepository {
     func updateStatus(visitId: UUID, status: Visit.VisitStatus) async throws -> Visit {
         guard let index = visits.firstIndex(where: { $0.id == visitId }) else { throw DomainError.notFound("Visit") }
         visits[index].status = status
+        logStatusEvent(visitId: visitId, status: status)
         return visits[index]
     }
 
     func cancelVisit(visitId: UUID) async throws {
         guard let index = visits.firstIndex(where: { $0.id == visitId }) else { throw DomainError.notFound("Visit") }
         visits[index].status = .cancelledByUser
+        logStatusEvent(visitId: visitId, status: .cancelledByUser)
+    }
+
+    func statusHistory(visitId: UUID) async throws -> [VisitStatusEvent] {
+        if let recorded = statusEvents[visitId], !recorded.isEmpty {
+            return recorded.sorted { $0.occurredAt < $1.occurredAt }
+        }
+        // Defensive fallback for any visit this actor didn't itself create
+        // (MockData.visits is empty today, but a future seed or a Supabase-
+        // backed preview isn't guaranteed to have gone through createVisit/
+        // updateStatus) — synthesize a plausible timeline leading up to the
+        // visit's current status rather than returning an empty list.
+        guard let visit = visits.first(where: { $0.id == visitId }) else { return [] }
+        let order: [Visit.VisitStatus] = [.requested, .confirmed, .assigned, .enRoute, .arrived, .inProgress, .completed]
+        guard let currentIndex = order.firstIndex(of: visit.status) else {
+            return [VisitStatusEvent(id: UUID(), visitId: visitId, status: visit.status, occurredAt: visit.scheduledAt)]
+        }
+        let anchor = visit.completedAt ?? visit.scheduledAt
+        return order[...currentIndex].enumerated().map { offset, status in
+            let stepsFromEnd = currentIndex - offset
+            let timestamp = Calendar.current.date(byAdding: .minute, value: -15 * stepsFromEnd, to: anchor) ?? anchor
+            return VisitStatusEvent(id: UUID(), visitId: visitId, status: status, occurredAt: timestamp)
+        }
     }
 
     func rescheduleVisit(visitId: UUID, newSlot: ScheduleSlot) async throws -> Visit {
@@ -493,8 +525,78 @@ actor MockPaymentDisputeRepository: PaymentDisputeRepository {
     }
 }
 
+// G5: generates a stand-in GST invoice for any visit so InvoiceView has
+// something real to render in mock mode — the Supabase conformer instead
+// reads an already-issued row (invoice numbering/GST math is server-side).
+/// H7: corporate/RWA seat assignment roster.
+actor MockCorporateSeatAssignmentRepository: CorporateSeatAssignmentRepository {
+    private var assignments: [CorporateSeatAssignment] = []
+
+    func assignments(subscriptionId: UUID) async throws -> [CorporateSeatAssignment] {
+        assignments.filter { $0.subscriptionId == subscriptionId }
+    }
+
+    func assignSeat(subscriptionId: UUID, phone: String, seatCount: Int) async throws -> CorporateSeatAssignment {
+        let current = assignments.filter { $0.subscriptionId == subscriptionId }
+        guard current.count < seatCount else {
+            throw DomainError.validation("All \(seatCount) seats are already assigned — remove one first.")
+        }
+        let assignment = CorporateSeatAssignment(id: UUID(), subscriptionId: subscriptionId, assignedPhone: phone, assignedUserId: nil, assignedAt: .now)
+        assignments.append(assignment)
+        return assignment
+    }
+
+    func unassignSeat(id: UUID) async throws {
+        assignments.removeAll { $0.id == id }
+    }
+}
+
+/// I8: device-local dedupe for the post-visit summary push — see the honest
+/// gap noted on `PostVisitSummaryRepository`. Used regardless of Mock/
+/// Supabase backend, since there's no server-side equivalent to call.
+actor LocalPostVisitSummaryRepository: PostVisitSummaryRepository {
+    private let defaultsKey = "postVisitSummarySentVisitIds"
+
+    func hasSent(visitId: UUID) async throws -> Bool {
+        sentIds().contains(visitId)
+    }
+
+    func markSent(visitId: UUID) async throws {
+        var ids = sentIds()
+        ids.insert(visitId)
+        UserDefaults.standard.set(ids.map(\.uuidString), forKey: defaultsKey)
+    }
+
+    private func sentIds() -> Set<UUID> {
+        let raw = UserDefaults.standard.stringArray(forKey: defaultsKey) ?? []
+        return Set(raw.compactMap(UUID.init))
+    }
+}
+
+// I7: fabricates a representative completed checklist, mirroring
+// MockLabTestReportRepository/MockInvoiceRepository's "nothing to read
+// server-side, so stand in with something real" stance.
+actor MockVisitChecklistRepository: VisitChecklistRepository {
+    func items(visitId: UUID) async throws -> [VisitChecklistItem] {
+        let labels = ["Temperature & vitals check", "Weight recorded", "Physical examination", "Vaccination reviewed", "Owner questions answered"]
+        return labels.enumerated().map { index, label in
+            VisitChecklistItem(id: UUID(), visitId: visitId, label: label, isCompleted: true, note: nil,
+                                completedAt: Calendar.current.date(byAdding: .minute, value: index * 5, to: .now), sortOrder: index)
+        }
+    }
+}
+
 actor MockInvoiceRepository: InvoiceRepository {
-    func invoice(visitId: UUID) async throws -> Invoice? { nil }
+    func invoice(visitId: UUID) async throws -> Invoice? {
+        let subtotal = 59_900
+        let gst = Int((Double(subtotal) * 0.18).rounded())
+        return Invoice(
+            id: UUID(), visitId: visitId,
+            invoiceNumber: "VC-\(String(format: "%06d", abs(visitId.uuidString.hashValue % 999_999)))",
+            breakdown: PriceBreakdown(lineItems: [PriceLineItem(label: "Home visit consultation", amountMinorUnits: subtotal)], totalMinorUnits: subtotal),
+            gstMinorUnits: gst, issuedAt: .now
+        )
+    }
 }
 
 actor MockSubscriptionRepository: SubscriptionRepository {

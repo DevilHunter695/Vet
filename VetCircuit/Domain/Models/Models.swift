@@ -294,6 +294,16 @@ struct Visit: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+/// I2: one timestamped entry in a visit's status timeline — server-recorded
+/// (0046_visit_status_events.sql's trigger), since the client can't know
+/// *when* a past transition happened, only what the current status is.
+struct VisitStatusEvent: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var visitId: UUID
+    var status: Visit.VisitStatus
+    var occurredAt: Date
+}
+
 struct Subscription: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var userId: UUID
@@ -402,6 +412,49 @@ struct SubscriptionManagementPolicy {
     }
 }
 
+// MARK: - H1: plan catalog — visible inclusions & fair-use limits shown
+// *before* purchase (plan §9 rule 1: price/terms visible before commitment).
+// Pure, static content: no repository needed since nothing here is a rupee
+// figure computed client-side (the illustrative price mirrors
+// `ManageSubscriptionViewModel.priceMinorUnits`, the same "no live pricing
+// catalog service exists yet" placeholder used post-purchase) and the
+// fair-use limit is derived from `EntitlementPolicy`, the one real
+// server-enforced authority on how many credits a plan grants.
+struct PlanCatalogEntry: Identifiable, Equatable {
+    var planType: Subscription.PlanType
+    var priceMinorUnits: Int
+    var billingPeriodLabel: String
+    var inclusions: [String]
+
+    var id: String { planType.rawValue }
+
+    /// H6's entitlement engine is the actual fair-use authority; this is
+    /// just its plain-English restatement for the catalog card.
+    var fairUseSummary: String {
+        let credits = EntitlementPolicy.creditsGrantedPerPeriod(plan: planType, seatCount: 1)
+        return planType.isBulk
+            ? "\(credits) free visit credit per seat, per month"
+            : "\(credits) free visit credit per month, resets monthly — unused credits don't roll over"
+    }
+
+    static let all: [PlanCatalogEntry] = [
+        PlanCatalogEntry(planType: .monthly, priceMinorUnits: 59_900, billingPeriodLabel: "per month", inclusions: [
+            "1 free routine visit credit every month", "10% off all other services", "Priority slot access",
+        ]),
+        PlanCatalogEntry(planType: .quarterly, priceMinorUnits: 159_900, billingPeriodLabel: "per quarter", inclusions: [
+            "1 free routine visit credit every month", "15% off all other services", "Priority slot access", "Free rescheduling",
+        ]),
+        PlanCatalogEntry(planType: .annual, priceMinorUnits: 549_900, billingPeriodLabel: "per year", inclusions: [
+            "1 free routine visit credit every month", "20% off all other services", "Priority slot access",
+            "Free rescheduling", "Dedicated support line",
+        ]),
+        PlanCatalogEntry(planType: .corporate, priceMinorUnits: 0, billingPeriodLabel: "per seat, billed monthly", inclusions: [
+            "1 free routine visit credit per seat, per month", "Bulk pricing for RWAs/societies (minimum \(SubscriptionManagementPolicy.minimumCorporateSeats) seats)",
+            "Central billing for the whole society",
+        ]),
+    ]
+}
+
 // MARK: - H6: subscription entitlement engine — a subscription grants a
 // monthly allowance of free-visit credits, tracked separately from billing
 // state (`Subscription.status`) because a credit balance resets on a period
@@ -478,6 +531,49 @@ struct Payment: Identifiable, Codable, Equatable, Hashable {
     enum Status: String, Codable {
         case pending, succeeded, failed, refunded
     }
+}
+
+// MARK: - Payment retry (plan §G3) — a failed visit charge needs a clear,
+// bounded retry path rather than leaving the customer stuck on a dead
+// checkout link. Pure policy: no I/O, so the retry-attempt cap and the
+// "can retry right now" decision are directly unit-testable; the use case
+// (`RetryPaymentUseCase`) is what actually calls the gateway again.
+struct PaymentRetryPolicy {
+    /// A visit can only be retried a bounded number of times before the
+    /// customer is routed to support instead of another dead-end checkout.
+    static let maxAttempts = 3
+
+    struct Outcome: Equatable {
+        var canRetry: Bool
+        var attemptsRemaining: Int
+        /// Set when `canRetry` is false — the copy the UI shows instead of a
+        /// retry button (plan §9: never a bare failure with no next step).
+        var reason: String?
+    }
+
+    static func evaluate(status: Payment.Status, priorAttempts: Int) -> Outcome {
+        guard status == .failed else {
+            return Outcome(canRetry: false, attemptsRemaining: max(0, maxAttempts - priorAttempts), reason: nil)
+        }
+        guard priorAttempts < maxAttempts else {
+            return Outcome(canRetry: false, attemptsRemaining: 0, reason: "This payment couldn't go through after \(maxAttempts) tries. Please contact support or try a different payment method.")
+        }
+        return Outcome(canRetry: true, attemptsRemaining: maxAttempts - priorAttempts, reason: nil)
+    }
+}
+
+/// I7: one item on the vet's in-visit checklist, as it becomes the
+/// customer's record. Filling it out is a vet-side action (no vet-mode
+/// surface exists in this app, matching F9/I5's scope boundary) — the
+/// client only ever reads these, mirroring `LabTestReport`.
+struct VisitChecklistItem: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var visitId: UUID
+    var label: String
+    var isCompleted: Bool
+    var note: String?
+    var completedAt: Date?
+    var sortOrder: Int
 }
 
 struct ChatMessage: Identifiable, Codable, Equatable, Hashable {
@@ -1149,6 +1245,39 @@ enum TransactionalNotificationCategory: String, Codable, CaseIterable, Sendable 
     case otp = "otp"
     case rescheduleProposed = "reschedule_proposed"
     case visitCompleted = "visit_completed"
+    /// H4: T-7/T-1 subscription renewal reminders.
+    case subscriptionRenewalDue = "subscription_renewal_due"
+}
+
+// MARK: - H4: renewal reminders (T-7, T-1) + receipt.
+
+/// Pure — given a renewal date and "now", decides whether a T-7 or T-1
+/// reminder is due today. Deliberately a same-day match rather than "within
+/// N days", so a caller invoked once a day (the scheduled job this needs,
+/// see the plan note) sends each reminder exactly once.
+struct RenewalReminderPolicy {
+    enum Stage: Equatable { case sevenDaysBefore, oneDayBefore }
+
+    static func dueStage(renewalDate: Date, now: Date = .now, calendar: Calendar = .current) -> Stage? {
+        guard let daysUntilRenewal = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: renewalDate)).day else {
+            return nil
+        }
+        switch daysUntilRenewal {
+        case 7: return .sevenDaysBefore
+        case 1: return .oneDayBefore
+        default: return nil
+        }
+    }
+}
+
+/// H4's "receipt" half — a simple record of what was actually charged at
+/// renewal, distinct from `Invoice` (which is per-visit, GST-itemized).
+struct SubscriptionReceipt: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var subscriptionId: UUID
+    var planType: Subscription.PlanType
+    var amountMinorUnits: Int
+    var chargedAt: Date
 }
 
 /// The decided outcome of `NotificationDeliveryPolicy` for one notification

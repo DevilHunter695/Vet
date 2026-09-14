@@ -716,6 +716,26 @@ final class SupabaseVisitRepository: VisitRepository {
         let rows: [AmountRow] = try await client.from("payments").select("amount_minor_units").eq("visit_id", value: visitId).execute().value
         return rows.first?.amountMinorUnits ?? 0
     }
+
+    func statusHistory(visitId: UUID) async throws -> [VisitStatusEvent] {
+        // I2: server-recorded by 0046_visit_status_events.sql's trigger —
+        // the client only ever reads, never writes, this table.
+        struct Row: Decodable {
+            let id: UUID, visitId: UUID, status: String, occurredAt: Date
+            enum CodingKeys: String, CodingKey {
+                case id, status
+                case visitId = "visit_id", occurredAt = "occurred_at"
+            }
+        }
+        let rows: [Row] = try await client
+            .from("visit_status_events").select().eq("visit_id", value: visitId)
+            .order("occurred_at", ascending: true)
+            .execute().value
+        return rows.compactMap { row in
+            guard let status = Visit.VisitStatus(rawValue: row.status) else { return nil }
+            return VisitStatusEvent(id: row.id, visitId: row.visitId, status: status, occurredAt: row.occurredAt)
+        }
+    }
 }
 
 final class SupabaseAccountRepository: AccountRepository {
@@ -953,6 +973,79 @@ final class SupabaseInvoiceRepository: InvoiceRepository {
     func invoice(visitId: UUID) async throws -> Invoice? {
         let rows: [SupabaseInvoiceRow] = try await client.from("invoices").select().eq("visit_id", value: visitId).execute().value
         return rows.first?.toDomain()
+    }
+}
+
+/// H7: corporate/RWA seat assignment roster (0048_corporate_seat_assignments.sql).
+final class SupabaseCorporateSeatAssignmentRepository: CorporateSeatAssignmentRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    private struct Row: Codable {
+        let id: UUID, subscriptionId: UUID, assignedPhone: String, assignedUserId: UUID?, assignedAt: Date
+        enum CodingKeys: String, CodingKey {
+            case id
+            case subscriptionId = "subscription_id", assignedPhone = "assigned_phone"
+            case assignedUserId = "assigned_user_id", assignedAt = "assigned_at"
+        }
+        func toDomain() -> CorporateSeatAssignment {
+            CorporateSeatAssignment(id: id, subscriptionId: subscriptionId, assignedPhone: assignedPhone, assignedUserId: assignedUserId, assignedAt: assignedAt)
+        }
+    }
+
+    func assignments(subscriptionId: UUID) async throws -> [CorporateSeatAssignment] {
+        let rows: [Row] = try await client.from("corporate_seat_assignments").select()
+            .eq("subscription_id", value: subscriptionId).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func assignSeat(subscriptionId: UUID, phone: String, seatCount: Int) async throws -> CorporateSeatAssignment {
+        // The seat-count ceiling is a client-side pre-check for a fast error
+        // message; the unique(subscription_id, phone) constraint plus RLS's
+        // insert policy are what actually make this safe under RLS — a
+        // stricter server-side count check would need a Postgres function,
+        // same honest gap as several other "policy enforced client-side,
+        // re-checked structurally at the DB level" spots in this codebase.
+        let current = try await assignments(subscriptionId: subscriptionId)
+        guard current.count < seatCount else {
+            throw DomainError.validation("All \(seatCount) seats are already assigned — remove one first.")
+        }
+        struct Body: Encodable {
+            let subscriptionId: UUID, assignedPhone: String
+            enum CodingKeys: String, CodingKey { case subscriptionId = "subscription_id", assignedPhone = "assigned_phone" }
+        }
+        let rows: [Row] = try await client.from("corporate_seat_assignments")
+            .insert(Body(subscriptionId: subscriptionId, assignedPhone: phone)).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func unassignSeat(id: UUID) async throws {
+        try await client.from("corporate_seat_assignments").delete().eq("id", value: id).execute()
+    }
+}
+
+/// I7: read-only — items are written vet/ops-side only (0047_visit_checklists.sql).
+final class SupabaseVisitChecklistRepository: VisitChecklistRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    func items(visitId: UUID) async throws -> [VisitChecklistItem] {
+        struct Row: Decodable {
+            let id: UUID, visitId: UUID, label: String, isCompleted: Bool, note: String?, completedAt: Date?, sortOrder: Int
+            enum CodingKeys: String, CodingKey {
+                case id, label, note
+                case visitId = "visit_id", isCompleted = "is_completed", completedAt = "completed_at", sortOrder = "sort_order"
+            }
+        }
+        let rows: [Row] = try await client
+            .from("visit_checklist_items").select().eq("visit_id", value: visitId)
+            .order("sort_order", ascending: true)
+            .execute().value
+        return rows.map {
+            VisitChecklistItem(id: $0.id, visitId: $0.visitId, label: $0.label, isCompleted: $0.isCompleted,
+                                note: $0.note, completedAt: $0.completedAt, sortOrder: $0.sortOrder)
+        }
     }
 }
 
