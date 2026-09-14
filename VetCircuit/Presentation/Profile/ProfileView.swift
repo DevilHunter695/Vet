@@ -208,20 +208,24 @@ struct ProfileView: View {
                         ProfileLinkRow(title: "Terms of Service", systemImage: "doc.plaintext") { TermsOfServiceView() }
                     }
 
-                    if let error = viewModel.errorMessage {
-                        ErrorBanner(message: error)
-                    }
+                    // Grouped: a ViewBuilder takes at most ten children, and
+                    // the stack above is already at that limit.
+                    Group {
+                        if let error = viewModel.errorMessage {
+                            ErrorBanner(message: error)
+                        }
 
-                    SecondaryButton(title: "Sign out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
-                        Haptics.warning()
-                        Task { await session.signOut() }
-                    }
+                        SecondaryButton(title: "Sign out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                            Haptics.warning()
+                            Task { await session.signOut() }
+                        }
 
-                    Text("VetCircuit \(appVersionText)")
-                        .font(.brandCaption2)
-                        .foregroundStyle(.tertiary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 4)
+                        Text("VetCircuit \(appVersionText)")
+                            .font(.brandCaption2)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 4)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
