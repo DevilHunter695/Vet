@@ -156,16 +156,18 @@ struct SavedPaymentMethodPickerRow: View {
             } else {
                 ForEach(viewModel.methods) { method in
                     Button {
-                        selectedMethodId = method.id
+                        Haptics.selection()
+                        withAnimation(Theme.springQuick) { selectedMethodId = method.id }
                     } label: {
                         HStack {
-                            Image(systemName: selectedMethodId == method.id ? "largecircle.fill.circle" : "circle")
-                                .foregroundStyle(selectedMethodId == method.id ? Theme.primary : Theme.neutral)
                             Text(method.displayLabel).font(.brandBody).foregroundStyle(.primary)
                             Spacer()
                         }
+                        .padding(10)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableStyle())
+                    .selectable(isSelected: selectedMethodId == method.id, cornerRadius: 12)
                 }
             }
         }

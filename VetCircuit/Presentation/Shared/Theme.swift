@@ -166,6 +166,55 @@ private struct AppearAnimationModifier: ViewModifier {
     }
 }
 
+// MARK: - Selectable card — the shared "pick one of these" visual language.
+// Apple-style selected state: a blue stroke, a subtle lift (scale + stronger
+// shadow), and a small checkmark badge overlapping the bottom-trailing
+// corner — all driven by one spring so every picker in the app (packages,
+// plans, payment methods, slots, variants, add-ons, filters) animates and
+// looks identical instead of each screen inventing its own.
+extension View {
+    /// Wrap any card-shaped row/tile with this to get the standard selected
+    /// look. `cornerRadius` should match the content's own background shape
+    /// (pass the same radius used for the card behind `self`, if any) so the
+    /// stroke and badge sit flush against it.
+    func selectable(isSelected: Bool, cornerRadius: CGFloat = 14) -> some View {
+        modifier(SelectableCardStyle(isSelected: isSelected, cornerRadius: cornerRadius))
+    }
+}
+
+struct SelectableCardStyle: ViewModifier {
+    let isSelected: Bool
+    var cornerRadius: CGFloat = 14
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(isSelected ? Theme.primary : .clear, lineWidth: 2)
+            )
+            .overlay(alignment: .bottomTrailing) {
+                ZStack {
+                    Circle().fill(Theme.primary)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 20, height: 20)
+                .overlay(Circle().stroke(.background, lineWidth: 2))
+                .offset(x: 6, y: 6)
+                .scaleEffect(isSelected ? 1 : 0.01)
+                .opacity(isSelected ? 1 : 0)
+            }
+            .scaleEffect(isSelected ? 1.025 : 1)
+            .shadow(
+                color: Theme.cardShadow,
+                radius: isSelected ? 14 : 6,
+                y: isSelected ? 6 : 2
+            )
+            .animation(Theme.springSoft, value: isSelected)
+    }
+}
+
 // MARK: - Shimmering loading placeholder (used while data streams in)
 
 struct ShimmerView: View {
