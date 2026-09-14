@@ -60,6 +60,28 @@ final class CartViewModel {
         }
     }
 
+    /// E1: change quantity on a cart line.
+    func setQuantity(_ quantity: Int, for item: CartItem) async {
+        guard let cart else { return }
+        do {
+            self.cart = try await manageCartUseCase.setQuantity(quantity, forItemId: item.id, in: cart)
+            quote = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// E1: clear the whole cart in one action.
+    func clearCart(userId: UUID) async {
+        do {
+            try await manageCartUseCase.clear(userId: userId)
+            cart = Cart(id: cart?.id ?? UUID(), userId: userId)
+            quote = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func applyCoupon() {
         guard var cart else { return }
         let trimmed = couponCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -109,11 +131,25 @@ struct CartView: View {
                             CartItemRow(
                                 name: viewModel.service(for: item)?.name ?? "Service",
                                 variantName: viewModel.variant(for: item)?.name ?? "",
-                                price: viewModel.variant(for: item).map { CurrencyFormatter.rupees($0.priceMinorUnits) } ?? ""
+                                price: viewModel.variant(for: item).map { CurrencyFormatter.rupees($0.priceMinorUnits * item.quantity) } ?? "",
+                                quantity: Binding(
+                                    get: { item.quantity },
+                                    set: { newValue in Task { await viewModel.setQuantity(newValue, for: item) } }
+                                )
                             ) {
                                 Haptics.warning()
                                 Task { await viewModel.remove(item) }
                             }
+                        }
+
+                        if cart.items.count > 1, let user = session.currentUser {
+                            Button(role: .destructive) {
+                                Haptics.warning()
+                                Task { await viewModel.clearCart(userId: user.id) }
+                            } label: {
+                                Label("Clear cart", systemImage: "trash")
+                            }
+                            .font(.brandCaption)
                         }
 
                         CouponEntryRow(code: $viewModel.couponCodeInput, message: viewModel.couponMessage) {
@@ -162,6 +198,9 @@ private struct CartItemRow: View {
     let name: String
     let variantName: String
     let price: String
+    // E1: change quantity — repeats this exact line item, distinct from
+    // D6's per-line pet multi-select.
+    @Binding var quantity: Int
     let onRemove: () -> Void
 
     var body: some View {
@@ -169,6 +208,9 @@ private struct CartItemRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(name).font(.brandHeadline)
                 Text(variantName).font(.brandCaption).foregroundStyle(.secondary)
+                Stepper("Qty: \(quantity)", value: $quantity, in: 1...20)
+                    .font(.brandCaption)
+                    .fixedSize()
             }
             Spacer()
             Text(price).font(.brandBody).foregroundStyle(.secondary)

@@ -164,7 +164,8 @@ actor MockQuoteRepository: QuoteRepository {
                 // H6: a credit pays for one visit — applied to the first
                 // line item only, never every line in a multi-item cart.
                 entitlementCreditApplied: applyEntitlementCredit && index == 0,
-                vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits
+                vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits,
+                quantity: item.quantity
             )
             preSubtotal += PricingEngine.quote(input).totalMinorUnits
         }
@@ -200,7 +201,8 @@ actor MockQuoteRepository: QuoteRepository {
                 couponDiscountMinorUnits: isFirst ? couponDiscount : 0,
                 walletBalanceMinorUnits: isFirst ? walletBalance : 0,
                 entitlementCreditApplied: applyEntitlementCredit && isFirst,
-                vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits
+                vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits,
+                quantity: item.quantity
             )
             let breakdown = PricingEngine.quote(input)
             lineItems.append(contentsOf: breakdown.lineItems)

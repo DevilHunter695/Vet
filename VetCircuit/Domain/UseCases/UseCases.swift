@@ -757,6 +757,20 @@ struct ManageCartUseCase {
         return try await cartRepository.save(cart)
     }
 
+    /// E1: change quantity — a line's quantity can never drop below 1
+    /// (that's what "remove" is for) or be set to something absurd.
+    func setQuantity(_ quantity: Int, forItemId id: UUID, in cart: Cart) async throws -> Cart {
+        guard (1...20).contains(quantity) else {
+            throw DomainError.validation("Quantity must be between 1 and 20.")
+        }
+        var cart = cart
+        guard let index = cart.items.firstIndex(where: { $0.id == id }) else {
+            throw DomainError.notFound("Cart item")
+        }
+        cart.items[index].quantity = quantity
+        return try await cartRepository.save(cart)
+    }
+
     func clear(userId: UUID) async throws {
         try await cartRepository.clear(userId: userId)
     }

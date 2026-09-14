@@ -188,7 +188,7 @@ Service (Home consultation)
 
 | # | Capability | Pri | Status | Notes |
 |---|---|---|---|---|
-| E1 | **Cart**: multiple services/pets/add-ons in one booking | **P0** | 🔨 | Add / **remove** / change quantity / clear |
+| E1 | **Cart**: multiple services/pets/add-ons in one booking | **P0** | ✅ | Add/remove already worked; this pass closed the rest: `CartItem.quantity` (0049_cart_item_quantity.sql) + `ManageCartUseCase.setQuantity` (range-validated, unit-tested) + a `Stepper` per line in `CartView`, multiplied through `PricingEngine` and `create-quote` alike; a "Clear cart" button now calls `ManageCartUseCase.clear` (previously wired but unreachable from any UI). Also fixed a real pre-existing bug while touching `PricingEngine.quote`: the base-price `let` was scoped inside an `if/else` branch while referenced after it, which would not compile |
 | E2 | Cart persistence across devices + restore on relaunch | P0 | ✅ | Server-side cart, not local only |
 | E3 | **Transparent price breakdown**: subtotal · per-pet · travel fee · peak · discount · GST · total | **P0** | ✅ | Non-negotiable for trust |
 | E4 | Coupon / promo code entry + validation + stacking rules | P1 | 🔨 | `validate_coupon()` RPC + CartView promo field wired into the quote; PricingEngine already had the discount term |

@@ -727,6 +727,25 @@ struct PricingEngineTests {
         let breakdown = PricingEngine.quote(.init(variant: variant, addons: [], additionalPetCount: 0, travelFeeMinorUnits: 0, walletBalanceMinorUnits: 999_999))
         #expect(breakdown.totalMinorUnits == 0)
     }
+
+    // E1: change quantity — multiplies base/multi-pet/add-ons, not travel fee.
+    @Test("quantity multiplies the base price and add-ons, not the travel fee")
+    func quantityMultipliesBaseAndAddons() {
+        let addon = Addon(id: UUID(), name: "Nail trim", priceMinorUnits: 10_000)
+        let breakdown = PricingEngine.quote(.init(
+            variant: variant, addons: [addon], additionalPetCount: 0, travelFeeMinorUnits: 4_500, gstRate: 0, quantity: 2
+        ))
+        #expect(breakdown.totalMinorUnits == 59_900 * 2 + 10_000 * 2 + 4_500)
+    }
+
+    @Test("an entitlement credit is never multiplied by quantity")
+    func entitlementCreditIgnoresQuantity() {
+        let breakdown = PricingEngine.quote(.init(
+            variant: variant, addons: [], additionalPetCount: 0, travelFeeMinorUnits: 0, gstRate: 0,
+            entitlementCreditApplied: true, quantity: 3
+        ))
+        #expect(breakdown.totalMinorUnits == 0)
+    }
 }
 
 @Suite("ManageCartUseCase + GetQuoteUseCase")
@@ -741,6 +760,40 @@ struct CartAndQuoteUseCaseTests {
         await #expect(throws: DomainError.self) {
             _ = try await useCase.addItem(item, to: cart)
         }
+    }
+
+    // E1: change quantity / clear cart.
+    @Test("setQuantity rejects out-of-range values and updates a valid one")
+    func setQuantityValidatesRange() async throws {
+        let repo = MockCartRepository()
+        let useCase = ManageCartUseCase(cartRepository: repo)
+        var cart = try await useCase.current(userId: UUID())
+        let item = CartItem(id: UUID(), serviceId: UUID(), variantId: UUID(), petIds: [UUID()])
+        cart = try await useCase.addItem(item, to: cart)
+
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.setQuantity(0, forItemId: item.id, in: cart)
+        }
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.setQuantity(21, forItemId: item.id, in: cart)
+        }
+
+        let updated = try await useCase.setQuantity(3, forItemId: item.id, in: cart)
+        #expect(updated.items.first?.quantity == 3)
+    }
+
+    @Test("clear empties the cart")
+    func clearEmptiesCart() async throws {
+        let repo = MockCartRepository()
+        let useCase = ManageCartUseCase(cartRepository: repo)
+        let userId = UUID()
+        var cart = try await useCase.current(userId: userId)
+        cart = try await useCase.addItem(CartItem(id: UUID(), serviceId: UUID(), variantId: UUID(), petIds: [UUID()]), to: cart)
+        #expect(!cart.items.isEmpty)
+
+        try await useCase.clear(userId: userId)
+        let cleared = try await useCase.current(userId: userId)
+        #expect(cleared.items.isEmpty)
     }
 
     @Test("rejects a quote for an empty cart")

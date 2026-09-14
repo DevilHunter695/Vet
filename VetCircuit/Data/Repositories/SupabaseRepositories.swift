@@ -106,13 +106,15 @@ final class SupabaseCartRepository: CartRepository {
                 let variantId: UUID
                 let petIds: [UUID]
                 let addonIds: [UUID]
+                let quantity: Int
                 enum CodingKeys: String, CodingKey {
                     case cartId = "cart_id", serviceId = "service_id", variantId = "variant_id"
-                    case petIds = "pet_ids", addonIds = "addon_ids"
+                    case petIds = "pet_ids", addonIds = "addon_ids", quantity
                 }
             }
             let inserts = cart.items.map {
-                ItemInsert(cartId: cart.id, serviceId: $0.serviceId, variantId: $0.variantId, petIds: $0.petIds, addonIds: $0.addonIds)
+                ItemInsert(cartId: cart.id, serviceId: $0.serviceId, variantId: $0.variantId, petIds: $0.petIds,
+                           addonIds: $0.addonIds, quantity: $0.quantity)
             }
             try await client.from("cart_items").insert(inserts).execute()
         }
@@ -1368,12 +1370,15 @@ private struct SupabaseCartItemRow: Decodable {
     let variantId: UUID
     let petIds: [UUID]
     let addonIds: [UUID]
+    let quantity: Int?
 
     enum CodingKeys: String, CodingKey {
-        case id, serviceId = "service_id", variantId = "variant_id", petIds = "pet_ids", addonIds = "addon_ids"
+        case id, serviceId = "service_id", variantId = "variant_id", petIds = "pet_ids", addonIds = "addon_ids", quantity
     }
 
-    func toDomain() -> CartItem { CartItem(id: id, serviceId: serviceId, variantId: variantId, petIds: petIds, addonIds: addonIds) }
+    func toDomain() -> CartItem {
+        CartItem(id: id, serviceId: serviceId, variantId: variantId, petIds: petIds, addonIds: addonIds, quantity: quantity ?? 1)
+    }
 }
 
 private struct SupabaseSlotHoldRow: Decodable {

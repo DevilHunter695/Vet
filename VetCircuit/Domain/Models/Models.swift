@@ -845,6 +845,10 @@ struct CartItem: Identifiable, Codable, Equatable, Hashable {
     var variantId: UUID
     var petIds: [UUID]           // 1 or more pets on this line item (D6: multi-pet)
     var addonIds: [UUID] = []
+    // E1: repeat this exact line item N times (e.g. "2 grooming sessions") —
+    // distinct from D6's multi-pet, which is "this one visit, more than one
+    // pet". Always >= 1; `ManageCartUseCase.setQuantity` enforces that.
+    var quantity: Int = 1
 }
 
 struct Cart: Identifiable, Codable, Equatable, Hashable {
