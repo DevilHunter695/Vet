@@ -1172,8 +1172,14 @@ struct ServiceEligibility: Codable, Equatable, Hashable {
     var minPetAgeMonths: Int? = nil
 
     func allows(species: Pet.Species) -> Bool {
-        guard let species = self.species else { return true }
-        return species.contains(species)
+        // The parameter must not be shadowed here. It previously was —
+        // `guard let species = self.species` rebound the name to the array,
+        // so `species.contains(species)` resolved to the collection-searching
+        // overload (does this array contain itself as a subsequence?), which
+        // is unconditionally true. The result: this gate always allowed
+        // everything, and no service was ever filtered by species.
+        guard let allowedSpecies = self.species else { return true }
+        return allowedSpecies.contains(species)
     }
 }
 

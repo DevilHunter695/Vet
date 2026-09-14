@@ -805,7 +805,10 @@ struct StartCheckoutUseCase {
         return try await paymentRepository.bookPayAfterVisit(forVisit: visitId, quoteId: quote.id, amountMinorUnits: quote.breakdown.totalMinorUnits)
     }
 
-    private static func validate(quote: Quote) throws {
+    /// E6's gate, as a pure check callers can run *before* they commit to
+    /// anything. It used to be private, which is why `BookingCheckoutUseCase`
+    /// could only discover an expired quote after it had already booked.
+    static func validate(quote: Quote) throws {
         guard !quote.isExpired else {
             throw DomainError.validation("This price quote has expired — refresh it and try again.")
         }
@@ -880,13 +883,19 @@ struct BookingCheckoutUseCase {
     }
 
     /// Step 1: book the visit (pending payment) and start checkout against
-    /// the given signed quote. `StartCheckoutUseCase` itself rejects an
-    /// expired quote, so a stale quote fails here rather than silently
-    /// booking at the wrong price.
+    /// the given signed quote.
+    ///
+    /// The quote is validated *first*. Previously the visit was booked and
+    /// only then handed to `StartCheckoutUseCase`, which is where the expiry
+    /// check lived — so an expired quote threw, but not before it had created
+    /// a `.requested` visit that consumed the slot's capacity and would never
+    /// be paid for. E6 is supposed to gate the order, and an order that
+    /// leaves a row behind wasn't gated.
     func start(
         petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, quote: Quote, idempotencyKey: String,
         serviceId: UUID? = nil, variantId: UUID? = nil, packageRedemptionId: UUID? = nil
     ) async throws -> Session {
+        try StartCheckoutUseCase.validate(quote: quote)
         let visit = try await bookVisitUseCase.execute(
             petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey,
             serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId
@@ -908,6 +917,9 @@ struct BookingCheckoutUseCase {
         petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, quote: Quote, idempotencyKey: String,
         serviceId: UUID? = nil, variantId: UUID? = nil, packageRedemptionId: UUID? = nil
     ) async throws -> Visit {
+        // Same up-front gate as `start`: E8 must not be the cheaper way to
+        // leave an unpaid visit behind with an expired quote.
+        try StartCheckoutUseCase.validate(quote: quote)
         let visit = try await bookVisitUseCase.execute(
             petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey,
             serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId

@@ -1855,8 +1855,13 @@ struct CircuitFilterTests {
     @Test("time-of-day filter requires at least one matching slot")
     func timeOfDayFilterRequiresMatchingSlot() {
         let vet = Vet(id: UUID(), name: "Dr. Test", licenseNumber: "VCI-1", verificationStatus: .verified, rating: 4.5, reviewCount: 1, photoURL: nil)
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "Asia/Kolkata")!
+        // Built in `Calendar.current`, which is what `CircuitFilter.matches`
+        // reads the slot's hour with — a slot is "morning" in the customer's
+        // own timezone. Pinning this to Asia/Kolkata made the test pass only
+        // on an IST machine: on CI (UTC) 08:00 IST is 02:30, which is not in
+        // the morning range, so the filter correctly rejected it and the
+        // assertion failed.
+        let calendar = Calendar.current
         let morningSlot = ScheduleSlot(id: UUID(), dayOfWeek: 2,
                                         startTime: calendar.date(bySettingHour: 8, minute: 0, second: 0, of: .now)!,
                                         endTime: calendar.date(bySettingHour: 9, minute: 0, second: 0, of: .now)!)
