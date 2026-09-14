@@ -62,6 +62,7 @@ struct TipVetView: View {
                 Spacer()
             }
             .padding()
+            .auroraScreenBackground()
             .navigationTitle("Tip the vet")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

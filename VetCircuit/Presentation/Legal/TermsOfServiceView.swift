@@ -57,6 +57,7 @@ struct TermsOfServiceView: View {
             }
             .padding()
         }
+        .auroraScreenBackground()
         .navigationTitle("Terms of Service")
         .navigationBarTitleDisplayMode(.inline)
     }

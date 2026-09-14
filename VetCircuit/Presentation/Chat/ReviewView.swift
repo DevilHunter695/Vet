@@ -101,6 +101,7 @@ struct ReviewView: View {
                 .padding()
                 .disabled(viewModel.didSubmit)
             }
+            .auroraScreenBackground()
             .navigationTitle("Rate your visit")
             .navigationBarTitleDisplayMode(.inline)
             .onChange(of: viewModel.didSubmit) { _, submitted in

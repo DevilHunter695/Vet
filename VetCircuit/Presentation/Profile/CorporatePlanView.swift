@@ -52,13 +52,15 @@ struct CorporatePlanView: View {
             }
             .padding()
         }
+        .auroraScreenBackground()
         .navigationTitle("Corporate plan")
         .navigationBarTitleDisplayMode(.inline)
     }
 
     private var estimatedTotal: String {
-        let total = Double(seatCount * pricePerSeatMinorUnits) / 100
-        return total.formatted(.currency(code: "INR"))
+        // Through the shared formatter like every other price in the app —
+        // amounts are integer minor units and must never be divided ad hoc.
+        CurrencyFormatter.rupees(seatCount * pricePerSeatMinorUnits)
     }
 }
 

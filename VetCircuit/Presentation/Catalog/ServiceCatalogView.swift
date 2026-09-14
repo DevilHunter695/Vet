@@ -56,9 +56,11 @@ struct ServiceCatalogView: View {
                         ForEach(Array(groupedByCategory.enumerated()), id: \.element.0) { index, entry in
                             let (category, services) = entry
                             VStack(alignment: .leading, spacing: 10) {
-                                Label(category.displayName, systemImage: category.systemImage)
-                                    .font(.brandHeadline)
-                                    .foregroundStyle(Theme.primary)
+                                SectionHeader(
+                                    title: category.displayName,
+                                    subtitle: services.count == 1 ? nil : "\(services.count) options",
+                                    systemImage: category.systemImage
+                                )
 
                                 ForEach(services) { service in
                                     NavigationLink {
@@ -77,6 +79,7 @@ struct ServiceCatalogView: View {
                 .animation(Theme.crossFade, value: viewModel.services.map(\.id))
             }
         }
+        .auroraScreenBackground()
         .navigationTitle("Services")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -91,28 +94,62 @@ struct ServiceCatalogView: View {
     }
 }
 
+/// D1/D2: a catalog row has to answer "what is it, how long does it take, and
+/// what does it start at" — a name and a price alone make the customer open
+/// every service in turn to compare them.
 private struct ServiceRow: View {
     let service: Service
 
+    /// The shortest variant's duration, since the price shown is also the
+    /// cheapest variant's — the two have to describe the same thing.
+    private var shortestDurationMinutes: Int? {
+        service.variants.map(\.durationMinutes).min()
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(service.name).font(.brandHeadline).foregroundStyle(.primary)
-                Text(service.summary)
-                    .font(.brandCaption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-            Spacer()
-            if let price = service.startingPriceMinorUnits {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(service.name)
+                        .font(.brandHeadline)
+                        .foregroundStyle(.primary)
+                    Text(service.summary)
+                        .font(.brandCaption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("from").font(.caption2).foregroundStyle(.tertiary)
-                    Text(CurrencyFormatter.rupees(price)).font(.brandHeadline).foregroundStyle(Theme.primary)
+                    if let price = service.startingPriceMinorUnits {
+                        Text("from").brandEyebrow()
+                        Text(CurrencyFormatter.rupees(price))
+                            .font(.brandMono(.callout, weight: .bold))
+                            .foregroundStyle(Theme.primary)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
                 }
             }
+
+            HStack(spacing: 8) {
+                if let minutes = shortestDurationMinutes {
+                    TagChip(text: "\(minutes) min", systemImage: "clock", tint: Theme.primary)
+                }
+                if service.variants.count > 1 {
+                    TagChip(text: "\(service.variants.count) options", systemImage: "square.stack", tint: Theme.emerald)
+                }
+                if !service.addons.isEmpty {
+                    TagChip(text: "Add-ons", systemImage: "plus.circle", tint: Theme.accent)
+                }
+                Spacer(minLength: 0)
+            }
         }
-        .padding()
+        .padding(16)
         .glassCard()
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 }
 

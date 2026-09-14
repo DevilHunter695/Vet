@@ -106,6 +106,7 @@ struct PackagesView: View {
                 }
             }
         }
+        .auroraScreenBackground()
         .navigationTitle("Packages")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load(vertical: vertical, userId: session.currentUser?.id) }

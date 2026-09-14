@@ -58,6 +58,7 @@ struct PrivacyPolicyView: View {
             }
             .padding()
         }
+        .auroraScreenBackground()
         .navigationTitle("Privacy Policy")
         .navigationBarTitleDisplayMode(.inline)
     }

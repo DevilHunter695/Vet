@@ -37,6 +37,7 @@ struct LiabilityWaiverView: View {
                 }
                 .padding()
             }
+            .auroraScreenBackground()
             .navigationTitle("Consent")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {

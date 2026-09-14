@@ -98,6 +98,7 @@ struct InvoiceView: View {
                 ProgressView()
             }
         }
+        .auroraScreenBackground()
         .navigationTitle("Invoice")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
