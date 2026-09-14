@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import PhotosUI
 
 /// B2: the pet health-record screen the app lacked entirely — everything
 /// before this lived as a name+species row in `ProfileView`. B3/B4/K2 (weight
@@ -58,6 +59,16 @@ final class PetDetailViewModel {
         }
     }
 
+    /// B2: uploads a newly-picked photo and swaps it into `pet.photoURL`.
+    func updatePhoto(data: Data) async {
+        do {
+            pet = try await managePetsUseCase.updatePhoto(petId: pet.id, data: data)
+            Haptics.success()
+        } catch {
+            errorMessage = "Couldn't upload that photo."
+        }
+    }
+
     /// B8: sensitive-copy soft delete — the pet's history stays put, it just
     /// stops surfacing in bookings and vaccination nagging (`ManagePetsUseCase.list`).
     func archive(reason: Pet.ArchiveReason) async {
@@ -109,6 +120,7 @@ struct PetDetailView: View {
     @State private var showingAddWeight = false
     @State private var newWeightText = ""
     @State private var showingArchiveConfirm = false
+    @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var pendingArchiveReason: Pet.ArchiveReason = .other
     @State private var bookVaccinationService: Service?
     @State private var shareFileURL: URL?
@@ -216,6 +228,33 @@ struct PetDetailView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Pet details", systemImage: "pawprint.fill")
                     .font(.brandHeadline).foregroundStyle(Theme.primary)
+
+                // B2: photo upload — PhotosPicker → JPEG data → ManagePetsUseCase.updatePhoto.
+                HStack {
+                    if let photoURL = viewModel.pet.photoURL {
+                        AsyncImage(url: photoURL) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Circle().fill(Color(.tertiarySystemFill))
+                        }
+                        .frame(width: 64, height: 64)
+                        .clipShape(Circle())
+                    } else {
+                        Circle().fill(Color(.tertiarySystemFill))
+                            .frame(width: 64, height: 64)
+                            .overlay(Image(systemName: "pawprint.fill").foregroundStyle(.secondary))
+                    }
+                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        Text(viewModel.pet.photoURL == nil ? "Add photo" : "Change photo")
+                            .font(.brandCaption)
+                    }
+                }
+                .onChange(of: selectedPhotoItem) { _, newItem in
+                    Task {
+                        guard let newItem, let data = try? await newItem.loadTransferable(type: Data.self) else { return }
+                        await viewModel.updatePhoto(data: data)
+                    }
+                }
 
                 LabeledContent("Species", value: viewModel.pet.species.rawValue.capitalized)
                 if let breed = viewModel.pet.breed, !breed.isEmpty {

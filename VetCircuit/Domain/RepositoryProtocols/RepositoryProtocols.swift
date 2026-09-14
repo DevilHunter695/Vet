@@ -148,6 +148,12 @@ protocol PetRepository: Sendable {
     func addPet(_ pet: Pet) async throws -> Pet
     func updatePet(_ pet: Pet) async throws -> Pet
     func deletePet(id: UUID) async throws
+    /// B2: uploads `data` as the pet's photo and returns the pet with
+    /// `photoURL` set to wherever it landed — mirrors `PetDocumentRepository.upload`'s
+    /// shape (bytes in, updated reference out) rather than a separate
+    /// two-step "upload then updatePet(photoURL:)" the UI would have to
+    /// coordinate itself.
+    func updatePhoto(petId: UUID, data: Data) async throws -> Pet
 }
 
 // MARK: - Pet health records (plan §3 B, §3 K)

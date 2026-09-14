@@ -678,6 +678,12 @@ actor MockPetRepository: PetRepository {
     func deletePet(id: UUID) async throws {
         pets.removeAll { $0.id == id }
     }
+
+    func updatePhoto(petId: UUID, data: Data) async throws -> Pet {
+        guard let index = pets.firstIndex(where: { $0.id == petId }) else { throw DomainError.notFound("Pet") }
+        pets[index].photoURL = URL(string: "https://mock.local/pet-photos/\(petId)/\(UUID().uuidString).jpg")
+        return pets[index]
+    }
 }
 
 actor MockPetWeightRepository: PetWeightRepository {

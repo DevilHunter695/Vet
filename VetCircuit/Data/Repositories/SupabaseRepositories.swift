@@ -340,6 +340,24 @@ final class SupabasePetRepository: PetRepository {
     func deletePet(id: UUID) async throws {
         try await client.from("pets").delete().eq("id", value: id).execute()
     }
+
+    // B2: same shape/discipline as `SupabasePetDocumentRepository.upload` —
+    // TODO(Storage SDK): actually push `data` to the `documents` bucket at
+    // this path (`client.storage.from("documents").upload(path, data: data)`)
+    // before writing `photo_url`; today only the reference column is real.
+    func updatePhoto(petId: UUID, data: Data) async throws -> Pet {
+        let path = "pet-photos/\(petId)/\(UUID().uuidString).jpg"
+        let update = SupabasePetPhotoUpdate(photoUrl: path)
+        let rows: [SupabasePetRow] = try await client
+            .from("pets").update(update).eq("id", value: petId).select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Pet") }
+        return row.toDomain()
+    }
+}
+
+private struct SupabasePetPhotoUpdate: Encodable {
+    let photoUrl: String
+    enum CodingKeys: String, CodingKey { case photoUrl = "photo_url" }
 }
 
 /// B3: weight/vitals history.
@@ -875,16 +893,18 @@ private struct SupabasePetRow: Decodable {
     let chronicConditions: String?
     let archivedAt: Date?
     let archiveReason: String?
+    let photoUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, species, breed, dob, sex, allergies
         case ownerId = "owner_id", isNeutered = "is_neutered", weightKg = "weight_kg"
         case microchipNumber = "microchip_number", chronicConditions = "chronic_conditions"
-        case archivedAt = "archived_at", archiveReason = "archive_reason"
+        case archivedAt = "archived_at", archiveReason = "archive_reason", photoUrl = "photo_url"
     }
 
     func toDomain() -> Pet {
         Pet(id: id, ownerId: ownerId, name: name, species: Pet.Species(rawValue: species) ?? .other, breed: breed, dateOfBirth: dob,
+            photoURL: photoUrl.flatMap(URL.init(string:)),
             sex: sex.flatMap(Pet.Sex.init(rawValue:)), isNeutered: isNeutered, weightKg: weightKg,
             microchipNumber: microchipNumber, allergies: allergies, chronicConditions: chronicConditions,
             archivedAt: archivedAt, archiveReason: archiveReason.flatMap(Pet.ArchiveReason.init(rawValue:)))
@@ -905,12 +925,13 @@ private struct SupabasePetInsert: Encodable {
     let chronicConditions: String?
     let archivedAt: Date?
     let archiveReason: String?
+    let photoUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case name, species, breed, dob, sex, allergies
         case ownerId = "owner_id", isNeutered = "is_neutered", weightKg = "weight_kg"
         case microchipNumber = "microchip_number", chronicConditions = "chronic_conditions"
-        case archivedAt = "archived_at", archiveReason = "archive_reason"
+        case archivedAt = "archived_at", archiveReason = "archive_reason", photoUrl = "photo_url"
     }
 
     init(pet: Pet) {
@@ -927,6 +948,7 @@ private struct SupabasePetInsert: Encodable {
         chronicConditions = pet.chronicConditions
         archivedAt = pet.archivedAt
         archiveReason = pet.archiveReason?.rawValue
+        photoUrl = pet.photoURL?.absoluteString
     }
 }
 

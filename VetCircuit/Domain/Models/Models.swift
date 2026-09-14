@@ -26,6 +26,10 @@ struct Pet: Identifiable, Codable, Equatable, Hashable {
     var species: Species
     var breed: String?
     var dateOfBirth: Date?
+    // B2: a signed URL into the same private `documents` bucket B6 already
+    // uses (path `pet-photos/<petId>/<uuid>.jpg`) — set by `updatePhoto`,
+    // never edited as a plain text field.
+    var photoURL: URL? = nil
     // B2: the fields a real pet health record needs beyond "what is it" —
     // sex/neuter status feed vaccination eligibility, weight/allergies matter
     // to the vet before a visit even starts.

@@ -351,6 +351,11 @@ struct ManagePetsUseCase {
         try await petRepository.deletePet(id: id)
     }
 
+    /// B2: uploads a new pet photo, returning the pet with `photoURL` set.
+    func updatePhoto(petId: UUID, data: Data) async throws -> Pet {
+        try await petRepository.updatePhoto(petId: petId, data: data)
+    }
+
     /// B8: soft-delete with sensitive copy handled at the call site — this
     /// just stamps the flag, never touches the pet's visit history.
     func archive(_ pet: Pet, reason: Pet.ArchiveReason, now: Date = .now) async throws -> Pet {
