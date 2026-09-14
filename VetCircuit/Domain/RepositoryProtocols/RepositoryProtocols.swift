@@ -82,6 +82,17 @@ protocol VisitChecklistRepository: Sendable {
     func items(visitId: UUID) async throws -> [VisitChecklistItem]
 }
 
+/// I8: guards `SendPostVisitSummaryUseCase` against re-sending the same
+/// visit's push every time the app notices it's completed. Honest gap:
+/// this is a device-local "have I sent this" flag, not a server-side one —
+/// a real deployment would want the completion trigger (and its
+/// idempotency) to live server-side, next to whatever marks a visit
+/// `completed` in the first place, not client-detected on next launch.
+protocol PostVisitSummaryRepository: Sendable {
+    func hasSent(visitId: UUID) async throws -> Bool
+    func markSent(visitId: UUID) async throws
+}
+
 protocol InvoiceRepository: Sendable {
     /// G5: GST-compliant invoice per order, generated once a visit completes.
     func invoice(visitId: UUID) async throws -> Invoice?

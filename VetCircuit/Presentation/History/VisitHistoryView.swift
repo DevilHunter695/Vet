@@ -14,14 +14,23 @@ final class VisitHistoryViewModel {
     private let getVisitHistoryUseCase = DependencyContainer.shared.getVisitHistoryUseCase()
     private let cancelVisitUseCase = DependencyContainer.shared.cancelVisitUseCase()
     private let vaccinationRepository = DependencyContainer.shared.vaccinationRepository
+    private let sendPostVisitSummaryUseCase = DependencyContainer.shared.sendPostVisitSummaryUseCase()
 
-    func load(userId: UUID) async {
+    func load(userId: UUID, currentUser: User?) async {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
         do {
             visits = try await getVisitHistoryUseCase.execute(userId: userId)
             await refreshWidgetData(userId: userId)
+            // I8: best-effort post-visit summary push — see the honest gap
+            // on PostVisitSummaryRepository (this is client-detected, not
+            // server-triggered the moment a visit actually completes).
+            if let currentUser {
+                for visit in visits where visit.status == .completed {
+                    try? await sendPostVisitSummaryUseCase.execute(user: currentUser, visit: visit)
+                }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -128,10 +137,10 @@ struct VisitHistoryView: View {
                 }
             }
             .navigationTitle("Your visits")
-            .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
+            .task { if let user = session.currentUser { await viewModel.load(userId: user.id, currentUser: user) } }
             .refreshable {
                 Haptics.tap()
-                if let user = session.currentUser { await viewModel.load(userId: user.id) }
+                if let user = session.currentUser { await viewModel.load(userId: user.id, currentUser: user) }
             }
             .confirmationDialog(
                 "Cancel this visit?",

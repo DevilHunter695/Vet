@@ -1570,6 +1570,28 @@ struct SendTransactionalNotificationUseCase {
     }
 }
 
+/// I8: post-visit summary push. `PostVisitSummaryRepository` is the guard
+/// against re-sending it every time the app happens to notice the visit is
+/// still completed (there is no server-side "has this been sent" flag —
+/// see the honest gap on the repository protocol).
+struct SendPostVisitSummaryUseCase {
+    let sendTransactionalNotificationUseCase: SendTransactionalNotificationUseCase
+    let postVisitSummaryRepository: PostVisitSummaryRepository
+
+    @discardableResult
+    func execute(user: User, visit: Visit) async throws -> Bool {
+        guard visit.status == .completed, !(try await postVisitSummaryRepository.hasSent(visitId: visit.id)) else {
+            return false
+        }
+        let body = visit.notes?.isEmpty == false
+            ? "Your visit summary is ready: \(visit.notes!)"
+            : "Your visit summary is ready — tap to see the full record."
+        _ = try await sendTransactionalNotificationUseCase.execute(user: user, category: .visitCompleted, body: body)
+        try await postVisitSummaryRepository.markSent(visitId: visit.id)
+        return true
+    }
+}
+
 // MARK: - K6: lab test ordering + report delivery. Ordering reuses the
 // existing catalog/cart/checkout flow (`Service` of `.labTest` category);
 // this use case only surfaces the resulting reports.

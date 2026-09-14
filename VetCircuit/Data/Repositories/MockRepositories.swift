@@ -504,6 +504,28 @@ actor MockPaymentDisputeRepository: PaymentDisputeRepository {
 // G5: generates a stand-in GST invoice for any visit so InvoiceView has
 // something real to render in mock mode — the Supabase conformer instead
 // reads an already-issued row (invoice numbering/GST math is server-side).
+/// I8: device-local dedupe for the post-visit summary push — see the honest
+/// gap noted on `PostVisitSummaryRepository`. Used regardless of Mock/
+/// Supabase backend, since there's no server-side equivalent to call.
+actor LocalPostVisitSummaryRepository: PostVisitSummaryRepository {
+    private let defaultsKey = "postVisitSummarySentVisitIds"
+
+    func hasSent(visitId: UUID) async throws -> Bool {
+        sentIds().contains(visitId)
+    }
+
+    func markSent(visitId: UUID) async throws {
+        var ids = sentIds()
+        ids.insert(visitId)
+        UserDefaults.standard.set(ids.map(\.uuidString), forKey: defaultsKey)
+    }
+
+    private func sentIds() -> Set<UUID> {
+        let raw = UserDefaults.standard.stringArray(forKey: defaultsKey) ?? []
+        return Set(raw.compactMap(UUID.init))
+    }
+}
+
 // I7: fabricates a representative completed checklist, mirroring
 // MockLabTestReportRepository/MockInvoiceRepository's "nothing to read
 // server-side, so stand in with something real" stance.

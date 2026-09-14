@@ -71,6 +71,8 @@ final class DependencyContainer {
     let labTestReportRepository: LabTestReportRepository
     /// I7: the vet's in-visit checklist, read-only from the customer side.
     let visitChecklistRepository: VisitChecklistRepository
+    /// I8: device-local dedupe for the post-visit summary push.
+    let postVisitSummaryRepository: PostVisitSummaryRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -127,6 +129,7 @@ final class DependencyContainer {
         self.smsFallbackRepository = MockSMSFallbackRepository()
         self.labTestReportRepository = MockLabTestReportRepository()
         self.visitChecklistRepository = MockVisitChecklistRepository()
+        self.postVisitSummaryRepository = LocalPostVisitSummaryRepository()
     }
 
     // MARK: Use case factories
@@ -239,5 +242,9 @@ final class DependencyContainer {
     /// I7: the vet's in-visit checklist, once it becomes the customer's record.
     func getVisitChecklistUseCase() -> GetVisitChecklistUseCase {
         GetVisitChecklistUseCase(repository: visitChecklistRepository)
+    }
+    /// I8: post-visit summary push, de-duplicated on-device.
+    func sendPostVisitSummaryUseCase() -> SendPostVisitSummaryUseCase {
+        SendPostVisitSummaryUseCase(sendTransactionalNotificationUseCase: sendTransactionalNotificationUseCase(), postVisitSummaryRepository: postVisitSummaryRepository)
     }
 }
