@@ -535,7 +535,20 @@ struct Payment: Identifiable, Codable, Equatable, Hashable {
 
     enum Status: String, Codable {
         case pending, succeeded, failed, refunded
+        /// E8: pay-after-visit — the visit is booked and confirmed
+        /// immediately against a real signed quote, but no gateway charge
+        /// has run yet; `gatewayReference` stays nil for the life of a
+        /// payment in this status. Moves to `.succeeded` only via
+        /// `MarkPayAfterVisitCollectedUseCase`, once the visit is actually
+        /// completed and the vet has collected cash/UPI on-site — never
+        /// implied by anything client-side.
+        case payAfterVisit = "pay_after_visit"
     }
+
+    /// E8: true once a payment is booked as pay-after-visit and hasn't yet
+    /// been marked collected — the one state where "no gateway reference"
+    /// is expected rather than a bug.
+    var isPayAfterVisit: Bool { status == .payAfterVisit }
 }
 
 // MARK: - Payment retry (plan §G3) — a failed visit charge needs a clear,
