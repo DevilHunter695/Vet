@@ -618,6 +618,34 @@ actor LocalNoShowDetectionRepository: NoShowDetectionRepository {
     }
 }
 
+/// H4: device-local dedupe for `RenewalReminderUseCase` — see the honest gap
+/// noted on `RenewalReminderDedupeRepository`. Keyed by subscription + stage
+/// + calendar day (an ISO date string), not just subscription id, since the
+/// same stage recurs every renewal cycle and each occurrence needs its own
+/// reminder.
+actor LocalRenewalReminderDedupeRepository: RenewalReminderDedupeRepository {
+    private let defaultsKey = "renewalReminderSentKeys"
+
+    func hasSent(subscriptionId: UUID, stage: RenewalReminderPolicy.Stage, day: Date) async throws -> Bool {
+        sentKeys().contains(key(subscriptionId: subscriptionId, stage: stage, day: day))
+    }
+
+    func markSent(subscriptionId: UUID, stage: RenewalReminderPolicy.Stage, day: Date) async throws {
+        var keys = sentKeys()
+        keys.insert(key(subscriptionId: subscriptionId, stage: stage, day: day))
+        UserDefaults.standard.set(Array(keys), forKey: defaultsKey)
+    }
+
+    private func key(subscriptionId: UUID, stage: RenewalReminderPolicy.Stage, day: Date) -> String {
+        let dayString = ISO8601DateFormatter().string(from: Calendar.current.startOfDay(for: day))
+        return "\(subscriptionId.uuidString)|\(stage)|\(dayString)"
+    }
+
+    private func sentKeys() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: defaultsKey) ?? [])
+    }
+}
+
 // I7: fabricates a representative completed checklist, mirroring
 // MockLabTestReportRepository/MockInvoiceRepository's "nothing to read
 // server-side, so stand in with something real" stance.
