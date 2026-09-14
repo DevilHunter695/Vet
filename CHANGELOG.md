@@ -87,3 +87,68 @@ symptom-triage headline.
 
 **Accessibility** — carried through unchanged from 1.0: Reduce Motion
 support on the mascot's idle animation and all appear-in transitions.
+
+## UI/UX overhaul — aurora visual system, tap reliability, build fix
+
+### Build
+- **The branch did not compile.** `PetDetailView` and `EditProfileView` each
+  read a main-actor view model from inside a `PhotosPicker` label closure,
+  which is `Sendable`-checked under Swift 6 strict concurrency. The label text
+  is now computed before the closure.
+
+### Tap reliability
+Three separate causes of "I had to tap three or four times":
+- A `simultaneousGesture(TapGesture())` on the circuit-list `NavigationLink`s
+  competed with the link's own recogniser; whichever lost swallowed the tap.
+  Recently-viewed is now recorded when the destination appears.
+- `appearAnimation` scaled every entering view from 0.92. Inside a
+  `LazyVStack` that window reopened every time a row re-entered the viewport,
+  so hit-test geometry was in motion whenever the user reached for it. It is
+  opacity-only now — an entrance flourish is not worth a dropped tap.
+- `scrollTransition` scaled and blurred rows for the same reason, and
+  `SelectableCardStyle` grew the selected card, shifting every row below it.
+  Both are now opacity/shadow only.
+
+Supporting changes: haptic generators are retained and pre-warmed rather than
+constructed per tap; decorative layers (glows, badges, shimmer, pulsing dots)
+are explicitly `allowsHitTesting(false)`; every control in the shared library
+is at least 44pt with a `contentShape` covering its whole visual bounds, and
+padding/frames live on button *labels* rather than outside the `Button`.
+
+### Visual system
+The palette is an "aurora": ocean blue into emerald green, falling away to
+near-black, with two slow-drifting radial lights over it. `AuroraBackground`
+is tuned separately for light (a faint wash) and dark (the full gradient), and
+`auroraScreenBackground()` replaces the flat `Color(.systemGroupedBackground)`
+on all 35 screens that had one.
+
+New shared components: `SecondaryButton`, `PillButton`, `SectionHeader`,
+`StatTile`, `InfoRow`, `TagChip`, `CalloutNote`, `featuredGlassCard`, plus a
+typography scale with eyebrow and monospaced-digit helpers.
+
+### Screens
+- **Profile** — was a flat `List` of twenty identical `NavigationLink`s. Now an
+  identity hero, four summary figures (wallet, points, pets, visits
+  completed), a next-visit card, rewards progress showing the points actually
+  needed for the next tier, membership state, pets as cards, grouped settings.
+- **Visits** — `I1`'s "happening now" filter matched only
+  requested/confirmed/enRoute, so a vet who had *arrived* or started the visit
+  dropped out of the card into plain history. `isUpcoming`/`isLive` now live on
+  `VisitStatus`. The active visit is a card with the pet, the vet, a countdown,
+  `I2`'s eight-state progress as a bar, and open/message/cancel actions.
+  Grouped into Happening now / Upcoming / History.
+- **Book** — `C2` promised slot + price + rating; rows only showed rating. They
+  now show the soonest slot with capacity, the area's starting price (from the
+  catalog that was already being fetched and discarded), years of experience,
+  the verified seal by the name, and a scarcity tag only when a slot is
+  genuinely nearly full.
+- **Booking** — `E3` promised a transparent breakdown, but the first number the
+  customer saw was inside the checkout sheet, after committing. The signed
+  quote is now previewed as soon as pet and slot are chosen. `F1`'s slot picker
+  is grouped by day with wrapping time chips instead of a twenty-row wall. The
+  confirm action is pinned with the running total.
+- **Cart** — the total only appeared after pressing "Get price", and every
+  change blanked it again. It prices on load and re-prices on every change,
+  with total and commit action pinned. Checkout is still gated on a real
+  server-signed quote.
+- **Sign-in** and **Plans** moved onto the new system.
