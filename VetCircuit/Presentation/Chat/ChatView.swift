@@ -103,6 +103,7 @@ struct ChatView: View {
                     Label("This chat has closed — need help? Contact support", systemImage: "lock.fill")
                         .font(.brandCaption)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .padding(12)

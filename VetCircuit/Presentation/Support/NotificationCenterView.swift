@@ -54,6 +54,8 @@ struct NotificationCenterView: View {
                                 .font(.caption2).foregroundStyle(.tertiary)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }

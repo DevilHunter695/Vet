@@ -374,7 +374,9 @@ struct PetDetailView: View {
                     Spacer()
                     Image(systemName: "chevron.right").foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -392,7 +394,9 @@ struct PetDetailView: View {
                     Spacer()
                     Image(systemName: "chevron.right").foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -431,6 +435,7 @@ struct PetDetailView: View {
                     .font(.brandHeadline).foregroundStyle(Theme.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
