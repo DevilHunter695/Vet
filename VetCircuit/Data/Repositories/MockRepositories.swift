@@ -725,6 +725,13 @@ actor MockPaymentRepository: PaymentRepository {
     // "always succeeded" — the id `createCheckout` implicitly creates is
     // recorded here so `latestPaymentId(forVisit:)` can hand it back.
     private var paymentIdsByVisit: [UUID: UUID] = [:]
+    /// E8: pay-after-visit payments need a real, tracked status (starting
+    /// `.payAfterVisit`, not the hardcoded "always succeeded" the rest of
+    /// this mock uses to stand in for a webhook) so `paymentStatus`,
+    /// `BookingCheckoutPolicy`, and `MarkPayAfterVisitCollectedUseCase` all
+    /// see the same truth. Prepaid payments keep the old always-`.succeeded`
+    /// simulated-webhook behavior when they're not in this dictionary.
+    private var statusesByPaymentId: [UUID: Payment.Status] = [:]
 
     func createCheckout(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> URL {
         paymentIdsByVisit[visitId] = UUID()
@@ -739,12 +746,27 @@ actor MockPaymentRepository: PaymentRepository {
         URL(string: "https://checkout.example.com/subscription/\(plan.rawValue)")!
     }
 
-    func paymentStatus(paymentId: UUID) async throws -> Payment.Status { .succeeded }
+    func paymentStatus(paymentId: UUID) async throws -> Payment.Status { statusesByPaymentId[paymentId] ?? .succeeded }
 
     func latestPaymentId(forVisit visitId: UUID) async throws -> UUID? { paymentIdsByVisit[visitId] }
 
     func createTipCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL {
         URL(string: "https://checkout.example.com/tip/\(visitId)?amount=\(amountMinorUnits)")!
+    }
+
+    func bookPayAfterVisit(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> UUID {
+        let paymentId = UUID()
+        paymentIdsByVisit[visitId] = paymentId
+        statusesByPaymentId[paymentId] = .payAfterVisit
+        return paymentId
+    }
+
+    func markPayAfterVisitCollected(paymentId: UUID) async throws -> Payment.Status {
+        guard statusesByPaymentId[paymentId] == .payAfterVisit else {
+            throw DomainError.validation("This payment isn't a pay-after-visit payment awaiting collection.")
+        }
+        statusesByPaymentId[paymentId] = .succeeded
+        return .succeeded
     }
 }
 

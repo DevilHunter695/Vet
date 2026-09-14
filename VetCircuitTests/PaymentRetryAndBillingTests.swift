@@ -60,6 +60,18 @@ actor FakePaymentRepository: PaymentRepository {
     func createTipCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL {
         URL(string: "https://checkout.example.com/tip/\(visitId)")!
     }
+
+    func bookPayAfterVisit(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> UUID {
+        let paymentId = UUID()
+        paymentIdsByVisit[visitId] = paymentId
+        status = .payAfterVisit
+        return paymentId
+    }
+
+    func markPayAfterVisitCollected(paymentId: UUID) async throws -> Payment.Status {
+        status = .succeeded
+        return .succeeded
+    }
 }
 
 private func makeTestQuote(expired: Bool = false) -> Quote {

@@ -39,6 +39,22 @@ struct BookingCheckoutPolicyTests {
         guard case .paymentFailed(let canRetry, _) = outcome else { Issue.record("expected paymentFailed"); return }
         #expect(!canRetry)
     }
+
+    @Test("E8: a pay-after-visit payment confirms the visit — nothing to wait on")
+    func payAfterVisitConfirms() {
+        let outcome = BookingCheckoutPolicy.outcome(forPaymentStatus: .payAfterVisit, priorAttempts: 0)
+        #expect(outcome == .confirmVisit)
+    }
+}
+
+@Suite("PaymentRetryPolicy + pay-after-visit")
+struct PaymentRetryPolicyPayAfterVisitTests {
+    @Test("E8: a pay-after-visit payment is never offered a retry")
+    func payAfterVisitNeverRetries() {
+        let outcome = PaymentRetryPolicy.evaluate(status: .payAfterVisit, priorAttempts: 0)
+        #expect(!outcome.canRetry)
+        #expect(outcome.reason == nil)
+    }
 }
 
 private func makePipelineQuote(cartId: UUID = UUID(), expired: Bool = false) -> Quote {
@@ -127,5 +143,75 @@ struct BookingCheckoutUseCaseTests {
         guard case .paymentFailed = outcome else { Issue.record("expected paymentFailed"); return }
         #expect(visit.status == .requested)
         #expect(visit.paymentId == nil)
+    }
+
+    // E8: pay-after-visit
+
+    @Test("startPayAfterVisit() books and confirms the visit in one step, with no gateway checkout")
+    func startPayAfterVisitConfirmsImmediately() async throws {
+        let (pipeline, _, paymentRepository) = makePipeline()
+        let visit = try await pipeline.startPayAfterVisit(
+            petId: UUID(), vetId: UUID(), circuitId: UUID(), slot: makePipelineSlot(),
+            quote: makePipelineQuote(), idempotencyKey: UUID().uuidString
+        )
+        #expect(visit.status == .confirmed)
+        #expect(visit.paymentId != nil)
+        let status = try await paymentRepository.paymentStatus(paymentId: visit.paymentId!)
+        #expect(status == .payAfterVisit)
+    }
+
+    @Test("startPayAfterVisit() still refuses an expired quote — E8 never skips E6's quote-gating")
+    func startPayAfterVisitRefusesExpiredQuote() async {
+        let (pipeline, visitRepository, _) = makePipeline()
+        await #expect(throws: DomainError.self) {
+            _ = try await pipeline.startPayAfterVisit(
+                petId: UUID(), vetId: UUID(), circuitId: UUID(), slot: makePipelineSlot(),
+                quote: makePipelineQuote(expired: true), idempotencyKey: UUID().uuidString
+            )
+        }
+        let visits = try await visitRepository.listVisits(userId: MockData.user.id)
+        #expect(visits.isEmpty)
+    }
+}
+
+@Suite("MarkPayAfterVisitCollectedUseCase")
+struct MarkPayAfterVisitCollectedUseCaseTests {
+    @Test("marks a pay-after-visit payment succeeded once the visit is completed")
+    func marksCollectedOnCompletedVisit() async throws {
+        let visitRepository = MockVisitRepository()
+        let paymentRepository = FakePaymentRepository(status: .payAfterVisit)
+        let visit = try await visitRepository.createVisit(petId: UUID(), vetId: UUID(), circuitId: UUID(), slot: makePipelineSlot(), idempotencyKey: UUID().uuidString)
+        _ = try await visitRepository.updateStatus(visitId: visit.id, status: .completed)
+        let paymentId = try await paymentRepository.bookPayAfterVisit(forVisit: visit.id, quoteId: UUID(), amountMinorUnits: 50000)
+
+        let useCase = MarkPayAfterVisitCollectedUseCase(visitRepository: visitRepository, paymentRepository: paymentRepository)
+        let status = try await useCase.execute(visitId: visit.id, paymentId: paymentId)
+        #expect(status == .succeeded)
+    }
+
+    @Test("refuses to mark collected before the visit is completed")
+    func refusesBeforeVisitCompleted() async throws {
+        let visitRepository = MockVisitRepository()
+        let paymentRepository = FakePaymentRepository(status: .payAfterVisit)
+        let visit = try await visitRepository.createVisit(petId: UUID(), vetId: UUID(), circuitId: UUID(), slot: makePipelineSlot(), idempotencyKey: UUID().uuidString)
+        let paymentId = try await paymentRepository.bookPayAfterVisit(forVisit: visit.id, quoteId: UUID(), amountMinorUnits: 50000)
+
+        let useCase = MarkPayAfterVisitCollectedUseCase(visitRepository: visitRepository, paymentRepository: paymentRepository)
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(visitId: visit.id, paymentId: paymentId)
+        }
+    }
+
+    @Test("refuses to mark collected a payment that isn't pay-after-visit")
+    func refusesNonPayAfterVisitPayment() async throws {
+        let visitRepository = MockVisitRepository()
+        let paymentRepository = FakePaymentRepository(status: .succeeded)
+        let visit = try await visitRepository.createVisit(petId: UUID(), vetId: UUID(), circuitId: UUID(), slot: makePipelineSlot(), idempotencyKey: UUID().uuidString)
+        _ = try await visitRepository.updateStatus(visitId: visit.id, status: .completed)
+
+        let useCase = MarkPayAfterVisitCollectedUseCase(visitRepository: visitRepository, paymentRepository: paymentRepository)
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(visitId: visit.id, paymentId: UUID())
+        }
     }
 }

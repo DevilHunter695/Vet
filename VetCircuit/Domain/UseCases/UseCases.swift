@@ -777,13 +777,27 @@ struct StartCheckoutUseCase {
     let paymentRepository: PaymentRepository
 
     func execute(visitId: UUID, quote: Quote) async throws -> URL {
+        try Self.validate(quote: quote)
+        return try await paymentRepository.createCheckout(forVisit: visitId, quoteId: quote.id, amountMinorUnits: quote.breakdown.totalMinorUnits)
+    }
+
+    /// E8: pay-after-visit's booking-time counterpart to `execute` above —
+    /// same quote-gating (Appendix C: never a raw client-computed amount),
+    /// but no hosted-checkout URL is created and no money moves yet. Returns
+    /// the `Payment.id` so the caller can attach it to the visit exactly as
+    /// the prepaid path attaches its (eventually-succeeded) payment.
+    func executePayAfterVisit(visitId: UUID, quote: Quote) async throws -> UUID {
+        try Self.validate(quote: quote)
+        return try await paymentRepository.bookPayAfterVisit(forVisit: visitId, quoteId: quote.id, amountMinorUnits: quote.breakdown.totalMinorUnits)
+    }
+
+    private static func validate(quote: Quote) throws {
         guard !quote.isExpired else {
             throw DomainError.validation("This price quote has expired — refresh it and try again.")
         }
         guard quote.breakdown.totalMinorUnits > 0 else {
             throw DomainError.validation("Invalid amount.")
         }
-        return try await paymentRepository.createCheckout(forVisit: visitId, quoteId: quote.id, amountMinorUnits: quote.breakdown.totalMinorUnits)
     }
 }
 
@@ -815,6 +829,12 @@ struct BookingCheckoutPolicy {
             return .paymentFailed(canRetry: retry.canRetry, reason: retry.reason)
         case .refunded:
             return .paymentFailed(canRetry: false, reason: "This payment was refunded.")
+        case .payAfterVisit:
+            // E8: nothing to "resolve" — a pay-after-visit booking is
+            // already confirmed the moment it's created (see
+            // `BookingCheckoutUseCase.startPayAfterVisit`), so this only
+            // matters if `resolve` is ever called on one defensively.
+            return .confirmVisit
         }
     }
 }
@@ -853,6 +873,21 @@ struct BookingCheckoutUseCase {
         let visit = try await bookVisitUseCase.execute(petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey)
         let checkoutURL = try await startCheckoutUseCase.execute(visitId: visit.id, quote: quote)
         return Session(visit: visit, checkoutURL: checkoutURL)
+    }
+
+    /// E8: the pay-after-visit alternative to `start`/`resolve` above — a
+    /// genuine second choice at the same decision point, not a decoration.
+    /// Still goes through `BookVisitUseCase`'s atomic (E7-hold-respecting)
+    /// booking and is still gated on a real, unexpired, signed `Quote`
+    /// (`StartCheckoutUseCase.executePayAfterVisit`) — it only differs from
+    /// `start` in what happens after the visit exists: instead of opening a
+    /// hosted-checkout webview and waiting on a webhook, the payment is
+    /// created directly in `.payAfterVisit` status and attached immediately,
+    /// so the visit is confirmed in one step with nothing left to `resolve`.
+    func startPayAfterVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, quote: Quote, idempotencyKey: String) async throws -> Visit {
+        let visit = try await bookVisitUseCase.execute(petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey)
+        let paymentId = try await startCheckoutUseCase.executePayAfterVisit(visitId: visit.id, quote: quote)
+        return try await visitRepository.attachPayment(visitId: visit.id, paymentId: paymentId)
     }
 
     /// Step 2: after the checkout webview closes (success, failure, or the
@@ -903,6 +938,32 @@ struct RetryPaymentUseCase {
             throw DomainError.validation(outcome.reason ?? "This payment can't be retried right now.")
         }
         return try await paymentRepository.createCheckout(forVisit: visitId, retryingPaymentId: paymentId, amountMinorUnits: amountMinorUnits)
+    }
+}
+
+/// E8: the other half of pay-after-visit — once the visit is actually
+/// `.completed`, this marks the payment collected (cash/UPI handed to the
+/// vet on-site), mirroring how a gateway webhook is the only thing that
+/// ever marks a *prepaid* payment `.succeeded`
+/// (`VisitRepository.attachPayment`'s doc comment). No vet-facing UI surface
+/// exists in this app today (the same scope boundary as F9/I7), so this is
+/// exercised directly by tests/a future vet-side "mark collected" screen —
+/// its *effect* (closing out the payment) is what matters for E8 to be
+/// reachable end-to-end.
+struct MarkPayAfterVisitCollectedUseCase {
+    let visitRepository: VisitRepository
+    let paymentRepository: PaymentRepository
+
+    func execute(visitId: UUID, paymentId: UUID) async throws -> Payment.Status {
+        let visit = try await visitRepository.visit(id: visitId)
+        guard visit.status == .completed else {
+            throw DomainError.validation("This visit hasn't been completed yet — nothing to collect against.")
+        }
+        let status = try await paymentRepository.paymentStatus(paymentId: paymentId)
+        guard status == .payAfterVisit else {
+            throw DomainError.validation("This payment isn't a pay-after-visit payment awaiting collection.")
+        }
+        return try await paymentRepository.markPayAfterVisitCollected(paymentId: paymentId)
     }
 }
 

@@ -181,6 +181,17 @@ protocol PaymentRepository: Sendable {
     /// 'tip') so the server can credit the vet 100% of it instead of the
     /// ~70% split a completed visit earns (0028_tips.sql).
     func createTipCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL
+    /// E8: pay-after-visit — same quote-gated amount as
+    /// `createCheckout(forVisit:quoteId:amountMinorUnits:)`, but this books
+    /// a `Payment` straight into `.payAfterVisit` status instead of
+    /// returning a hosted-checkout URL; no money moves and there is no
+    /// gateway reference until `markPayAfterVisitCollected` runs.
+    func bookPayAfterVisit(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> UUID
+    /// E8: moves a `.payAfterVisit` payment to `.succeeded` once the vet has
+    /// actually collected cash/UPI on-site — the pay-after-visit analogue of
+    /// the gateway webhook that marks a prepaid payment succeeded. Returns
+    /// the payment's new status for the caller to reflect immediately.
+    func markPayAfterVisitCollected(paymentId: UUID) async throws -> Payment.Status
 }
 
 // MARK: - E9: saved payment methods — only a gateway token reference is

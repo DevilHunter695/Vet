@@ -192,6 +192,10 @@ final class DependencyContainer {
     }
     /// G3: payment retry on failure.
     func retryPaymentUseCase() -> RetryPaymentUseCase { RetryPaymentUseCase(paymentRepository: paymentRepository) }
+    /// E8: marks a pay-after-visit payment collected once the visit is completed.
+    func markPayAfterVisitCollectedUseCase() -> MarkPayAfterVisitCollectedUseCase {
+        MarkPayAfterVisitCollectedUseCase(visitRepository: visitRepository, paymentRepository: paymentRepository)
+    }
     func trackVetUseCase() -> TrackVetUseCase { TrackVetUseCase(liveTrackingRepository: liveTrackingRepository) }
     func startCallUseCase() -> StartCallUseCase { StartCallUseCase(callRepository: callRepository) }
     func sendReferralUseCase() -> SendReferralUseCase { SendReferralUseCase(referralRepository: referralRepository) }
