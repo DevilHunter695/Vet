@@ -250,7 +250,7 @@ Service (Home consultation)
 | I4 | Live map tracking with ETA | P1 | ✅ | `LiveTrackingView` shows a real MapKit `Map` with the vet's marker, live-updating via `TrackVetUseCase.subscribe`, plus an "Arriving in about N min" ETA card driven by `VetLocation.etaMinutes`. Was mistagged 🔨: verified this is fully built. |
 | I5 | **Start-of-visit OTP** (customer reads 4-digit code to vet) | **P0** | ✅ | `VisitOTPRepository.generateOTP` fires once a visit reaches `arrived`; `VisitDetailView` displays the 4-digit code in a dedicated card. `StartVisitUseCase.verify` (tested) validates the code and moves the visit `arrived` → `in_progress` server-side. The vet actually keying the code in stays on the vet's own device — there is no vet-mode surface in this app (matches F9) — so nothing more is this app's to build. |
 | I6 | Digital consent/liability waiver accepted in-app before first visit | **P0** | ✅ | Legal shield |
-| I7 | Visit checklist completed by vet → becomes the customer's record | P0 | 🔨 | |
+| I7 | Visit checklist completed by vet → becomes the customer's record | P0 | ✅ | `0047_visit_checklists.sql` (RLS select-only for the visit's owner, no client write policy) + `VisitChecklistRepository`/`GetVisitChecklistUseCase` + `VisitChecklistView`, linked from `VisitDetailView` once a visit completes. Filling the checklist out stays a vet-side action this app deliberately has no UI for (there's no vet-mode surface anywhere in this app, matching F9/I5) — the customer-facing "becomes the customer's record" half this row asks for is what's now fully built. |
 | I8 | Post-visit summary push + in-app detail | P0 | 🔨 | |
 
 ### J. Communication
