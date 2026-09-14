@@ -150,7 +150,7 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 
 | # | Capability | Pri | Status | Notes |
 |---|---|---|---|---|
-| C1 | Address-first discovery: pick address → show circuits serving it | P0 | 🔨 | Replaces v1's free-text "area" |
+| C1 | Address-first discovery: pick address → show circuits serving it | P0 | ✅ | `CircuitsListViewModel` now loads the user's addresses (default, else first) and scopes `GetCircuitsUseCase.execute(area:)` to the selected address's `clusterArea`; a toolbar address picker (`CircuitsListView`) lets the customer switch, and an unserved/no-address state routes to `AddressListView` (C10's per-address waitlist join) instead of silently showing every circuit in every cluster |
 | C2 | Circuit list with next-available slot, price-from, vet rating | P0 | ✅ | |
 | C3 | **Filters**: service type, date, time-of-day, price, rating, species handled, language, gender of vet | **P0** | ✅ | `CircuitFilter` (client-side, applied over the fetched list) + a filter sheet in `CircuitsListView`. Cheapest/price filtering is catalog-scoped since a circuit itself has no price. |
 | C4 | **Sort**: soonest, cheapest, top-rated, previously-booked | P0 | ✅ | `CircuitSortOption` wired into a sort menu. "Cheapest" falls back to cluster-area order — circuits don't carry a per-circuit price, only the catalog does (known gap). |
