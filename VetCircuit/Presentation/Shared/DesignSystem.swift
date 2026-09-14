@@ -163,6 +163,10 @@ struct ChatBubble: View {
             if !isMine { Spacer(minLength: 40) }
         }
         .transition(.asymmetric(insertion: .move(edge: isMine ? .trailing : .leading).combined(with: .opacity), removal: .opacity))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            (isMine ? "You: " : "") + (message.attachmentURL != nil ? "Photo message" : message.body)
+        )
     }
 }
 

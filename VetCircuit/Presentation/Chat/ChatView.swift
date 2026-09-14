@@ -120,6 +120,7 @@ struct ChatView: View {
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+                            .accessibilityElement(children: .combine)
                             .id(message.id)
                         }
                         if viewModel.otherPartyIsTyping {

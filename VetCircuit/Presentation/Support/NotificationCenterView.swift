@@ -47,6 +47,7 @@ struct NotificationCenterView: View {
                             .fill(notification.isRead ? Color.clear : Theme.primary)
                             .frame(width: 8, height: 8)
                             .padding(.top, 5)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(notification.title).font(.brandHeadline).foregroundStyle(.primary)
                             Text(notification.body).font(.brandCaption).foregroundStyle(.secondary)
@@ -58,6 +59,9 @@ struct NotificationCenterView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel((notification.isRead ? "" : "Unread. ") + notification.title + ". " + notification.body)
+                .accessibilityHint(notification.isRead ? "" : "Double tap to mark as read")
             }
         }
         .navigationTitle("Notifications")
