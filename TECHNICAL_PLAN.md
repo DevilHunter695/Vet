@@ -207,7 +207,7 @@ Service (Home consultation)
 | F1 | Slot picker from circuit schedule (7–14 day horizon) | P0 | ✅ |
 | F2 | Capacity per slot (N stops per block), not boolean availability | **P0** | ✅ |
 | F3 | **Reschedule** (with policy window) | **P0** | ✅ |
-| F4 | **Cancel** with policy: free >4h, 50% <4h, 100% no-show | **P0** | 🔨 (policy + refund now wired; no-show detection still manual) |
+| F4 | **Cancel** with policy: free >4h, 50% <4h, 100% no-show | **P0** | ✅ (policy + refund wired; no-show now detected client-side on next app open via `FlagVisitNoShowUseCase`, deduped locally like I8's post-visit summary push — no server-side cron) |
 | F5 | Recurring bookings (monthly deworming, weekly physio) | P1 | 🔨 (rule model/repo/UI + `RecurrenceScheduler` ship; a scheduled job to actually spawn each cycle's visit is out of scope for the client app — known gap) |
 | F6 | Vet-initiated reschedule + customer accept/decline + auto-compensation credit | P1 | 🔨 (proposal model/repo + accept/decline banner in `VisitDetailView` ship; the vet-side "propose a new slot" screen is a separate (vet-app) workstream) |
 | F7 | Customer no-show & vet no-show handling, both directions | P1 | 🔨 (`NoShowPolicy` + `assigned`/`en_route` → `no_show_vet` transition + customer-facing "Vet didn't show up" report ship; customer no-show is reported vet-side, out of scope here) |
