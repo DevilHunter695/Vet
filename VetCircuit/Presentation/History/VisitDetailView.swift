@@ -450,7 +450,9 @@ struct VisitDetailView: View {
         defer { isReportingNoShow = false }
         do {
             let outcome = try await reportVetNoShowUseCase.execute(visit: visit)
-            noShowMessage = "Reported. Your ₹\(outcome.refundMinorUnits / 100) refund and \(outcome.goodwillCreditPoints) goodwill points are on the way."
+            // Through the shared formatter: integer-dividing minor units by
+            // 100 silently drops the paise on any non-round refund.
+            noShowMessage = "Reported. Your \(CurrencyFormatter.rupees(outcome.refundMinorUnits)) refund and \(outcome.goodwillCreditPoints) goodwill points are on the way."
         } catch {
             noShowMessage = error.localizedDescription
         }
@@ -499,7 +501,7 @@ private struct ActionRow: View {
                     .font(.caption2.bold())
                     .foregroundStyle(.white)
                     .padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(Color.red, in: Capsule())
+                    .background(Theme.danger, in: Capsule())
                     .accessibilityLabel("\(badgeCount) unread messages")
             }
             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)

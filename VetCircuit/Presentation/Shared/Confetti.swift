@@ -7,7 +7,7 @@ struct ConfettiView: View {
     @State private var pieces: [Piece] = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private let colors: [Color] = [Theme.accent, Theme.primary, .yellow, .green, .pink]
+    private let colors: [Color] = [Theme.accent, Theme.primary, Theme.emerald, Theme.goldTier, Theme.primaryLight]
 
     struct Piece: Identifiable {
         let id = UUID()

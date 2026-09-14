@@ -128,7 +128,7 @@ private struct StarRatingButton: View {
         } label: {
             Image(systemName: isFilled ? "star.fill" : "star")
                 .font(.system(size: 34))
-                .foregroundStyle(isFilled ? Color.yellow : Color(.tertiaryLabel))
+                .foregroundStyle(isFilled ? Theme.goldTier : Color(.tertiaryLabel))
                 .scaleEffect(isFilled ? 1.08 : 1)
                 .animation(Theme.springQuick, value: rating)
         }

@@ -518,8 +518,8 @@ private struct VaccinationRow: View {
     private var color: Color {
         switch vaccination.dueStatus() {
         case .upToDate: return .secondary
-        case .dueSoon: return .orange
-        case .overdue: return .red
+        case .dueSoon: return Theme.warning
+        case .overdue: return Theme.danger
         }
     }
 
