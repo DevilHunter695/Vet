@@ -68,18 +68,17 @@ struct RescheduleVisitView: View {
                             ForEach(viewModel.availableSlots) { slot in
                                 Button {
                                     Haptics.selection()
-                                    viewModel.selectedSlot = slot
+                                    withAnimation(Theme.springQuick) { viewModel.selectedSlot = slot }
                                 } label: {
                                     HStack {
                                         Text(slot.startTime.formatted(date: .abbreviated, time: .shortened)).font(.brandBody)
                                         Spacer()
-                                        Image(systemName: viewModel.selectedSlot?.id == slot.id ? "checkmark.circle.fill" : "circle")
-                                            .foregroundStyle(viewModel.selectedSlot?.id == slot.id ? Theme.primary : Color(.tertiaryLabel))
                                     }
                                     .padding()
                                     .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                                 }
                                 .buttonStyle(PressableStyle())
+                                .selectable(isSelected: viewModel.selectedSlot?.id == slot.id)
                             }
 
                             if let errorMessage = viewModel.errorMessage {
