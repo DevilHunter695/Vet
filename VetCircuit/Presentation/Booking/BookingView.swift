@@ -33,6 +33,9 @@ final class BookingViewModel {
     private(set) var holdSecondsRemaining: Int?
     private var holdTimer: Task<Void, Never>?
     private var currentUserId: UUID?
+    /// E10: kept only so `confirmBooking` can send a "visit confirmed"
+    /// receipt notification without re-fetching the user.
+    private var currentUser: User?
     /// Generated once per booking attempt and reused across retries (plan
     /// §7.1: "every mutating endpoint takes an idempotency key") — a double
     /// tap or a retry after a dropped response returns the same visit
@@ -44,6 +47,9 @@ final class BookingViewModel {
     private let holdSlotUseCase = DependencyContainer.shared.holdSlotUseCase()
     private let slotHoldRepository = DependencyContainer.shared.slotHoldRepository
     private let manageRecurringBookingUseCase = DependencyContainer.shared.manageRecurringBookingUseCase()
+    /// E10: receipt notification (push, or SMS fallback per J8's policy)
+    /// once a booking is confirmed.
+    private let sendTransactionalNotificationUseCase = DependencyContainer.shared.sendTransactionalNotificationUseCase()
 
     /// F5's toggle is offered only for the categories the plan calls out —
     /// deworming (monthly) and physio (weekly) — everything else defaults
@@ -93,8 +99,10 @@ final class BookingViewModel {
         holdSecondsRemaining = nil
     }
 
-    func loadPets(ownerId: UUID) async {
-        currentUserId = ownerId
+    func loadPets(user: User) async {
+        currentUserId = user.id
+        currentUser = user
+        let ownerId = user.id
         do {
             pets = try await managePetsUseCase.list(ownerId: ownerId)
             selectedPet = pets.first
@@ -119,6 +127,17 @@ final class BookingViewModel {
             )
             // The hold's job ends where the confirmed booking begins.
             if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
+
+            // E10: "order confirmation" receipt — push if available, else
+            // the J8 SMS-fallback policy decides (never a blocking failure:
+            // the booking itself already succeeded above).
+            if let user = currentUser, let visit = bookedVisit {
+                let when = visit.scheduledAt.formatted(date: .abbreviated, time: .shortened)
+                _ = try? await sendTransactionalNotificationUseCase.execute(
+                    user: user, category: .visitConfirmed,
+                    body: "Your visit for \(pet.name) is confirmed for \(when)."
+                )
+            }
 
             // F5: best-effort — a failure here shouldn't undo an otherwise
             // successful booking, just leave the customer without the rule.
@@ -257,7 +276,7 @@ struct BookingView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             if let user = session.currentUser {
-                await viewModel.loadPets(ownerId: user.id)
+                await viewModel.loadPets(user: user)
                 hasAcceptedWaiver = (try? await manageConsentUseCase.hasAcceptedLiabilityWaiver(userId: user.id)) ?? false
             }
         }
@@ -350,6 +369,12 @@ struct BookingConfirmedView: View {
                     .font(.brandBody)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                // E10: order confirmation receipt was just sent (push, or SMS
+                // per J8's fallback policy) — surfaced here so it isn't a
+                // silent side effect the customer never sees confirmed.
+                Text("A confirmation has been sent to your phone.")
+                    .font(.brandCaption)
+                    .foregroundStyle(.secondary)
                 StatusBadge(status: visit.status)
             }
             .padding()

@@ -96,7 +96,11 @@ protocol SubscriptionRepository: Sendable {
 }
 
 protocol PaymentRepository: Sendable {
-    func createCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL
+    /// E6: `quoteId` is the enforcement point — an order (this checkout)
+    /// must reference a valid, unexpired, signed quote, never an arbitrary
+    /// client-supplied amount. `StartCheckoutUseCase` is the only caller and
+    /// derives `amountMinorUnits` from `quote.breakdown.totalMinorUnits`.
+    func createCheckout(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> URL
     func createCheckout(forSubscription plan: Subscription.PlanType) async throws -> URL
     func paymentStatus(paymentId: UUID) async throws -> Payment.Status
     /// E11: tagged distinctly from a regular visit charge (payments.kind =

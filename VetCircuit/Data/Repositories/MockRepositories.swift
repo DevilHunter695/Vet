@@ -541,8 +541,8 @@ actor MockSubscriptionRepository: SubscriptionRepository {
 }
 
 actor MockPaymentRepository: PaymentRepository {
-    func createCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL {
-        URL(string: "https://checkout.example.com/visit/\(visitId)")!
+    func createCheckout(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> URL {
+        URL(string: "https://checkout.example.com/visit/\(visitId)?quote=\(quoteId)&amount=\(amountMinorUnits)")!
     }
 
     func createCheckout(forSubscription plan: Subscription.PlanType) async throws -> URL {

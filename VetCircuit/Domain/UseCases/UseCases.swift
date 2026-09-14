@@ -633,14 +633,22 @@ struct ManageMedicationRemindersUseCase {
     }
 }
 
+/// E6: server-authoritative quote → checkout. The signature is the
+/// enforcement: there is no overload that takes a raw amount, so a checkout
+/// can only ever be started with a real, server-issued `Quote` — never a
+/// client-computed rupee figure (Appendix C's central rule, applied at the
+/// one place money actually changes hands).
 struct StartCheckoutUseCase {
     let paymentRepository: PaymentRepository
 
-    func execute(visitId: UUID, amountMinorUnits: Int) async throws -> URL {
-        guard amountMinorUnits > 0 else {
+    func execute(visitId: UUID, quote: Quote) async throws -> URL {
+        guard !quote.isExpired else {
+            throw DomainError.validation("This price quote has expired — refresh it and try again.")
+        }
+        guard quote.breakdown.totalMinorUnits > 0 else {
             throw DomainError.validation("Invalid amount.")
         }
-        return try await paymentRepository.createCheckout(forVisit: visitId, amountMinorUnits: amountMinorUnits)
+        return try await paymentRepository.createCheckout(forVisit: visitId, quoteId: quote.id, amountMinorUnits: quote.breakdown.totalMinorUnits)
     }
 }
 

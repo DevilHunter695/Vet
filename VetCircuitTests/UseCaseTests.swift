@@ -674,6 +674,40 @@ struct RedeemLoyaltyPointsUseCaseTests {
     }
 }
 
+// E6: server-authoritative quote gates checkout — the type signature itself
+// (Quote, not a raw amount) is the enforcement point.
+@Suite("StartCheckoutUseCase")
+struct StartCheckoutUseCaseTests {
+    private func makeQuote(expired: Bool, totalMinorUnits: Int = 10_000) -> Quote {
+        Quote(id: UUID(), cartId: UUID(),
+              breakdown: PriceBreakdown(lineItems: [], totalMinorUnits: totalMinorUnits),
+              signature: "sig", expiresAt: expired ? Date().addingTimeInterval(-60) : Date().addingTimeInterval(600))
+    }
+
+    @Test("rejects an expired quote")
+    func rejectsExpiredQuote() async {
+        let useCase = StartCheckoutUseCase(paymentRepository: MockPaymentRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(visitId: UUID(), quote: makeQuote(expired: true))
+        }
+    }
+
+    @Test("rejects a zero-amount quote")
+    func rejectsZeroAmount() async {
+        let useCase = StartCheckoutUseCase(paymentRepository: MockPaymentRepository())
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(visitId: UUID(), quote: makeQuote(expired: false, totalMinorUnits: 0))
+        }
+    }
+
+    @Test("a valid quote produces a checkout URL")
+    func validQuoteChecksOut() async throws {
+        let useCase = StartCheckoutUseCase(paymentRepository: MockPaymentRepository())
+        let url = try await useCase.execute(visitId: UUID(), quote: makeQuote(expired: false))
+        #expect(url.absoluteString.contains("quote="))
+    }
+}
+
 @Suite("RunTriageUseCase")
 struct RunTriageUseCaseTests {
     @Test("rejects empty symptom description")

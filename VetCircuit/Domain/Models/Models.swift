@@ -454,6 +454,12 @@ struct Payment: Identifiable, Codable, Equatable, Hashable {
     var currency: String
     var status: Status
     var gatewayReference: String?
+    /// E6: the signed quote this payment/order was checked out against —
+    /// nil only for the subscription/tip checkout paths, which don't go
+    /// through a cart quote. A per-visit checkout always has one (enforced
+    /// by `StartCheckoutUseCase`'s signature, which takes a `Quote`, not a
+    /// raw amount).
+    var quoteId: UUID? = nil
 
     enum Status: String, Codable {
         case pending, succeeded, failed, refunded
