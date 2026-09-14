@@ -1772,6 +1772,12 @@ actor MockPetRepositoryForTests: PetRepository {
     func deletePet(id: UUID) async throws {
         pets.removeAll { $0.id == id }
     }
+
+    func updatePhoto(petId: UUID, data: Data) async throws -> Pet {
+        guard let index = pets.firstIndex(where: { $0.id == petId }) else { throw DomainError.notFound("Pet") }
+        pets[index].photoURL = URL(string: "https://example.com/pet-photos/\(petId).jpg")
+        return pets[index]
+    }
 }
 
 @Suite("FollowUpBookingPolicy (K5)")
