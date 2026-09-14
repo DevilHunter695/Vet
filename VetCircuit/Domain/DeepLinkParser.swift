@@ -2,19 +2,18 @@ import Foundation
 
 // MARK: - Deep links (plan §3 N7) — every campaign target needs a URL.
 //
-// Known architecture gap (plan §6.1): the plan calls for "a typed Route enum
-// + NavigationStack(path:) per tab, driven by a Router", but MainTabView
-// today (App/VetCircuitApp.swift) runs three independent NavigationStacks
-// with no shared Router — there is nowhere to point an arbitrary deep link
-// from outside those stacks. Rather than bolt a parallel, disconnected
-// navigation system on top, this parser only produces a `Route` value; the
-// app stores the pending route and the relevant tab consumes it on appear
-// (see PendingDeepLinkStore in App/VetCircuitApp.swift). Wiring every tab's
-// internal navigation to arbitrary deep-link targets (e.g. jumping straight
-// into a specific visit's chat thread) needs the real Router first.
+// `App/Router.swift` now owns turning one of these into an actual tab
+// switch plus (on the Visits/Profile tabs) a typed `Route` pushed onto that
+// tab's `NavigationPath` — see its doc comment for exactly which tabs were
+// converted and why the Book tab still resolves `.book` itself.
 
 enum DeepLink: Equatable {
     case visit(UUID)
+    /// `vetcircuit://visit/<uuid>/chat` — jumps straight into that visit's
+    /// chat thread instead of only its detail screen. This is the exact
+    /// "unreachable from outside" case plan §6.1 called out before the
+    /// Router existed.
+    case chat(visitId: UUID)
     case book(circuitId: UUID)
     case household
     case unknown
@@ -35,6 +34,11 @@ enum DeepLinkParser {
         switch host {
         case "visit":
             guard let idString = pathComponents.first, let id = UUID(uuidString: idString) else { return .unknown }
+            // `vetcircuit://visit/<uuid>/chat` — one segment further than
+            // the plain visit-detail link.
+            if pathComponents.count > 1, pathComponents[1] == "chat" {
+                return .chat(visitId: id)
+            }
             return .visit(id)
         case "book":
             guard let idString = pathComponents.first, let id = UUID(uuidString: idString) else { return .unknown }
