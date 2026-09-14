@@ -390,6 +390,13 @@ actor MockVisitRepository: VisitRepository {
     /// `book_visit()` — a slot can never be oversold even under concurrent
     /// calls, since actor isolation serializes access to this dictionary.
     private var bookedCountBySlot: [UUID: Int] = [:]
+    // I2: mirrors 0046_visit_status_events.sql's trigger — every status this
+    // repository ever set, timestamped, oldest first.
+    private var statusEvents: [UUID: [VisitStatusEvent]] = [:]
+
+    private func logStatusEvent(visitId: UUID, status: Visit.VisitStatus) {
+        statusEvents[visitId, default: []].append(VisitStatusEvent(id: UUID(), visitId: visitId, status: status, occurredAt: .now))
+    }
 
     func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String) async throws -> Visit {
         if let existingVisitId = visitsByIdempotencyKey[idempotencyKey],
@@ -407,6 +414,7 @@ actor MockVisitRepository: VisitRepository {
         visits.append(visit)
         visitsByIdempotencyKey[idempotencyKey] = visit.id
         bookedCountBySlot[slot.id] = alreadyBooked + 1
+        logStatusEvent(visitId: visit.id, status: .requested)
         return visit
     }
 
@@ -422,12 +430,36 @@ actor MockVisitRepository: VisitRepository {
     func updateStatus(visitId: UUID, status: Visit.VisitStatus) async throws -> Visit {
         guard let index = visits.firstIndex(where: { $0.id == visitId }) else { throw DomainError.notFound("Visit") }
         visits[index].status = status
+        logStatusEvent(visitId: visitId, status: status)
         return visits[index]
     }
 
     func cancelVisit(visitId: UUID) async throws {
         guard let index = visits.firstIndex(where: { $0.id == visitId }) else { throw DomainError.notFound("Visit") }
         visits[index].status = .cancelledByUser
+        logStatusEvent(visitId: visitId, status: .cancelledByUser)
+    }
+
+    func statusHistory(visitId: UUID) async throws -> [VisitStatusEvent] {
+        if let recorded = statusEvents[visitId], !recorded.isEmpty {
+            return recorded.sorted { $0.occurredAt < $1.occurredAt }
+        }
+        // Defensive fallback for any visit this actor didn't itself create
+        // (MockData.visits is empty today, but a future seed or a Supabase-
+        // backed preview isn't guaranteed to have gone through createVisit/
+        // updateStatus) — synthesize a plausible timeline leading up to the
+        // visit's current status rather than returning an empty list.
+        guard let visit = visits.first(where: { $0.id == visitId }) else { return [] }
+        let order: [Visit.VisitStatus] = [.requested, .confirmed, .assigned, .enRoute, .arrived, .inProgress, .completed]
+        guard let currentIndex = order.firstIndex(of: visit.status) else {
+            return [VisitStatusEvent(id: UUID(), visitId: visitId, status: visit.status, occurredAt: visit.scheduledAt)]
+        }
+        let anchor = visit.completedAt ?? visit.scheduledAt
+        return order[...currentIndex].enumerated().map { offset, status in
+            let stepsFromEnd = currentIndex - offset
+            let timestamp = Calendar.current.date(byAdding: .minute, value: -15 * stepsFromEnd, to: anchor) ?? anchor
+            return VisitStatusEvent(id: UUID(), visitId: visitId, status: status, occurredAt: timestamp)
+        }
     }
 
     func rescheduleVisit(visitId: UUID, newSlot: ScheduleSlot) async throws -> Visit {

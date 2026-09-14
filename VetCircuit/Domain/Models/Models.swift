@@ -276,6 +276,16 @@ struct Visit: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+/// I2: one timestamped entry in a visit's status timeline — server-recorded
+/// (0046_visit_status_events.sql's trigger), since the client can't know
+/// *when* a past transition happened, only what the current status is.
+struct VisitStatusEvent: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var visitId: UUID
+    var status: Visit.VisitStatus
+    var occurredAt: Date
+}
+
 struct Subscription: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var userId: UUID

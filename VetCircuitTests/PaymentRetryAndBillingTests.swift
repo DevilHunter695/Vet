@@ -83,6 +83,32 @@ struct RetryPaymentUseCaseTests {
     }
 }
 
+// I2: visit status timeline.
+
+@Suite("MockVisitRepository status history")
+struct VisitStatusHistoryTests {
+    @Test("records a real event for every status transition")
+    func recordsRealTransitions() async throws {
+        let repo = MockVisitRepository()
+        let slot = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(3600),
+                                 endTime: .now.addingTimeInterval(7200), capacity: 3, bookedCount: 0)
+        let visit = try await repo.createVisit(petId: UUID(), vetId: UUID(), circuitId: UUID(), slot: slot, idempotencyKey: UUID().uuidString)
+        _ = try await repo.updateStatus(visitId: visit.id, status: .confirmed)
+        _ = try await repo.updateStatus(visitId: visit.id, status: .assigned)
+
+        let history = try await repo.statusHistory(visitId: visit.id)
+        #expect(history.map(\.status) == [.requested, .confirmed, .assigned])
+        #expect(zip(history, history.dropFirst()).allSatisfy { $0.occurredAt <= $1.occurredAt })
+    }
+
+    @Test("an unknown visit id yields an empty timeline rather than throwing")
+    func unknownVisitIsEmpty() async throws {
+        let repo = MockVisitRepository()
+        let history = try await repo.statusHistory(visitId: UUID())
+        #expect(history.isEmpty)
+    }
+}
+
 // H1: plan catalog — inclusions & fair-use limits visible before purchase.
 
 @Suite("PlanCatalogEntry")

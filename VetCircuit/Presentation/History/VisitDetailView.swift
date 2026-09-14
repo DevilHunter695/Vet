@@ -50,19 +50,28 @@ struct VisitDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Card {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("Visit status").font(.brandHeadline)
-                            Spacer()
-                            StatusBadge(status: visit.status)
+                NavigationLink {
+                    VisitTimelineView(visitId: visit.id)
+                } label: {
+                    Card {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("Visit status").font(.brandHeadline)
+                                Spacer()
+                                StatusBadge(status: visit.status)
+                            }
+                            Text(visit.scheduledAt.formatted(date: .long, time: .shortened))
+                                .font(.brandBody)
+                                .foregroundStyle(.secondary)
+                            // I2: entry point to the full timestamped timeline.
+                            Label("View full timeline", systemImage: "list.bullet.clipboard")
+                                .font(.brandCaption)
+                                .foregroundStyle(Theme.primary)
                         }
-                        Text(visit.scheduledAt.formatted(date: .long, time: .shortened))
-                            .font(.brandBody)
-                            .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .buttonStyle(PressableStyle())
                 .appearAnimation()
 
                 // G9: a gateway dispute (chargeback) was opened against this

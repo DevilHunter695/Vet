@@ -596,6 +596,26 @@ final class SupabaseVisitRepository: VisitRepository {
         let rows: [AmountRow] = try await client.from("payments").select("amount_minor_units").eq("visit_id", value: visitId).execute().value
         return rows.first?.amountMinorUnits ?? 0
     }
+
+    func statusHistory(visitId: UUID) async throws -> [VisitStatusEvent] {
+        // I2: server-recorded by 0046_visit_status_events.sql's trigger —
+        // the client only ever reads, never writes, this table.
+        struct Row: Decodable {
+            let id: UUID, visitId: UUID, status: String, occurredAt: Date
+            enum CodingKeys: String, CodingKey {
+                case id, status
+                case visitId = "visit_id", occurredAt = "occurred_at"
+            }
+        }
+        let rows: [Row] = try await client
+            .from("visit_status_events").select().eq("visit_id", value: visitId)
+            .order("occurred_at", ascending: true)
+            .execute().value
+        return rows.compactMap { row in
+            guard let status = Visit.VisitStatus(rawValue: row.status) else { return nil }
+            return VisitStatusEvent(id: row.id, visitId: row.visitId, status: status, occurredAt: row.occurredAt)
+        }
+    }
 }
 
 final class SupabaseAccountRepository: AccountRepository {

@@ -30,6 +30,10 @@ protocol VisitRepository: Sendable {
     func rescheduleVisit(visitId: UUID, newSlot: ScheduleSlot) async throws -> Visit
     /// The amount actually paid for this visit, needed to compute a refund.
     func paidAmountMinorUnits(visitId: UUID) async throws -> Int
+    /// I2: the timestamped status timeline, oldest first — server-recorded
+    /// (0046_visit_status_events.sql), since the client never knew *when*
+    /// a past transition happened, only what the current status is.
+    func statusHistory(visitId: UUID) async throws -> [VisitStatusEvent]
 }
 
 protocol AccountRepository: Sendable {
