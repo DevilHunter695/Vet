@@ -443,6 +443,8 @@ struct PetDetailView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens the document vault")
     }
 
     // MARK: - Lab test reports (K6)
@@ -463,6 +465,8 @@ struct PetDetailView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens lab test reports")
     }
 
     // MARK: - Prescriptions (K2)
@@ -495,6 +499,8 @@ struct PetDetailView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens medication reminders")
     }
 }
 
@@ -520,6 +526,7 @@ private struct VaccinationRow: View {
                         .font(.brandCaption).foregroundStyle(.secondary)
                 }
             }
+            .accessibilityElement(children: .combine)
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text("Next due").font(.brandCaption).foregroundStyle(.secondary)
@@ -527,6 +534,7 @@ private struct VaccinationRow: View {
                     .font(.brandCaption.weight(.semibold))
                     .foregroundStyle(color)
             }
+            .accessibilityElement(children: .combine)
             // K4: vaccination certificate PDF, generated on-device.
             Button {
                 Haptics.tap()
@@ -559,6 +567,7 @@ private struct PrescriptionRow: View {
                 Text(prescription.issuedAt.formatted(date: .abbreviated, time: .omitted))
                     .font(.brandCaption).foregroundStyle(.tertiary)
             }
+            .accessibilityElement(children: .combine)
             Spacer()
             // K2: prescription PDF, generated on-device from this structured record.
             Button {
