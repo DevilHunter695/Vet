@@ -94,7 +94,7 @@ struct BookingCheckoutUseCaseTests {
     }
 
     @Test("start() refuses an expired quote and never books a visit")
-    func startRefusesExpiredQuote() async {
+    func startRefusesExpiredQuote() async throws {
         let (pipeline, visitRepository, _) = makePipeline()
         await #expect(throws: DomainError.self) {
             _ = try await pipeline.start(
@@ -161,7 +161,7 @@ struct BookingCheckoutUseCaseTests {
     }
 
     @Test("startPayAfterVisit() still refuses an expired quote — E8 never skips E6's quote-gating")
-    func startPayAfterVisitRefusesExpiredQuote() async {
+    func startPayAfterVisitRefusesExpiredQuote() async throws {
         let (pipeline, visitRepository, _) = makePipeline()
         await #expect(throws: DomainError.self) {
             _ = try await pipeline.startPayAfterVisit(
