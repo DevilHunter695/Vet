@@ -13,6 +13,22 @@ struct DeepLinkParserTests {
         #expect(DeepLinkParser.parse(url) == .visit(id))
     }
 
+    /// N7: `.chat` is the destination plan §6.1 called out as unreachable
+    /// from outside before `Router` existed — see App/Router.swift.
+    @Test("parses a visit/<id>/chat deep link as .chat, distinct from plain .visit")
+    func parsesVisitChat() {
+        let id = UUID()
+        let url = URL(string: "vetcircuit://visit/\(id.uuidString)/chat")!
+        #expect(DeepLinkParser.parse(url) == .chat(visitId: id))
+    }
+
+    @Test("an unrecognized trailing segment after visit/<id> still parses as plain .visit")
+    func parsesVisitWithUnknownTrailingSegment() {
+        let id = UUID()
+        let url = URL(string: "vetcircuit://visit/\(id.uuidString)/timeline")!
+        #expect(DeepLinkParser.parse(url) == .visit(id))
+    }
+
     @Test("parses a book deep link")
     func parsesBook() {
         let id = UUID()
