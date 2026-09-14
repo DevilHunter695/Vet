@@ -138,6 +138,7 @@ struct ProfileView: View {
                         }
                         .padding(.vertical, 6)
                         .listRowBackground(Color.clear)
+                        .accessibilityElement(children: .combine)
                     }
                     .appearAnimation()
 
@@ -259,6 +260,7 @@ struct ProfileView: View {
                                         .font(.brandCaption).foregroundStyle(.secondary)
                                 }
                             }
+                            .accessibilityElement(children: .combine)
                         }
                     }
                     .onDelete { indexSet in
@@ -355,8 +357,11 @@ private struct LoyaltyProgressCard: View {
             }
             ProgressTrack(color: color, progress: progress)
                 .frame(height: 6)
+                .accessibilityHidden(true)
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue("\(Int(progress * 100)) percent to next tier")
     }
 }
 
