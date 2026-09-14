@@ -82,3 +82,55 @@ struct RetryPaymentUseCaseTests {
         }
     }
 }
+
+// H5: dunning status use case — wiring on top of the already-pure DunningPolicy.
+
+@Suite("DunningStatusUseCase")
+struct DunningStatusUseCaseTests {
+    @Test("first failure schedules a retry, not grace")
+    func firstFailureSchedulesRetry() async throws {
+        let repo = MockSubscriptionRepository()
+        let sub = try await repo.subscribe(userId: UUID(), plan: .monthly)
+        let useCase = DunningStatusUseCase(subscriptionRepository: repo)
+
+        let outcome = try await useCase.recordFailure(subscriptionId: sub.id)
+        guard case .retryScheduled = outcome else { Issue.record("expected retryScheduled"); return }
+        let status = try await useCase.currentStatus(subscriptionId: sub.id)
+        #expect(status?.failedAttempts == 1)
+    }
+
+    @Test("after the retry ladder is exhausted, grace starts")
+    func ladderExhaustionStartsGrace() async throws {
+        let repo = MockSubscriptionRepository()
+        let sub = try await repo.subscribe(userId: UUID(), plan: .monthly)
+        let useCase = DunningStatusUseCase(subscriptionRepository: repo)
+
+        for _ in 0..<DunningPolicy.retryLadderDays.count { _ = try await useCase.recordFailure(subscriptionId: sub.id) }
+        let outcome = try await useCase.recordFailure(subscriptionId: sub.id)
+        guard case .graceStarted = outcome else { Issue.record("expected graceStarted"); return }
+    }
+
+    @Test("grace expiry downgrades the plan and clears dunning state")
+    func graceExpiryDowngrades() async throws {
+        let repo = MockSubscriptionRepository()
+        let sub = try await repo.subscribe(userId: UUID(), plan: .annual)
+        try await repo.recordDunningState(DunningState(subscriptionId: sub.id, failedAttempts: 4, nextRetryAt: nil, gracePeriodEndsAt: .now.addingTimeInterval(-3600)))
+        let useCase = DunningStatusUseCase(subscriptionRepository: repo)
+
+        let downgraded = try await useCase.resolveIfGraceExpired(subscriptionId: sub.id)
+        #expect(downgraded)
+        let updated = try await repo.currentSubscription(userId: sub.userId)
+        #expect(updated?.planType == DunningPolicy.downgradeTarget)
+    }
+
+    @Test("does nothing while grace hasn't expired yet")
+    func doesNothingBeforeGraceExpiry() async throws {
+        let repo = MockSubscriptionRepository()
+        let sub = try await repo.subscribe(userId: UUID(), plan: .annual)
+        try await repo.recordDunningState(DunningState(subscriptionId: sub.id, failedAttempts: 4, nextRetryAt: nil, gracePeriodEndsAt: .now.addingTimeInterval(3600)))
+        let useCase = DunningStatusUseCase(subscriptionRepository: repo)
+
+        let downgraded = try await useCase.resolveIfGraceExpired(subscriptionId: sub.id)
+        #expect(!downgraded)
+    }
+}

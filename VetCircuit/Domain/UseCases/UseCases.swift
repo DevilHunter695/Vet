@@ -259,6 +259,53 @@ struct ManageSubscriptionUseCase {
     }
 }
 
+/// H5: dunning — surfaces the retry-ladder/grace state read-only ("payment
+/// failed, retrying...") and, once grace has expired, performs the
+/// auto-downgrade `DunningPolicy` calls for. The actual "a renewal charge
+/// just failed" trigger is a gateway webhook (no gateway is wired into this
+/// codebase), so `recordFailure` exists for that future caller/scheduled job
+/// (plan §6.5) to invoke — this use case's real job today is reading and
+/// resolving whatever dunning state already exists.
+struct DunningStatusUseCase {
+    let subscriptionRepository: SubscriptionRepository
+
+    /// Called by the (not-yet-wired) renewal-failure webhook or a scheduled
+    /// job each time a charge fails; advances the retry ladder into grace.
+    @discardableResult
+    func recordFailure(subscriptionId: UUID, now: Date = .now) async throws -> DunningPolicy.Outcome {
+        let existing = try await subscriptionRepository.dunningState(subscriptionId: subscriptionId)
+        let outcome = DunningPolicy.onChargeFailed(state: existing, subscriptionId: subscriptionId, now: now)
+        switch outcome {
+        case .retryScheduled(let state), .graceStarted(let state):
+            try await subscriptionRepository.recordDunningState(state)
+        case .downgraded:
+            break
+        }
+        return outcome
+    }
+
+    /// Read-only status for the customer app: nil once there's no unresolved
+    /// dunning state, otherwise the current retry/grace snapshot to show as
+    /// "payment failed, retrying on <date>" / "your plan will downgrade on <date>".
+    func currentStatus(subscriptionId: UUID) async throws -> DunningState? {
+        try await subscriptionRepository.dunningState(subscriptionId: subscriptionId)
+    }
+
+    /// The scheduled job (plan §6.5) calls this once grace has elapsed with
+    /// no successful charge — downgrades the subscription rather than
+    /// leaving it past-due indefinitely, and clears the dunning state.
+    @discardableResult
+    func resolveIfGraceExpired(subscriptionId: UUID, now: Date = .now) async throws -> Bool {
+        guard let state = try await subscriptionRepository.dunningState(subscriptionId: subscriptionId),
+              DunningPolicy.shouldAutoDowngrade(state: state, now: now) else {
+            return false
+        }
+        _ = try await subscriptionRepository.changePlan(subscriptionId: subscriptionId, to: DunningPolicy.downgradeTarget)
+        try await subscriptionRepository.recordDunningState(DunningState(subscriptionId: subscriptionId, failedAttempts: 0, nextRetryAt: nil, gracePeriodEndsAt: nil))
+        return true
+    }
+}
+
 struct SendChatMessageUseCase {
     let chatRepository: ChatRepository
 

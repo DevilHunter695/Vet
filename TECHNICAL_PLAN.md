@@ -220,7 +220,7 @@ Service (Home consultation)
 |---|---|---|---|---|
 | G1 | Hosted checkout (Razorpay), **never raw card data** | P0 | ✅ | PCI scope avoided by construction |
 | G2 | **Webhook-only confirmation**, signature-verified, idempotent | P0 | ✅ | Already in `payment-webhook` — keep this discipline everywhere |
-| G3 | Payment retry on failure + clear failure states | P0 | 🔨 | |
+| G3 | Payment retry on failure + clear failure states | P0 | ✅ | `PaymentRetryPolicy` (pure, tested) caps retries at 3 attempts and gives an explicit "contact support" reason once exhausted; `RetryPaymentUseCase` re-launches hosted checkout when allowed. `VisitDetailView` shows a dedicated failure card with a "Retry payment" button when `Payment.Status == .failed` instead of leaving the customer on a dead checkout link. |
 | G4 | **Refunds** (full/partial), initiated by ops, tracked to gateway | **P0** | ✅ | `CancelVisitUseCase` (partial, per `CancellationPolicy`) and `ReportVetNoShowUseCase` (full) both issue refunds through `RefundRepository`; `IssueSupportRefundUseCase` covers the ops-initiated case. Every path calls the `issue-refund` Edge Function (service-role key) — `refunds` is select-only under RLS for every client role, so no client can ever insert one directly. Was mistagged 🔨: verified this is fully wired end to end. |
 | G5 | GST-compliant invoice PDF per order | **P0** | 🔨 | Legal requirement once registered |
 | G6 | Wallet + double-entry ledger | P1 | 🔨 | `wallet_ledger` (append-only, mirrors `vet_ledger`) + balance view + CartView "use wallet balance" toggle; nothing yet writes the debit when a wallet-funded booking completes — checkout/payment-capture is still open |

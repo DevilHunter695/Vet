@@ -147,6 +147,8 @@ final class DependencyContainer {
     func manageSubscriptionUseCase() -> ManageSubscriptionUseCase {
         ManageSubscriptionUseCase(subscriptionRepository: subscriptionRepository)
     }
+    /// H5: dunning — read-only retry/grace status, and grace-expiry resolution.
+    func dunningStatusUseCase() -> DunningStatusUseCase { DunningStatusUseCase(subscriptionRepository: subscriptionRepository) }
     func sendChatMessageUseCase() -> SendChatMessageUseCase { SendChatMessageUseCase(chatRepository: chatRepository) }
     func submitReviewUseCase() -> SubmitReviewUseCase { SubmitReviewUseCase(reviewRepository: reviewRepository) }
     func managePetsUseCase() -> ManagePetsUseCase { ManagePetsUseCase(petRepository: petRepository) }

@@ -9,6 +9,8 @@ final class ManageSubscriptionViewModel {
     var subscription: Subscription?
     var errorMessage: String?
     var pendingAction: PendingAction?
+    // H5: dunning — read-only "payment failed, retrying..." status.
+    var dunningState: DunningState?
 
     /// Illustrative individual-plan pricing for the confirmation copy (plan
     /// §9 rule 3: consequences stated in money and time) — mirrors
@@ -38,10 +40,14 @@ final class ManageSubscriptionViewModel {
 
     private let manageSubscriptionUseCase = DependencyContainer.shared.manageSubscriptionUseCase()
     private let subscriptionRepository = DependencyContainer.shared.subscriptionRepository
+    private let dunningStatusUseCase = DependencyContainer.shared.dunningStatusUseCase()
 
     func load(userId: UUID) async {
         do {
             subscription = try await subscriptionRepository.currentSubscription(userId: userId)
+            if let subscriptionId = subscription?.id {
+                dunningState = try await dunningStatusUseCase.currentStatus(subscriptionId: subscriptionId)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -93,6 +99,21 @@ struct ManageSubscriptionView: View {
                     }
                 }
                 .appearAnimation()
+
+                // H5: dunning — a failed renewal charge is retrying, or has
+                // moved into its grace window, rather than the customer
+                // finding out only when the plan silently downgrades.
+                if let dunning = viewModel.dunningState {
+                    Section {
+                        if let nextRetryAt = dunning.nextRetryAt {
+                            Label("Payment failed — retrying on \(nextRetryAt.formatted(date: .abbreviated, time: .omitted))", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Theme.warning)
+                        } else if let graceEndsAt = dunning.gracePeriodEndsAt {
+                            Label("Payment failed — your plan downgrades on \(graceEndsAt.formatted(date: .abbreviated, time: .omitted)) unless it's resolved", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Theme.danger)
+                        }
+                    }
+                }
 
                 if subscription.status == .active {
                     Section("Change plan") {
