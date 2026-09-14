@@ -13,6 +13,11 @@ struct User: Identifiable, Codable, Equatable, Hashable {
     // ownership split (see `vets` RLS: no client update policy on this
     // column, only `is_admin()` or a trusted function can move it).
     var accountStatus: AccountStatus = .active
+    // A5: edit-profile fields. `photoURL` is a signed URL into the same
+    // private `documents` bucket B2/B6 already use (path
+    // `profile-photos/<userId>/<uuid>.jpg`), never edited as plain text.
+    var photoURL: URL? = nil
+    var preferredLanguage: String? = nil
 
     enum AccountStatus: String, Codable, CaseIterable {
         case active, blocked, deactivated

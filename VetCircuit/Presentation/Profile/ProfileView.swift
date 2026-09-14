@@ -107,6 +107,12 @@ struct ProfileView: View {
                         .listRowBackground(Color.clear)
                     }
                     .appearAnimation()
+
+                    Section {
+                        NavigationLink("Edit profile") {
+                            EditProfileView()
+                        }
+                    }
                 }
 
                 Section("Care type") {

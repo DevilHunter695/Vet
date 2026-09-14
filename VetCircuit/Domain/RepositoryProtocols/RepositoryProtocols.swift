@@ -44,6 +44,12 @@ protocol AccountRepository: Sendable {
     func pendingDeletionRequest(userId: UUID) async throws -> DeletionRequest?
     /// A7: assembles the customer's full data export.
     func exportData(userId: UUID) async throws -> DataExport
+    /// A5: name/email/language edits — plain field updates, not an identity
+    /// change (that stays out of scope: Sign in with Apple / phone OTP / the
+    /// session itself are untouched by this).
+    func updateProfile(_ user: User) async throws -> User
+    /// A5: profile photo upload, mirroring `PetRepository.updatePhoto`.
+    func updatePhoto(userId: UUID, data: Data) async throws -> User
 }
 
 protocol VisitOTPRepository: Sendable {

@@ -71,6 +71,20 @@ actor MockAccountRepository: AccountRepository {
             consents: [], generatedAt: .now
         )
     }
+
+    private var profiles: [UUID: User] = [:]
+
+    func updateProfile(_ user: User) async throws -> User {
+        profiles[user.id] = user
+        return user
+    }
+
+    func updatePhoto(userId: UUID, data: Data) async throws -> User {
+        var user = profiles[userId] ?? MockData.user
+        user.photoURL = URL(string: "https://mock.vetcircuit.app/profile-photos/\(userId)/\(UUID().uuidString).jpg")
+        profiles[userId] = user
+        return user
+    }
 }
 
 actor MockVisitOTPRepository: VisitOTPRepository {

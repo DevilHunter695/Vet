@@ -125,7 +125,7 @@ cart, the detail screens, and the "multiple options" — enumerated so nothing i
 | A2 | Phone + OTP (primary in India) | P0 | 🔨 | Rate-limited, 6-digit, 5-min TTL, max 5/hr/number, 20/hr/device |
 | A3 | Session persistence + silent refresh | P0 | 🔨 | Access 15 min, refresh 60 days w/ **rotation + reuse detection** |
 | A4 | Sign out (single device + all devices) | P0 | 🔨 | "Sign out everywhere" revokes refresh family |
-| A5 | Edit profile (name, email, photo, language) | P0 | 🔨 | |
+| A5 | Edit profile (name, email, photo, language) | P0 | ✅ | `User.photoURL`/`preferredLanguage` (0059 migration) + `AccountRepository.updateProfile`/`updatePhoto`, `EditProfileUseCase`, `EditProfileView` linked from Profile. Deliberately excludes `phone` (identity, out of scope) |
 | A6 | **Delete account + data** | **P0** | ✅ | **App Store guideline 5.1.1(v) — a hard rejection if missing.** 30-day soft window, financial records retained per statute with justification shown to user |
 | A7 | Export my data (JSON + PDF of records) | P1 | 🔨 | DPDP data-principal right — JSON export done, no PDF |
 | A8 | Multiple addresses (home/office/parents), default, geofence check | **P0** | ✅ | A circuit is *address-scoped* — this is core inventory logic, not a nicety |
