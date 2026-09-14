@@ -460,22 +460,15 @@ private struct SelectableRow: View {
                     }
                 }
                 Spacer()
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Theme.primary)
-                    .opacity(isSelected ? 1 : 0)
-                    .scaleEffect(isSelected ? 1 : 0.5)
             }
             .padding()
             .background(
                 RoundedRectangle(cornerRadius: 14)
                     .fill(isSelected ? AnyShapeStyle(Theme.accentSoft) : AnyShapeStyle(Color(.secondarySystemBackground)))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .strokeBorder(isSelected ? Theme.primary.opacity(0.4) : .clear, lineWidth: 1.5)
-            )
         }
         .buttonStyle(PressableStyle())
+        .selectable(isSelected: isSelected)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }

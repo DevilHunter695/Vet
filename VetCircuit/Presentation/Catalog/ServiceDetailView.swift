@@ -209,21 +209,15 @@ private struct VariantRow: View {
                 Text(variant.priceMinorUnits == 0 ? "Free" : CurrencyFormatter.rupees(variant.priceMinorUnits))
                     .font(.brandHeadline)
                     .foregroundStyle(isSelected ? Theme.primary : .secondary)
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isSelected ? Theme.primary : Color(.tertiaryLabel))
             }
             .padding()
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(isSelected ? Theme.primary.opacity(0.08) : Color(.secondarySystemBackground))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(isSelected ? Theme.primary : .clear, lineWidth: 1.5)
-            )
         }
         .buttonStyle(PressableStyle())
-        .animation(Theme.springQuick, value: isSelected)
+        .selectable(isSelected: isSelected)
     }
 }
 
@@ -239,8 +233,6 @@ private struct CheckboxRow: View {
     var body: some View {
         Button(action: action) {
             HStack {
-                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(isSelected ? Theme.primary : Color(.tertiaryLabel))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.brandBody).foregroundStyle(.primary)
                     if let subtitle {
@@ -254,9 +246,9 @@ private struct CheckboxRow: View {
             }
             .padding()
             .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .shadow(color: Theme.cardShadow, radius: 6, y: 2)
         }
         .buttonStyle(PressableStyle())
+        .selectable(isSelected: isSelected)
     }
 }
 
