@@ -97,6 +97,7 @@ final class VisitHistoryViewModel {
 
 struct VisitHistoryView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(Router.self) private var router
     @State private var viewModel = VisitHistoryViewModel()
 
     /// The nearest upcoming, non-terminal visit — surfaced prominently so the
@@ -109,7 +110,13 @@ struct VisitHistoryView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        // N7: path is now driven by the shared Router so `.onOpenURL` can
+        // push straight into this tab's `.chat`/`.visitDetail` routes
+        // instead of only switching to this tab — see Router.handle(_:).
+        // Existing value-less `NavigationLink`s (below, e.g. to
+        // `VisitDetailView`) keep working unchanged inside a path-backed
+        // stack; SwiftUI tracks them independently of the typed path.
+        NavigationStack(path: Bindable(router).visitsPath) {
             Group {
                 if viewModel.isLoading && viewModel.visits.isEmpty {
                     ScrollView {
@@ -147,6 +154,26 @@ struct VisitHistoryView: View {
                 }
             }
             .navigationTitle("Your visits")
+            // N7: `.chat` needs only the id (ChatView(visitId:)); `.visitDetail`
+            // is resolved against the already-loaded `visits` array, same as
+            // CircuitsListView already resolves `.book` against its own
+            // loaded circuits. A `.visitDetail` for a visit not (yet) loaded
+            // — e.g. the very first launch, before `.task` below has run —
+            // quietly falls through to an empty screen rather than crashing;
+            // acceptable since Router resets this path on every new deep
+            // link and the visit reappears once `visits` loads.
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .visitDetail(let id):
+                    if let visit = viewModel.visits.first(where: { $0.id == id }) {
+                        VisitDetailView(visit: visit)
+                    }
+                case .chat(let visitId):
+                    ChatView(visitId: visitId)
+                case .household:
+                    EmptyView()
+                }
+            }
             .task { if let user = session.currentUser { await viewModel.load(userId: user.id, currentUser: user) } }
             .refreshable {
                 Haptics.tap()
@@ -235,5 +262,5 @@ private struct PulsingDot: View {
 }
 
 #Preview {
-    VisitHistoryView().environment(SessionStore())
+    VisitHistoryView().environment(SessionStore()).environment(Router())
 }
