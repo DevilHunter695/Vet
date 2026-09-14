@@ -232,7 +232,7 @@ Service (Home consultation)
 
 | # | Capability | Pri | Status |
 |---|---|---|---|
-| H1 | Plan catalog with visible inclusions & fair-use limits | P0 | 🔨 |
+| H1 | Plan catalog with visible inclusions & fair-use limits | P0 | ✅ | `PlanCatalogEntry` (tested) lists each plan's inclusions and its fair-use limit restated from `EntitlementPolicy`'s real per-period credit count — not made-up copy. `PlanCatalogView` shows this before checkout, replacing the old bare "Subscribe" buttons in `ProfileView`. Pricing itself stays the same illustrative placeholder used throughout billing (no live pricing catalog service exists — see `ManageSubscriptionViewModel.priceMinorUnits`), which is a real limitation but a pre-existing one, not specific to this row. |
 | H2 | Purchase via gateway **recurring mandate (UPI Autopay / e-mandate)** | P0 | 🔨 |
 | H3 | Manage: upgrade, downgrade, **pause**, **cancel**, view next renewal | **P0** | ✅ | `SubscriptionManagementPolicy` (pure, tested) validates every transition — plan-tier direction for upgrade/downgrade, corporate seat floor before pause, already-cancelled guard — and `ManageSubscriptionUseCase` enforces it before writing. `ManageSubscriptionView` exposes all five actions plus the next renewal date, with plan §9-style consequence copy before each confirm. Was mistagged 🔨: verified this is fully built. |
 | H4 | Renewal reminders (T-7, T-1) + receipt | P0 | 🔨 |
