@@ -31,12 +31,32 @@ final class CartViewModel {
     /// payment-method parameter, same gap noted on PaymentRepository.
     var selectedPaymentMethodId: UUID?
 
+    // E6-E10/G6: the real checkout pipeline. `checkoutURL` drives the
+    // hosted-checkout sheet; `pendingVisit` is the (unpaid, `.requested`)
+    // visit created the moment checkout starts, kept around so a
+    // dismissed/pending/failed payment can be resumed rather than the
+    // booking silently vanishing; `confirmedVisit` is set once payment
+    // actually succeeds and the visit is confirmed + linked to it.
+    var checkoutURL: URL?
+    private(set) var pendingVisit: Visit?
+    var confirmedVisit: Visit?
+    var isCheckingOut = false
+    private(set) var canRetryPayment = false
+    private var lastQuote: Quote?
+    private var retryAttempts = 0
+    private var checkoutIdempotencyKey = UUID().uuidString
+
     private let manageCartUseCase = DependencyContainer.shared.manageCartUseCase()
     private let getQuoteUseCase = DependencyContainer.shared.getQuoteUseCase()
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
     private let getWalletBalanceUseCase = DependencyContainer.shared.getWalletBalanceUseCase()
     private let getLoyaltyAccountUseCase = DependencyContainer.shared.getLoyaltyAccountUseCase()
     private let redeemLoyaltyPointsUseCase = DependencyContainer.shared.redeemLoyaltyPointsUseCase()
+    private let circuitRepository = DependencyContainer.shared.circuitRepository
+    private let bookingCheckoutUseCase = DependencyContainer.shared.bookingCheckoutUseCase()
+    private let retryPaymentUseCase = DependencyContainer.shared.retryPaymentUseCase()
+    private let paymentRepository = DependencyContainer.shared.paymentRepository
+    private let sendTransactionalNotificationUseCase = DependencyContainer.shared.sendTransactionalNotificationUseCase()
 
     func load(userId: UUID) async {
         isLoading = true
@@ -126,6 +146,113 @@ final class CartViewModel {
         defer { isQuoting = false }
         do {
             quote = try await getQuoteUseCase.execute(cart: cart, useWalletBalance: useWalletBalance)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// The cart is currently priced for exactly one appointment slot on one
+    /// circuit (`Cart.circuitId`/`slotId`), which is what `BookVisitUseCase`
+    /// needs — but `createVisit` (still) books a single pet per visit. A
+    /// cart with more than one distinct pet across its items is a real,
+    /// named gap this pipeline doesn't close: it books the *first* item's
+    /// first pet and the rest of the cart's pets are left out. Multi-pet,
+    /// single-visit booking is tracked as a separate structural change to
+    /// `VisitRepository.createVisit`, out of scope here.
+    var primaryPetId: UUID? { cart?.items.first?.petIds.first }
+
+    /// E6+E8+E10+G6: get (or reuse) a real signed quote, book the visit as
+    /// pending payment against it, and open the hosted-checkout sheet.
+    func proceedToCheckout() async {
+        guard let cart else { return }
+        guard let circuitId = cart.circuitId, let slotId = cart.slotId else {
+            errorMessage = "Pick a time slot from a circuit before checking out."
+            return
+        }
+        guard let petId = primaryPetId else {
+            errorMessage = "Add a pet to a cart item before checking out."
+            return
+        }
+        isCheckingOut = true
+        errorMessage = nil
+        defer { isCheckingOut = false }
+        do {
+            var currentQuote = quote
+            if currentQuote == nil || currentQuote?.isExpired == true {
+                currentQuote = try await getQuoteUseCase.execute(cart: cart, useWalletBalance: useWalletBalance)
+                quote = currentQuote
+            }
+            guard let quote = currentQuote else { return }
+            let circuit = try await circuitRepository.circuit(id: circuitId)
+            guard let slot = circuit.schedule.first(where: { $0.id == slotId }) else {
+                throw DomainError.notFound("Time slot")
+            }
+            lastQuote = quote
+            let session = try await bookingCheckoutUseCase.start(
+                petId: petId, vetId: circuit.vetId, circuitId: circuitId, slot: slot,
+                quote: quote, idempotencyKey: checkoutIdempotencyKey
+            )
+            pendingVisit = session.visit
+            checkoutURL = session.checkoutURL
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Runs once the checkout sheet is dismissed — covers a completed
+    /// payment, a failed one, or the customer just backing out.
+    func resolveCheckout(user: User) async {
+        guard let visit = pendingVisit else { return }
+        do {
+            let (updatedVisit, outcome) = try await bookingCheckoutUseCase.resolve(visitId: visit.id, priorAttempts: retryAttempts)
+            switch outcome {
+            case .confirmVisit:
+                pendingVisit = nil
+                canRetryPayment = false
+                confirmedVisit = updatedVisit
+                // The order this visit came from is done — start the next
+                // one from an empty cart rather than re-showing paid items.
+                try? await manageCartUseCase.clear(userId: user.id)
+                self.cart = Cart(id: UUID(), userId: user.id, addressId: nil, circuitId: nil, slotId: nil)
+                self.quote = nil
+                // E10: order confirmation receipt (push, or SMS per J8's
+                // fallback) — best-effort, the booking already succeeded.
+                _ = try? await sendTransactionalNotificationUseCase.execute(
+                    user: user, category: .visitConfirmed,
+                    body: "Your visit is confirmed for \(updatedVisit.scheduledAt.formatted(date: .abbreviated, time: .shortened))."
+                )
+            case .awaitingPayment:
+                pendingVisit = updatedVisit
+                errorMessage = "We haven't heard back from the payment yet. Your cart and slot are still held — resume checkout below when you're ready."
+            case .paymentFailed(let canRetry, let reason):
+                pendingVisit = updatedVisit
+                retryAttempts += 1
+                canRetryPayment = canRetry
+                errorMessage = reason ?? "That payment didn't go through."
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// G3: re-opens checkout for the same pending visit, gated by
+    /// `PaymentRetryPolicy` via `RetryPaymentUseCase`.
+    func retryCheckout() async {
+        guard let visit = pendingVisit, let quote = lastQuote else { return }
+        guard !quote.isExpired else {
+            errorMessage = "This price quote has expired — refresh the price and check out again."
+            canRetryPayment = false
+            return
+        }
+        isCheckingOut = true
+        errorMessage = nil
+        defer { isCheckingOut = false }
+        do {
+            guard let paymentId = try await paymentRepository.latestPaymentId(forVisit: visit.id) else {
+                errorMessage = "Couldn't find the previous payment attempt — please check out again."
+                return
+            }
+            checkoutURL = try await retryPaymentUseCase.execute(visitId: visit.id, paymentId: paymentId, quote: quote, priorAttempts: retryAttempts)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -221,10 +348,24 @@ struct CartView: View {
 
                         if let errorMessage = viewModel.errorMessage {
                             ErrorBanner(message: errorMessage)
+                            if viewModel.canRetryPayment {
+                                PrimaryButton(title: "Retry payment", isLoading: viewModel.isCheckingOut) {
+                                    Task { await viewModel.retryCheckout() }
+                                }
+                            }
                         }
 
                         PrimaryButton(title: viewModel.quote == nil ? "Get price" : "Refresh price", isLoading: viewModel.isQuoting) {
                             Task { await viewModel.getQuote() }
+                        }
+
+                        // E6+E8: only once a real signed quote is in hand
+                        // does "Book & pay" become the primary action —
+                        // never a client-computed amount going to checkout.
+                        if viewModel.quote != nil {
+                            PrimaryButton(title: "Book & pay", isLoading: viewModel.isCheckingOut) {
+                                Task { await viewModel.proceedToCheckout() }
+                            }
                         }
                     }
                     .padding()
@@ -235,6 +376,15 @@ struct CartView: View {
         .navigationTitle("Cart")
         .navigationBarTitleDisplayMode(.inline)
         .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
+        .sheet(item: $viewModel.checkoutURL, onDismiss: {
+            guard let user = session.currentUser else { return }
+            Task { await viewModel.resolveCheckout(user: user) }
+        }) { url in
+            CheckoutWebView(url: url)
+        }
+        .navigationDestination(item: $viewModel.confirmedVisit) { visit in
+            BookingConfirmedView(visit: visit)
+        }
     }
 }
 
