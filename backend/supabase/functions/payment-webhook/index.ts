@@ -47,15 +47,18 @@ Deno.serve(async (req) => {
     status === "refunded" ? "refunded" :
     "failed";
 
-  const { error } = await supabase
+  const { data: updatedPayments, error } = await supabase
     .from("payments")
     .update({ status: mappedStatus })
-    .eq("gateway_reference", gatewayReference);
+    .eq("gateway_reference", gatewayReference)
+    .select("id, visit_id, quote_id");
 
   if (error) {
     console.error("Failed to update payment status", error);
     return new Response("Internal error", { status: 500 });
   }
+
+  const payment = updatedPayments?.[0];
 
   // If a subscription payment succeeded, extend its renewal date.
   if (mappedStatus === "succeeded" && event.subscription_id) {
@@ -65,6 +68,52 @@ Deno.serve(async (req) => {
       .from("subscriptions")
       .update({ status: "active", renewal_date: nextRenewal.toISOString() })
       .eq("id", event.subscription_id);
+  }
+
+  // E6/G6: a succeeded *visit* charge is the payment side of the booking
+  // pipeline finishing — this is the one place visits.payment_id/status
+  // are ever written from (the client's VisitRepository.attachPayment only
+  // re-reads the row this already wrote). If the signed quote that
+  // authorized this order applied a wallet credit (PricingEngine's "Wallet
+  // credit" line item), debit the customer's wallet_ledger for real here —
+  // the append-only ledger has no client-insert policy at all (see
+  // 0026_wallet_ledger.sql), so this service-role write is the only place
+  // that debit can legitimately happen.
+  if (mappedStatus === "succeeded" && payment?.visit_id) {
+    const { error: visitError } = await supabase
+      .from("visits")
+      .update({ payment_id: payment.id, status: "confirmed" })
+      .eq("id", payment.visit_id)
+      .eq("status", "requested"); // never regress a status that moved on already
+    if (visitError) {
+      console.error("Failed to confirm visit for payment", visitError);
+    }
+
+    if (payment.quote_id) {
+      const { data: quoteRows } = await supabase
+        .from("quotes")
+        .select("breakdown, cart_id")
+        .eq("id", payment.quote_id)
+        .limit(1);
+      const quote = quoteRows?.[0];
+      const walletLine = (quote?.breakdown?.lineItems ?? []).find(
+        (item: { label?: string; amountMinorUnits?: number }) => item.label === "Wallet credit",
+      );
+      if (quote?.cart_id && walletLine?.amountMinorUnits < 0) {
+        const { data: cartRows } = await supabase
+          .from("carts").select("user_id").eq("id", quote.cart_id).limit(1);
+        const userId = cartRows?.[0]?.user_id;
+        if (userId) {
+          const { error: ledgerError } = await supabase.from("wallet_ledger").insert({
+            user_id: userId,
+            amount_minor_units: walletLine.amountMinorUnits, // already negative = debit
+            reason: "visit_checkout_wallet_applied",
+            related_visit_id: payment.visit_id,
+          });
+          if (ledgerError) console.error("Failed to debit wallet for checkout", ledgerError);
+        }
+      }
+    }
   }
 
   return new Response("ok", { status: 200 });
