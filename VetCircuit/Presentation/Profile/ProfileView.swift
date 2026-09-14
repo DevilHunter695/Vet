@@ -16,9 +16,18 @@ final class ProfileViewModel {
     private let getLoyaltyAccountUseCase = DependencyContainer.shared.getLoyaltyAccountUseCase()
     private let renewalReminderUseCase = DependencyContainer.shared.renewalReminderUseCase()
     private let dunningStatusUseCase = DependencyContainer.shared.dunningStatusUseCase()
+    private let drainLifecycleNotificationQueueUseCase = DependencyContainer.shared.drainLifecycleNotificationQueueUseCase()
 
     func load(userId: UUID, currentUser: User?) async {
         do {
+            // N3: same routine-screen-load pattern as H4/I8/F4 — drain any
+            // vaccination-due/renewal/dormant/abandoned-cart pushes the
+            // lifecycle-notifications Edge Function queued server-side.
+            // Best-effort: a failure here shouldn't block the rest of the
+            // profile load.
+            if let currentUser {
+                try? await drainLifecycleNotificationQueueUseCase.execute(user: currentUser)
+            }
             // includeArchived: this list is the pet-management screen, not a
             // booking picker — an archived pet still needs to be visible so
             // its owner can open its record or bring it back (B8).
