@@ -97,60 +97,91 @@ struct LiveTrackingView: View {
 
     init(visitId: UUID) { _viewModel = State(initialValue: LiveTrackingViewModel(visitId: visitId)) }
 
+    /// How fresh the ETA is. A stale "arriving in 5 min" with no indication of
+    /// when it was last heard is worse than no number at all.
+    private var lastUpdatedText: String {
+        guard let updatedAt = viewModel.location?.updatedAt else { return "just now" }
+        let seconds = Int(Date().timeIntervalSince(updatedAt))
+        if seconds < 60 { return "just now" }
+        return "\(seconds / 60) min ago"
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            Map(position: $viewModel.cameraPosition) {
-                if let location = viewModel.location {
-                    Marker("Vet", coordinate: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude))
-                        .tint(Theme.inProgress)
+        // The map is the screen, not a 320pt band with dead space under it.
+        // Everything else floats over it, which is also how every other
+        // arrival-tracking product people already use behaves.
+        Map(position: $viewModel.cameraPosition) {
+            if let location = viewModel.location {
+                Marker("Vet", coordinate: CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude))
+                    .tint(Theme.inProgress)
+            }
+        }
+        .ignoresSafeArea(edges: .bottom)
+        .overlay(alignment: .bottom) {
+            VStack(spacing: 12) {
+                if let sosErrorMessage = viewModel.sosErrorMessage {
+                    ErrorBanner(message: sosErrorMessage)
                 }
-            }
-            .frame(height: 320)
 
-            Card {
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle().fill(Theme.inProgress.opacity(0.15))
-                        Image(systemName: "figure.walk.motion").foregroundStyle(Theme.inProgress)
-                    }
-                    .frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle().fill(Theme.inProgress.opacity(0.18))
+                            Image(systemName: "figure.walk.motion")
+                                .foregroundStyle(Theme.inProgress)
+                        }
+                        .frame(width: 44, height: 44)
+                        .allowsHitTesting(false)
 
-                    if let eta = viewModel.location?.etaMinutes {
-                        Text("Arriving in about \(eta) min").font(.brandHeadline)
-                    } else {
-                        Text("Waiting for location…").font(.brandBody).foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            if let eta = viewModel.location?.etaMinutes {
+                                Text("Arriving in about \(eta) min")
+                                    .font(.brandHeadline)
+                                    .contentTransition(.numericText())
+                                Text("Updated \(lastUpdatedText)")
+                                    .font(.brandCaption2)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Waiting for your vet's location…")
+                                    .font(.brandCallout)
+                                Text("The map updates as soon as they start moving.")
+                                    .font(.brandCaption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer()
+                    .animation(Theme.springQuick, value: viewModel.location?.etaMinutes)
+
+                    CalloutNote(
+                        text: "Have your pet somewhere calm and easy to reach, and keep your phone handy — the vet will ask for your start-of-visit code on arrival.",
+                        systemImage: "lightbulb.fill"
+                    )
+
+                    // L4: real visual weight — a full-width red button, not a
+                    // subtle icon — but a confirmation step so it can't fire
+                    // from an accidental tap while the phone is in a pocket.
+                    Button {
+                        Haptics.warning()
+                        showingSOSConfirmation = true
+                    } label: {
+                        Label("SOS — I need help", systemImage: "exclamationmark.triangle.fill")
+                            .font(.brandHeadline)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 26)
+                            .padding(.vertical, 14)
+                            .foregroundStyle(.white)
+                            .background(Theme.danger, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .buttonStyle(PressableStyle(scale: 0.975))
+                    .disabled(viewModel.isSendingSOS)
+                    .opacity(viewModel.isSendingSOS ? 0.6 : 1)
                 }
-                .animation(Theme.springQuick, value: viewModel.location?.etaMinutes)
+                .padding(16)
+                .glassCard()
             }
-            .padding()
-            .appearAnimation()
-
-            // L4: real visual weight — a full-width red button, not a
-            // subtle icon — but a confirmation step so it can't fire from an
-            // accidental tap while the phone is in a pocket.
-            Button(role: .destructive) {
-                Haptics.warning()
-                showingSOSConfirmation = true
-            } label: {
-                Label("SOS — I need help", systemImage: "exclamationmark.triangle.fill")
-                    .font(.brandHeadline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Theme.danger)
-            .padding(.horizontal)
-            .padding(.bottom, 8)
-            .disabled(viewModel.isSendingSOS)
-
-            if let sosErrorMessage = viewModel.sosErrorMessage {
-                ErrorBanner(message: sosErrorMessage)
-                    .padding(.horizontal)
-            }
-
-            Spacer()
+            .padding(16)
         }
         .navigationTitle("Vet en route")
         .navigationBarTitleDisplayMode(.inline)
