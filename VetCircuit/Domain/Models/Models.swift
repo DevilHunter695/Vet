@@ -384,6 +384,49 @@ struct SubscriptionManagementPolicy {
     }
 }
 
+// MARK: - H1: plan catalog — visible inclusions & fair-use limits shown
+// *before* purchase (plan §9 rule 1: price/terms visible before commitment).
+// Pure, static content: no repository needed since nothing here is a rupee
+// figure computed client-side (the illustrative price mirrors
+// `ManageSubscriptionViewModel.priceMinorUnits`, the same "no live pricing
+// catalog service exists yet" placeholder used post-purchase) and the
+// fair-use limit is derived from `EntitlementPolicy`, the one real
+// server-enforced authority on how many credits a plan grants.
+struct PlanCatalogEntry: Identifiable, Equatable {
+    var planType: Subscription.PlanType
+    var priceMinorUnits: Int
+    var billingPeriodLabel: String
+    var inclusions: [String]
+
+    var id: String { planType.rawValue }
+
+    /// H6's entitlement engine is the actual fair-use authority; this is
+    /// just its plain-English restatement for the catalog card.
+    var fairUseSummary: String {
+        let credits = EntitlementPolicy.creditsGrantedPerPeriod(plan: planType, seatCount: 1)
+        return planType.isBulk
+            ? "\(credits) free visit credit per seat, per month"
+            : "\(credits) free visit credit per month, resets monthly — unused credits don't roll over"
+    }
+
+    static let all: [PlanCatalogEntry] = [
+        PlanCatalogEntry(planType: .monthly, priceMinorUnits: 59_900, billingPeriodLabel: "per month", inclusions: [
+            "1 free routine visit credit every month", "10% off all other services", "Priority slot access",
+        ]),
+        PlanCatalogEntry(planType: .quarterly, priceMinorUnits: 159_900, billingPeriodLabel: "per quarter", inclusions: [
+            "1 free routine visit credit every month", "15% off all other services", "Priority slot access", "Free rescheduling",
+        ]),
+        PlanCatalogEntry(planType: .annual, priceMinorUnits: 549_900, billingPeriodLabel: "per year", inclusions: [
+            "1 free routine visit credit every month", "20% off all other services", "Priority slot access",
+            "Free rescheduling", "Dedicated support line",
+        ]),
+        PlanCatalogEntry(planType: .corporate, priceMinorUnits: 0, billingPeriodLabel: "per seat, billed monthly", inclusions: [
+            "1 free routine visit credit per seat, per month", "Bulk pricing for RWAs/societies (minimum \(SubscriptionManagementPolicy.minimumCorporateSeats) seats)",
+            "Central billing for the whole society",
+        ]),
+    ]
+}
+
 // MARK: - H6: subscription entitlement engine — a subscription grants a
 // monthly allowance of free-visit credits, tracked separately from billing
 // state (`Subscription.status`) because a credit balance resets on a period

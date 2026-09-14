@@ -83,6 +83,25 @@ struct RetryPaymentUseCaseTests {
     }
 }
 
+// H1: plan catalog — inclusions & fair-use limits visible before purchase.
+
+@Suite("PlanCatalogEntry")
+struct PlanCatalogEntryTests {
+    @Test("every individual plan lists at least one inclusion")
+    func everyPlanHasInclusions() {
+        for entry in PlanCatalogEntry.all {
+            #expect(!entry.inclusions.isEmpty)
+        }
+    }
+
+    @Test("fair-use summary reflects the real entitlement credit count")
+    func fairUseMatchesEntitlementPolicy() {
+        let monthly = PlanCatalogEntry.all.first { $0.planType == .monthly }!
+        let credits = EntitlementPolicy.creditsGrantedPerPeriod(plan: .monthly, seatCount: 1)
+        #expect(monthly.fairUseSummary.contains("\(credits)"))
+    }
+}
+
 // H5: dunning status use case — wiring on top of the already-pure DunningPolicy.
 
 @Suite("DunningStatusUseCase")
