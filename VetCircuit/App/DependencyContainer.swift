@@ -228,7 +228,9 @@ final class DependencyContainer {
     func managePrescriptionsUseCase() -> ManagePrescriptionsUseCase { ManagePrescriptionsUseCase(repository: prescriptionRepository) }
     func listEmergencyClinicsUseCase() -> ListEmergencyClinicsUseCase { ListEmergencyClinicsUseCase(repository: emergencyClinicRepository) }
     func getVetProfileUseCase() -> GetVetProfileUseCase { GetVetProfileUseCase(reviewRepository: reviewRepository) }
-    func manageHouseholdUseCase() -> ManageHouseholdUseCase { ManageHouseholdUseCase(householdRepository: householdRepository) }
+    func manageHouseholdUseCase() -> ManageHouseholdUseCase {
+        ManageHouseholdUseCase(householdRepository: householdRepository, petRepository: petRepository, visitRepository: visitRepository)
+    }
     func searchUseCase() -> SearchUseCase { SearchUseCase(circuitRepository: circuitRepository, catalogRepository: catalogRepository) }
     func rebookLastVisitUseCase() -> RebookLastVisitUseCase { RebookLastVisitUseCase(visitRepository: visitRepository, circuitRepository: circuitRepository) }
     func joinWaitlistUseCase() -> JoinWaitlistUseCase { JoinWaitlistUseCase(waitlistRepository: waitlistRepository) }

@@ -93,7 +93,7 @@ struct JoinWaitlistUseCaseTests {
 struct ManageHouseholdUseCaseTests {
     @Test("rejects an empty household name")
     func rejectsEmptyName() async {
-        let useCase = ManageHouseholdUseCase(householdRepository: MockHouseholdRepository())
+        let useCase = ManageHouseholdUseCase(householdRepository: MockHouseholdRepository(), petRepository: MockPetRepository(), visitRepository: MockVisitRepository())
         await #expect(throws: DomainError.self) {
             _ = try await useCase.create(name: "   ", ownerId: UUID())
         }
@@ -101,7 +101,7 @@ struct ManageHouseholdUseCaseTests {
 
     @Test("creating a household makes the owner its first member")
     func ownerIsFirstMember() async throws {
-        let useCase = ManageHouseholdUseCase(householdRepository: MockHouseholdRepository())
+        let useCase = ManageHouseholdUseCase(householdRepository: MockHouseholdRepository(), petRepository: MockPetRepository(), visitRepository: MockVisitRepository())
         let ownerId = UUID()
         let household = try await useCase.create(name: "The Sharmas", ownerId: ownerId)
         let members = try await useCase.members(householdId: household.id)
@@ -113,7 +113,7 @@ struct ManageHouseholdUseCaseTests {
     @Test("invite rejects an obviously invalid phone number")
     func rejectsInvalidPhone() async throws {
         let repo = MockHouseholdRepository()
-        let useCase = ManageHouseholdUseCase(householdRepository: repo)
+        let useCase = ManageHouseholdUseCase(householdRepository: repo, petRepository: MockPetRepository(), visitRepository: MockVisitRepository())
         let household = try await useCase.create(name: "The Sharmas", ownerId: UUID())
         await #expect(throws: DomainError.self) {
             _ = try await useCase.invite(householdId: household.id, phone: "123")

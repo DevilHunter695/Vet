@@ -1474,9 +1474,53 @@ struct GetNotificationCenterUseCase {
 
 struct ManageHouseholdUseCase {
     let householdRepository: HouseholdRepository
+    /// Composed in (not folded into `HouseholdRepository`) so household
+    /// sharing reuses the exact same `PetRepository`/`VisitRepository` every
+    /// other feature already goes through — and so the RLS policies that
+    /// grant a household member read access to a fellow member's pets
+    /// (0020_households.sql) and visits (0060_household_visit_sharing.sql)
+    /// are the only place this trust boundary is enforced, not a
+    /// second copy of the same join baked into the household repo.
+    let petRepository: PetRepository
+    let visitRepository: VisitRepository
 
     func current(userId: UUID) async throws -> Household? {
         try await householdRepository.myHousehold(userId: userId)
+    }
+
+    /// A9: every pet owned by anyone in the caller's household (the caller
+    /// included), so "see the same pets" means something concrete rather
+    /// than just a roster of member names. Returns `[]` for a user with no
+    /// household rather than throwing — no household is a normal, common
+    /// state (see `HouseholdView`'s "Start a household" empty state).
+    func sharedPets(userId: UUID) async throws -> [Pet] {
+        guard let household = try await householdRepository.myHousehold(userId: userId) else { return [] }
+        let members = try await householdRepository.members(householdId: household.id)
+        var seen = Set<UUID>()
+        var pets: [Pet] = []
+        for member in members {
+            for pet in try await petRepository.listPets(ownerId: member.userId) where seen.insert(pet.id).inserted {
+                pets.append(pet)
+            }
+        }
+        return pets
+    }
+
+    /// A9: upcoming/recent bookings across every pet in the household, not
+    /// just the caller's own — the "book for the same pets" half of the row,
+    /// which visibility on `pets` alone doesn't cover since `visits` is its
+    /// own table keyed by the *booking* user, not the pet.
+    func sharedVisits(userId: UUID) async throws -> [Visit] {
+        guard let household = try await householdRepository.myHousehold(userId: userId) else { return [] }
+        let members = try await householdRepository.members(householdId: household.id)
+        var seen = Set<UUID>()
+        var visits: [Visit] = []
+        for member in members {
+            for visit in try await visitRepository.listVisits(userId: member.userId) where seen.insert(visit.id).inserted {
+                visits.append(visit)
+            }
+        }
+        return visits.sorted { $0.scheduledAt < $1.scheduledAt }
     }
 
     func create(name: String, ownerId: UUID) async throws -> Household {
