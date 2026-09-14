@@ -242,6 +242,8 @@ struct CircuitsListView: View {
                         Label("Coverage map", systemImage: "map")
                             .labelStyle(.iconOnly)
                     }
+                    .accessibilityLabel("Coverage map")
+                    .accessibilityHint("Shows the areas served by circuits")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     // C4: sort menu.
@@ -255,6 +257,8 @@ struct CircuitsListView: View {
                         Label("Sort", systemImage: "arrow.up.arrow.down")
                             .labelStyle(.iconOnly)
                     }
+                    .accessibilityLabel("Sort")
+                    .accessibilityHint("Choose how circuits are ordered, currently \(viewModel.sort.displayName)")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     // C3: filter sheet.
@@ -265,6 +269,8 @@ struct CircuitsListView: View {
                         Label("Filters", systemImage: viewModel.filter.isEmpty ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                             .labelStyle(.iconOnly)
                     }
+                    .accessibilityLabel(viewModel.filter.isEmpty ? "Filters" : "Filters, active")
+                    .accessibilityHint("Opens filters for service type, date, price, and more")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
@@ -275,6 +281,8 @@ struct CircuitsListView: View {
                             .font(.title3)
                             .foregroundStyle(Theme.primary)
                     }
+                    .accessibilityLabel("Not sure what you need?")
+                    .accessibilityHint("Opens triage to help pick the right service")
                 }
             }
             .searchable(text: $viewModel.searchArea, prompt: "Search by vet, area, or service")
@@ -506,6 +514,7 @@ private struct RebookCard: View {
             }
             .padding(14)
             .glassCard()
+            .accessibilityElement(children: .combine)
         }
         .buttonStyle(PressableStyle())
     }
@@ -531,6 +540,7 @@ private struct RecentlyViewedSection: View {
                             .padding(12)
                             .frame(width: 160, alignment: .leading)
                             .glassCard()
+                            .accessibilityElement(children: .combine)
                         }
                         .buttonStyle(PressableStyle())
                     }
