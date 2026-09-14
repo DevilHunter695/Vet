@@ -51,6 +51,7 @@ struct HelpCenterView: View {
                 } label: {
                     Label("Call support", systemImage: "phone.fill")
                 }
+                .accessibilityHint("Available 9 AM to 9 PM IST")
                 Text("Available 9 AM – 9 PM IST. Outside these hours, use chat or email below.")
                     .font(.caption2).foregroundStyle(.tertiary)
                 NavigationLink("Contact support") {
