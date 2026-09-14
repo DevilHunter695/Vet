@@ -5,6 +5,11 @@ import SwiftUI
 final class HouseholdViewModel {
     var household: Household?
     var members: [HouseholdMember] = []
+    /// A9: every pet owned by anyone in the household, not just the caller's
+    /// own — populated via `ManageHouseholdUseCase.sharedPets`.
+    var sharedPets: [Pet] = []
+    /// A9: bookings across every shared pet — the "book for" half of the row.
+    var sharedVisits: [Visit] = []
     var invitePhone: String = ""
     var errorMessage: String?
     var isLoading = false
@@ -17,8 +22,14 @@ final class HouseholdViewModel {
         defer { isLoading = false }
         do {
             household = try await manageHouseholdUseCase.current(userId: userId)
-            if let household {
-                members = try await manageHouseholdUseCase.members(householdId: household.id)
+            if household != nil {
+                async let membersTask = manageHouseholdUseCase.members(householdId: household!.id)
+                async let petsTask = manageHouseholdUseCase.sharedPets(userId: userId)
+                async let visitsTask = manageHouseholdUseCase.sharedVisits(userId: userId)
+                (members, sharedPets, sharedVisits) = try await (membersTask, petsTask, visitsTask)
+            } else {
+                sharedPets = []
+                sharedVisits = []
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -101,6 +112,25 @@ struct HouseholdView: View {
                     .onDelete { indexSet in
                         Haptics.warning()
                         for index in indexSet { Task { await viewModel.remove(viewModel.members[index]) } }
+                    }
+                }
+
+                if !viewModel.sharedPets.isEmpty {
+                    Section("Shared pets") {
+                        ForEach(viewModel.sharedPets) { pet in
+                            Text(pet.name).font(.brandBody)
+                        }
+                    }
+                }
+
+                if !viewModel.sharedVisits.isEmpty {
+                    Section("Household bookings") {
+                        ForEach(viewModel.sharedVisits) { visit in
+                            VStack(alignment: .leading) {
+                                Text(visit.scheduledAt, style: .date).font(.brandBody)
+                                Text(visit.status.rawValue.capitalized).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
 
