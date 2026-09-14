@@ -306,7 +306,7 @@ Service (Home consultation)
 
 | # | Capability | Pri | Status |
 |---|---|---|---|
-| N1 | Referral code + share sheet + attribution + fraud guard | P1 | 🔨 |
+| N1 | Referral code + share sheet + attribution + fraud guard | P1 | ✅ | Code/share sheet/attribution were already done (`ReferralView`'s `ShareLink`, `myReferralCode`, `Referral.referrerId`); closed the fraud-guard gap with a new pure `ReferralFraudGuard` (tested) blocking self-referral, re-inviting an already-invited number, and a per-day invite cap, wired into `SendReferralUseCase` |
 | N2 | Coupon campaigns (first-visit, win-back, cluster-launch) | P1 | 🔨 | Seed campaigns (FIRSTVISIT, WINBACK100) in 0027_coupons.sql, validated via the same E4 RPC |
 | N3 | Lifecycle pushes: vaccination due, renewal, dormant 60d, abandoned cart | P1 | 🔨 | Detection + queueing done (`lifecycle-notifications` Edge Function, `notifications` table); actual push-send job to drain the queue is a separate, still-missing piece |
 | N4 | Loyalty points & tiers | P2 | ✅ |

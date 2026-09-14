@@ -977,14 +977,59 @@ struct BuyPackageUseCase {
     }
 }
 
+/// N1: fraud guard — pure, so it's covered by unit tests without spinning
+/// up a repository. Blocks the two cheapest ways to farm referral rewards:
+/// inviting your own number, and re-inviting a number you've already
+/// invited (each of those would otherwise mint a fresh `pending` reward
+/// attempt for free). A per-day cap keeps a compromised/scripted account
+/// from spamming invites.
+enum ReferralFraudGuard {
+    static let maxInvitesPerDay = 10
+
+    enum Violation: LocalizedError, Equatable {
+        case selfReferral
+        case alreadyInvited
+        case dailyLimitExceeded
+
+        var errorDescription: String? {
+            switch self {
+            case .selfReferral: return "You can't refer your own number."
+            case .alreadyInvited: return "You've already invited this number."
+            case .dailyLimitExceeded: return "You've reached today's invite limit — try again tomorrow."
+            }
+        }
+    }
+
+    static func normalize(_ phone: String) -> String { phone.filter(\.isNumber).suffix(10).description }
+
+    static func validate(invitePhone: String, referrerPhone: String?, existingReferrals: [Referral], now: Date = .now) throws {
+        let normalizedInvite = normalize(invitePhone)
+        if let referrerPhone, normalize(referrerPhone) == normalizedInvite {
+            throw Violation.selfReferral
+        }
+        if existingReferrals.contains(where: { normalize($0.invitedPhone ?? "") == normalizedInvite }) {
+            throw Violation.alreadyInvited
+        }
+        let calendar = Calendar.current
+        let todaysInvites = existingReferrals.filter { calendar.isDate($0.createdAt, inSameDayAs: now) }.count
+        if todaysInvites >= maxInvitesPerDay {
+            throw Violation.dailyLimitExceeded
+        }
+    }
+}
+
 struct SendReferralUseCase {
     let referralRepository: ReferralRepository
 
-    func execute(userId: UUID, phone: String) async throws -> Referral {
+    /// `referrerPhone` and `existingReferrals` drive `ReferralFraudGuard` —
+    /// both optional/defaulted so existing call sites that don't pass them
+    /// still work, same pattern as `GetQuoteUseCase`'s optional H6 params.
+    func execute(userId: UUID, phone: String, referrerPhone: String? = nil, existingReferrals: [Referral] = []) async throws -> Referral {
         let digitsOnly = phone.filter(\.isNumber)
         guard digitsOnly.count >= 10 else {
             throw DomainError.validation("Enter a valid phone number to invite.")
         }
+        try ReferralFraudGuard.validate(invitePhone: phone, referrerPhone: referrerPhone, existingReferrals: existingReferrals)
         return try await referralRepository.sendInvite(userId: userId, phone: phone)
     }
 }
