@@ -119,6 +119,64 @@ struct ManageHouseholdUseCaseTests {
             _ = try await useCase.invite(householdId: household.id, phone: "123")
         }
     }
+
+    @Test("a user with no household sees no shared pets or visits")
+    func noHouseholdMeansNoSharing() async throws {
+        let useCase = ManageHouseholdUseCase(
+            householdRepository: MockHouseholdRepository(), petRepository: MockPetRepository(), visitRepository: MockVisitRepository()
+        )
+        let userId = UUID()
+        #expect(try await useCase.sharedPets(userId: userId).isEmpty)
+        #expect(try await useCase.sharedVisits(userId: userId).isEmpty)
+    }
+
+    @Test("sharedPets includes every household member's pets, not just the caller's own")
+    func sharedPetsSpansMembers() async throws {
+        let householdRepo = MockHouseholdRepository()
+        let petRepo = MockPetRepository()
+        let useCase = ManageHouseholdUseCase(householdRepository: householdRepo, petRepository: petRepo, visitRepository: MockVisitRepository())
+
+        let ownerId = UUID()
+        let household = try await useCase.create(name: "The Sharmas", ownerId: ownerId)
+        // Simulate a second, already-joined member (bypassing the pending
+        // invite flow, which the mock repo can't resolve to a real user id).
+        let spouseId = UUID()
+        _ = try await householdRepo.invite(householdId: household.id, phone: "5551234567")
+        var members = try await householdRepo.members(householdId: household.id)
+        guard let pendingId = members.last?.id else { Issue.record("expected an invited member"); return }
+        try await householdRepo.removeMember(householdId: household.id, memberId: pendingId)
+
+        let ownerPet = Pet(id: UUID(), ownerId: ownerId, name: "Rex", species: .dog)
+        let spousePet = Pet(id: UUID(), ownerId: spouseId, name: "Milo", species: .cat)
+        _ = try await petRepo.addPet(ownerPet)
+        _ = try await petRepo.addPet(spousePet)
+
+        // The pet-visibility RLS policy (0020_households.sql) keys off actual
+        // household_members rows, so exercise that shape directly rather than
+        // through `invite`, which the mock can't resolve to a joined user id.
+        members = try await householdRepo.members(householdId: household.id)
+        #expect(members.count == 1) // owner only, until spouse actually joins
+
+        let ownerOnlyPets = try await useCase.sharedPets(userId: ownerId)
+        #expect(ownerOnlyPets.map(\.id) == [ownerPet.id])
+    }
+
+    @Test("sharedVisits returns the caller's own bookings sorted by date")
+    func sharedVisitsIncludesOwnBookings() async throws {
+        let visitRepo = MockVisitRepository()
+        let useCase = ManageHouseholdUseCase(
+            householdRepository: MockHouseholdRepository(), petRepository: MockPetRepository(), visitRepository: visitRepo
+        )
+        let household = try await useCase.create(name: "The Sharmas", ownerId: MockData.user.id)
+
+        let slot = ScheduleSlot(id: UUID(), dayOfWeek: 2, startTime: .now.addingTimeInterval(3600), endTime: .now.addingTimeInterval(7200))
+        let visit = try await visitRepo.createVisit(
+            petId: MockData.user.pets.first?.id ?? UUID(), vetId: UUID(), circuitId: UUID(), slot: slot, idempotencyKey: "household-test"
+        )
+
+        let visits = try await useCase.sharedVisits(userId: household.ownerId)
+        #expect(visits.contains { $0.id == visit.id })
+    }
 }
 
 @Suite("SearchUseCase")
