@@ -48,9 +48,10 @@ final class PetDetailViewModel {
         }
     }
 
-    func addWeight(_ weightKg: Double) async {
+    func addWeight(_ weightKg: Double, temperatureCelsius: Double? = nil, heartRateBpm: Int? = nil) async {
         do {
-            let entry = try await managePetWeightsUseCase.addEntry(petId: pet.id, weightKg: weightKg)
+            let entry = try await managePetWeightsUseCase.addEntry(petId: pet.id, weightKg: weightKg,
+                                                                     temperatureCelsius: temperatureCelsius, heartRateBpm: heartRateBpm)
             withAnimation(Theme.springSoft) { weightHistory.append(entry) }
             pet.weightKg = weightKg
             Haptics.success()
@@ -119,6 +120,8 @@ struct PetDetailView: View {
     @State private var viewModel: PetDetailViewModel
     @State private var showingAddWeight = false
     @State private var newWeightText = ""
+    @State private var newTemperatureText = ""
+    @State private var newHeartRateText = ""
     @State private var showingArchiveConfirm = false
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var pendingArchiveReason: Pet.ArchiveReason = .other
@@ -327,6 +330,18 @@ struct PetDetailView: View {
                     if let latest = viewModel.weightHistory.last {
                         Text("Latest: \(latest.weightKg, specifier: "%.1f") kg on \(latest.recordedAt.formatted(date: .abbreviated, time: .omitted))")
                             .font(.brandCaption).foregroundStyle(.secondary)
+                        // B3: vitals beyond weight — shown only when present.
+                        if latest.temperatureCelsius != nil || latest.heartRateBpm != nil {
+                            HStack(spacing: 12) {
+                                if let temp = latest.temperatureCelsius {
+                                    Label("\(temp, specifier: "%.1f")°C", systemImage: "thermometer.medium")
+                                }
+                                if let hr = latest.heartRateBpm {
+                                    Label("\(hr) bpm", systemImage: "heart.fill")
+                                }
+                            }
+                            .font(.brandCaption).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -339,15 +354,25 @@ struct PetDetailView: View {
             Form {
                 TextField("Weight in kg", text: $newWeightText)
                     .keyboardType(.decimalPad)
+                // B3: vitals beyond weight — optional, so a plain owner
+                // logging weight at home never has to fill these in.
+                TextField("Temperature in °C (optional)", text: $newTemperatureText)
+                    .keyboardType(.decimalPad)
+                TextField("Heart rate in bpm (optional)", text: $newHeartRateText)
+                    .keyboardType(.numberPad)
             }
             .navigationTitle("Add weight")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         if let value = Double(newWeightText) {
+                            let temperature = Double(newTemperatureText)
+                            let heartRate = Int(newHeartRateText)
                             Task {
-                                await viewModel.addWeight(value)
+                                await viewModel.addWeight(value, temperatureCelsius: temperature, heartRateBpm: heartRate)
                                 newWeightText = ""
+                                newTemperatureText = ""
+                                newHeartRateText = ""
                                 showingAddWeight = false
                             }
                         }

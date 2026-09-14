@@ -957,23 +957,38 @@ private struct SupabasePetWeightRow: Decodable {
     let petId: UUID
     let weightKg: Double
     let recordedAt: Date
+    let temperatureCelsius: Double?
+    let heartRateBpm: Int?
 
-    enum CodingKeys: String, CodingKey { case id, petId = "pet_id", weightKg = "weight_kg", recordedAt = "recorded_at" }
+    enum CodingKeys: String, CodingKey {
+        case id, petId = "pet_id", weightKg = "weight_kg", recordedAt = "recorded_at"
+        case temperatureCelsius = "temperature_celsius", heartRateBpm = "heart_rate_bpm"
+    }
 
-    func toDomain() -> PetWeightEntry { PetWeightEntry(id: id, petId: petId, weightKg: weightKg, recordedAt: recordedAt) }
+    func toDomain() -> PetWeightEntry {
+        PetWeightEntry(id: id, petId: petId, weightKg: weightKg, recordedAt: recordedAt,
+                        temperatureCelsius: temperatureCelsius, heartRateBpm: heartRateBpm)
+    }
 }
 
 private struct SupabasePetWeightInsert: Encodable {
     let petId: UUID
     let weightKg: Double
     let recordedAt: Date
+    let temperatureCelsius: Double?
+    let heartRateBpm: Int?
 
-    enum CodingKeys: String, CodingKey { case petId = "pet_id", weightKg = "weight_kg", recordedAt = "recorded_at" }
+    enum CodingKeys: String, CodingKey {
+        case petId = "pet_id", weightKg = "weight_kg", recordedAt = "recorded_at"
+        case temperatureCelsius = "temperature_celsius", heartRateBpm = "heart_rate_bpm"
+    }
 
     init(entry: PetWeightEntry) {
         petId = entry.petId
         weightKg = entry.weightKg
         recordedAt = entry.recordedAt
+        temperatureCelsius = entry.temperatureCelsius
+        heartRateBpm = entry.heartRateBpm
     }
 }
 

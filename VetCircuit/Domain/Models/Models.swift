@@ -1294,6 +1294,11 @@ struct PetWeightEntry: Identifiable, Codable, Equatable, Hashable {
     var petId: UUID
     var weightKg: Double
     var recordedAt: Date
+    // B3: vitals beyond weight — both optional since not every reading has a
+    // vet's thermometer/stethoscope behind it (an owner logging weight at
+    // home shouldn't be blocked from entering just weight).
+    var temperatureCelsius: Double? = nil
+    var heartRateBpm: Int? = nil
 }
 
 /// B4 (P0) + K4: a vaccination given (or due). `nextDueAt` is what the N3
