@@ -10,6 +10,11 @@ import UIKit
 // `UIFeedbackGenerator` at the moment of the tap costs the Taptic Engine a
 // spin-up, which is exactly the latency Apple's "kill latency" rule warns
 // about — the first tap after a quiet period feels mushy or drops entirely.
+// `UIFeedbackGenerator`'s initialisers are main-actor isolated, so holding
+// them as stored statics requires the whole enum to be too. Every call site is
+// a view body, a button action or a @MainActor view model, so this costs
+// nothing and is more honest than the previous construct-one-per-tap version.
+@MainActor
 enum Haptics {
     private static let light = UIImpactFeedbackGenerator(style: .light)
     private static let medium = UIImpactFeedbackGenerator(style: .medium)

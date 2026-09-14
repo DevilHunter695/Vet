@@ -77,6 +77,10 @@ final class CartViewModel {
             walletBalanceMinorUnits = try await balanceResult
             loyaltyPoints = try await loyaltyResult.points
             couponCodeInput = cart?.couponCode ?? ""
+            // E3: a cart that shows no price until you press a button is a
+            // prototype. Price it as soon as it loads, and re-price on every
+            // change below, so the total is always live.
+            if let cart, !cart.items.isEmpty { await getQuote() }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -102,7 +106,7 @@ final class CartViewModel {
         guard let cart else { return }
         do {
             self.cart = try await manageCartUseCase.removeItem(id: item.id, from: cart)
-            quote = nil
+            await getQuote()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -113,7 +117,7 @@ final class CartViewModel {
         guard let cart else { return }
         do {
             self.cart = try await manageCartUseCase.setQuantity(quantity, forItemId: item.id, in: cart)
-            quote = nil
+            await getQuote()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -135,8 +139,8 @@ final class CartViewModel {
         let trimmed = couponCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)
         cart.couponCode = trimmed.isEmpty ? nil : trimmed
         self.cart = cart
-        couponMessage = trimmed.isEmpty ? nil : "Applied at checkout if valid — see the breakdown below."
-        quote = nil
+        couponMessage = trimmed.isEmpty ? nil : "Checking this code…"
+        Task { await getQuote() }
     }
 
     /// E3: transparent, itemized price breakdown — non-negotiable for trust
@@ -363,7 +367,10 @@ struct CartView: View {
                         if viewModel.walletBalanceMinorUnits > 0 {
                             Toggle(isOn: Binding(
                                 get: { viewModel.useWalletBalance },
-                                set: { viewModel.useWalletBalance = $0; viewModel.quote = nil }
+                                set: { newValue in
+                                    viewModel.useWalletBalance = newValue
+                                    Task { await viewModel.getQuote() }
+                                }
                             )) {
                                 Text("Use \(CurrencyFormatter.rupees(viewModel.walletBalanceMinorUnits)) wallet balance")
                                     .font(.brandBody)
@@ -405,38 +412,36 @@ struct CartView: View {
                             }
                         }
 
-                        PrimaryButton(title: viewModel.quote == nil ? "Get price" : "Refresh price", isLoading: viewModel.isQuoting) {
-                            Task { await viewModel.getQuote() }
-                        }
-
                         // E6+E8: only once a real signed quote is in hand
                         // does checkout become available — never a
                         // client-computed amount going to checkout.
                         if viewModel.quote != nil {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("How do you want to pay?").font(.brandBody.bold())
+                            VStack(alignment: .leading, spacing: 10) {
+                                SectionHeader(title: "How do you want to pay?", systemImage: "creditcard.fill")
                                 Picker("Payment", selection: $viewModel.payAfterVisit) {
                                     Text("Pay now").tag(false)
                                     Text("Pay after visit").tag(true)
                                 }
                                 .pickerStyle(.segmented)
+                                .onChange(of: viewModel.payAfterVisit) { _, _ in Haptics.selection() }
                                 if viewModel.payAfterVisit {
-                                    Text("Cash or UPI to the vet on-site.")
-                                        .font(.brandCaption)
-                                        .foregroundStyle(.secondary)
+                                    CalloutNote(
+                                        text: "You'll settle up with the vet on-site in cash or by UPI. Nothing is charged now.",
+                                        systemImage: "hand.wave.fill"
+                                    )
                                 }
-                            }
-                            PrimaryButton(title: viewModel.payAfterVisit ? "Book — pay after visit" : "Book & pay", isLoading: viewModel.isCheckingOut) {
-                                guard let user = session.currentUser else { return }
-                                Task { await viewModel.proceedToCheckout(user: user) }
                             }
                         }
                     }
-                    .padding()
+                    .padding(16)
+                    .padding(.bottom, 120)
                 }
+                .scrollContentBackground(.hidden)
                 .animation(Theme.crossFade, value: viewModel.quote)
+                .safeAreaInset(edge: .bottom) { checkoutBar }
             }
         }
+        .auroraScreenBackground()
         .navigationTitle("Cart")
         .navigationBarTitleDisplayMode(.inline)
         .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
@@ -448,6 +453,52 @@ struct CartView: View {
         }
         .navigationDestination(item: $viewModel.confirmedVisit) { visit in
             BookingConfirmedView(visit: visit)
+        }
+    }
+
+    /// The total and the commit action, pinned. The price is live (every cart
+    /// change re-quotes), so this bar is always showing the real number rather
+    /// than waiting for someone to press "Get price".
+    @ViewBuilder
+    private var checkoutBar: some View {
+        if let cart = viewModel.cart, !cart.items.isEmpty {
+            VStack(spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Total").font(.brandCallout).foregroundStyle(.secondary)
+                    Spacer()
+                    if viewModel.isQuoting {
+                        ProgressView().controlSize(.small)
+                    } else if let quote = viewModel.quote {
+                        Text(CurrencyFormatter.rupees(quote.breakdown.totalMinorUnits))
+                            .font(.brandMono(.title3, weight: .bold))
+                            .brandDisplayText()
+                            .contentTransition(.numericText())
+                    } else {
+                        Text("—").font(.brandMono(.title3, weight: .bold)).foregroundStyle(.secondary)
+                    }
+                }
+
+                PrimaryButton(
+                    title: viewModel.payAfterVisit ? "Book — pay after visit" : "Book & pay securely",
+                    systemImage: viewModel.payAfterVisit ? "checkmark" : "lock.fill",
+                    isLoading: viewModel.isCheckingOut,
+                    isEnabled: viewModel.quote != nil
+                ) {
+                    guard let user = session.currentUser else { return }
+                    Task { await viewModel.proceedToCheckout(user: user) }
+                }
+
+                if viewModel.quote == nil && !viewModel.isQuoting {
+                    Button("Retry pricing") { Task { await viewModel.getQuote() } }
+                        .font(.brandCaption2)
+                        .foregroundStyle(Theme.primary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+            .background(.bar)
+            .animation(Theme.crossFade, value: viewModel.quote?.breakdown.totalMinorUnits)
         }
     }
 }
