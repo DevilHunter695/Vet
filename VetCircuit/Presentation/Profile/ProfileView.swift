@@ -43,10 +43,16 @@ final class ProfileViewModel {
         }
     }
 
-    func removePet(_ pet: Pet) async {
+    /// B1/B8: "delete" from the pet list is a swipe-to-archive, never a hard
+    /// delete — a pet's visit/vaccination/prescription history must survive.
+    /// Uses `.other` as the reason since a swipe gesture carries no context;
+    /// `PetDetailView` lets the owner pick deceased/rehomed/other explicitly.
+    func archivePet(_ pet: Pet) async {
         do {
-            try await managePetsUseCase.remove(id: pet.id)
-            withAnimation(Theme.springQuick) { pets.removeAll { $0.id == pet.id } }
+            let archived = try await managePetsUseCase.archive(pet, reason: .other)
+            withAnimation(Theme.springQuick) {
+                if let index = pets.firstIndex(where: { $0.id == pet.id }) { pets[index] = archived }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -233,8 +239,12 @@ struct ProfileView: View {
                     }
                     .onDelete { indexSet in
                         Haptics.warning()
+                        // B1: soft-delete only — swiping never hard-deletes a
+                        // pet row, it archives it (visit history must survive).
                         Task {
-                            for index in indexSet { await viewModel.removePet(viewModel.pets[index]) }
+                            for index in indexSet where !viewModel.pets[index].isArchived {
+                                await viewModel.archivePet(viewModel.pets[index])
+                            }
                         }
                     }
 
