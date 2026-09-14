@@ -163,6 +163,11 @@ final class CartViewModel {
     /// single-visit booking is tracked as a separate structural change to
     /// `VisitRepository.createVisit`, out of scope here.
     var primaryPetId: UUID? { cart?.items.first?.petIds.first }
+    /// D4: the same "books only the first item" limitation `primaryPetId`
+    /// already documents — so the visit this pipeline actually books is
+    /// tagged with *that* item's service/variant/redemption, not lost
+    /// entirely the way it was before this existed.
+    private var primaryItem: CartItem? { cart?.items.first }
 
     /// E6+E8+E10+G6: get (or reuse) a real signed quote, book the visit as
     /// pending payment against it, and open the hosted-checkout sheet.
@@ -196,12 +201,12 @@ final class CartViewModel {
                 // no webhook to wait on.
                 let visit = try await bookingCheckoutUseCase.startPayAfterVisit(
                     petId: petId, vetId: circuit.vetId, circuitId: circuitId, slot: slot,
-                    quote: quote, idempotencyKey: checkoutIdempotencyKey
+                    quote: quote, idempotencyKey: checkoutIdempotencyKey,
+                    serviceId: primaryItem?.serviceId, variantId: primaryItem?.variantId,
+                    packageRedemptionId: primaryItem?.packageRedemptionId
                 )
                 confirmedVisit = visit
-                try? await manageCartUseCase.clear(userId: user.id)
-                self.cart = Cart(id: UUID(), userId: user.id, addressId: nil, circuitId: nil, slotId: nil)
-                self.quote = nil
+                await settleCartAfterBooking(bookedItem: primaryItem, user: user)
                 _ = try? await sendTransactionalNotificationUseCase.execute(
                     user: user, category: .visitConfirmed,
                     body: "Your visit is confirmed for \(visit.scheduledAt.formatted(date: .abbreviated, time: .shortened)). Pay the vet on-site."
@@ -209,7 +214,9 @@ final class CartViewModel {
             } else {
                 let session = try await bookingCheckoutUseCase.start(
                     petId: petId, vetId: circuit.vetId, circuitId: circuitId, slot: slot,
-                    quote: quote, idempotencyKey: checkoutIdempotencyKey
+                    quote: quote, idempotencyKey: checkoutIdempotencyKey,
+                    serviceId: primaryItem?.serviceId, variantId: primaryItem?.variantId,
+                    packageRedemptionId: primaryItem?.packageRedemptionId
                 )
                 pendingVisit = session.visit
                 checkoutURL = session.checkoutURL
@@ -230,11 +237,11 @@ final class CartViewModel {
                 pendingVisit = nil
                 canRetryPayment = false
                 confirmedVisit = updatedVisit
-                // The order this visit came from is done — start the next
-                // one from an empty cart rather than re-showing paid items.
-                try? await manageCartUseCase.clear(userId: user.id)
-                self.cart = Cart(id: UUID(), userId: user.id, addressId: nil, circuitId: nil, slotId: nil)
-                self.quote = nil
+                // The order this visit came from is done — clear it (or, for
+                // a package purchase with more entitlements left to book,
+                // just the line that was actually booked; see
+                // `settleCartAfterBooking`) rather than re-showing paid items.
+                await settleCartAfterBooking(bookedItem: primaryItem, user: user)
                 // E10: order confirmation receipt (push, or SMS per J8's
                 // fallback) — best-effort, the booking already succeeded.
                 _ = try? await sendTransactionalNotificationUseCase.execute(
@@ -253,6 +260,29 @@ final class CartViewModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// D4: a package purchase can expand into several cart lines that each
+    /// represent a *separate future booking* against the same
+    /// `PackageRedemption` (e.g. 4 consult-visit lines, booked one at a time,
+    /// each at its own slot) — but this pipeline still only ever books
+    /// `primaryItem` per checkout (the pre-existing "cart is one
+    /// circuit/one slot" limitation `primaryPetId` documents above). Wiping
+    /// the *whole* cart on success, as a plain à la carte checkout always
+    /// did, would silently discard the other, not-yet-booked package lines
+    /// along with their still-valid entitlements. So: remove only the item
+    /// that was actually booked, and fall back to a full clear only once
+    /// nothing is left — preserving the pre-existing "always start the next
+    /// order from empty" behavior for every non-package cart exactly as
+    /// before (a single-item cart has nothing left after removing that item).
+    private func settleCartAfterBooking(bookedItem: CartItem?, user: User) async {
+        if let bookedItem, let cart, cart.items.count > 1 {
+            self.cart = try? await manageCartUseCase.removeItem(id: bookedItem.id, from: cart)
+        } else {
+            try? await manageCartUseCase.clear(userId: user.id)
+            self.cart = Cart(id: UUID(), userId: user.id, addressId: nil, circuitId: nil, slotId: nil)
+        }
+        self.quote = nil
     }
 
     /// G3: re-opens checkout for the same pending visit, gated by

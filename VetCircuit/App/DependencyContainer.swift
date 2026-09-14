@@ -88,7 +88,13 @@ final class DependencyContainer {
         // if RemoteAppConfig.isBackendConfigured { use Supabase*Repository } else { use Mock*Repository }
         self.authRepository = MockAuthRepository()
         self.circuitRepository = MockCircuitRepository()
-        self.visitRepository = MockVisitRepository()
+        // D4: created before visitRepository and threaded into it so a
+        // package-redeeming booking can atomically bump the matching
+        // `PackageRedemption.usedCount` — same "concrete mock reference"
+        // pattern `mockWalletRepository`/`loyaltyRepository` use below.
+        let mockPackageRepository = MockPackageRepository()
+        self.packageRepository = mockPackageRepository
+        self.visitRepository = MockVisitRepository(packageRepository: mockPackageRepository)
         self.subscriptionRepository = MockSubscriptionRepository()
         self.paymentRepository = MockPaymentRepository()
         self.chatRepository = MockChatRepository()
@@ -116,7 +122,6 @@ final class DependencyContainer {
         self.visitOTPRepository = MockVisitOTPRepository()
         self.consentRepository = MockConsentRepository()
         self.accountRepository = MockAccountRepository()
-        self.packageRepository = MockPackageRepository()
         self.notificationPreferencesRepository = MockNotificationPreferencesRepository()
         self.appConfigRepository = MockAppConfigRepository()
         self.helpRepository = MockHelpRepository()
@@ -230,6 +235,9 @@ final class DependencyContainer {
     func browsePackagesUseCase() -> BrowsePackagesUseCase { BrowsePackagesUseCase(packageRepository: packageRepository) }
     func buyPackageUseCase() -> BuyPackageUseCase {
         BuyPackageUseCase(packageRepository: packageRepository, catalogRepository: catalogRepository, cartRepository: cartRepository)
+    }
+    func getMyPackageRedemptionsUseCase() -> GetMyPackageRedemptionsUseCase {
+        GetMyPackageRedemptionsUseCase(packageRepository: packageRepository, catalogRepository: catalogRepository)
     }
     func manageNotificationPreferencesUseCase() -> ManageNotificationPreferencesUseCase {
         ManageNotificationPreferencesUseCase(repository: notificationPreferencesRepository)

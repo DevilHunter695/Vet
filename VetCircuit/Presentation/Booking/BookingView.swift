@@ -169,7 +169,8 @@ final class BookingViewModel {
                     // checkout, no webhook to wait on.
                     let visit = try await bookingCheckoutUseCase.startPayAfterVisit(
                         petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
-                        quote: quote, idempotencyKey: bookingIdempotencyKey
+                        quote: quote, idempotencyKey: bookingIdempotencyKey,
+                        serviceId: serviceId, variantId: variantId
                     )
                     bookedVisit = visit
                     if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
@@ -178,7 +179,8 @@ final class BookingViewModel {
                 } else {
                     let session = try await bookingCheckoutUseCase.start(
                         petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
-                        quote: quote, idempotencyKey: bookingIdempotencyKey
+                        quote: quote, idempotencyKey: bookingIdempotencyKey,
+                        serviceId: serviceId, variantId: variantId
                     )
                     pendingVisit = session.visit
                     checkoutURL = session.checkoutURL

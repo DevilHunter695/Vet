@@ -216,6 +216,19 @@ struct Visit: Identifiable, Codable, Equatable, Hashable {
     var completedAt: Date?
     var notes: String?
     var paymentId: UUID?
+    /// D4: which catalog service/variant this visit was actually booked for.
+    /// Optional (and defaulted below) so every pre-existing call site that
+    /// only ever dealt with pet/vet/circuit keeps compiling unchanged — a
+    /// visit created before this existed, or one booked outside the
+    /// cart/checkout pipeline, simply has neither set.
+    var serviceId: UUID? = nil
+    var variantId: UUID? = nil
+    /// D4: set only when this visit is redeeming a slot from a purchased
+    /// `Package` — the `PackageRedemption` row (distinct from `Package`
+    /// itself, which is the catalog/purchased-entitlement side) that this
+    /// visit consumed one unit of. `PackageRedemptionPolicy`/
+    /// `PackageRedemption.usedCount` is what turns this into "3 of 4 used".
+    var packageRedemptionId: UUID? = nil
     /// K1: structured visit record. `diagnosisNotes`/`proceduresPerformed`/
     /// `medicationsGiven` are the vet-written record proper; `notes` (above)
     /// is kept as a legacy free-text fallback for visits recorded before
@@ -1019,6 +1032,12 @@ struct CartItem: Identifiable, Codable, Equatable, Hashable {
     // distinct from D6's multi-pet, which is "this one visit, more than one
     // pet". Always >= 1; `ManageCartUseCase.setQuantity` enforces that.
     var quantity: Int = 1
+    /// D4: set when this line came from `BuyPackageUseCase` expanding a
+    /// purchased package rather than an à la carte add-to-cart — tags the
+    /// specific `PackageRedemption` entitlement this line should book
+    /// against, so `BookVisitUseCase` can decrement it instead of charging
+    /// for a fresh booking.
+    var packageRedemptionId: UUID? = nil
 }
 
 struct Cart: Identifiable, Codable, Equatable, Hashable {
@@ -1235,6 +1254,60 @@ struct Package: Identifiable, Codable, Equatable, Hashable {
             return total + cheapest * item.quantity
         }
         return max(0, separatePrice - priceMinorUnits)
+    }
+}
+
+/// D4: a purchased, redeemable entitlement — one row per `PackageItem` in the
+/// package the customer bought (e.g. "4 consult visits" and "3 vaccination
+/// visits" from one "Puppy first-year" purchase are two separate rows). This
+/// is the missing structural link `Visit` never had: `usedCount` only ever
+/// advances when a `Visit` is actually booked against this row's id
+/// (`Visit.packageRedemptionId`), so "3 of 4 visits used" is derived from
+/// real bookings rather than the package's static purchased/expanded state.
+struct PackageRedemption: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var userId: UUID
+    var packageId: UUID
+    var packageItemId: UUID
+    var serviceId: UUID
+    var totalCount: Int
+    var usedCount: Int = 0
+    var purchasedAt: Date = .now
+
+    var remainingCount: Int { max(0, totalCount - usedCount) }
+    var isExhausted: Bool { usedCount >= totalCount }
+}
+
+/// D4: pure decision logic for package redemption — kept free of I/O (mirrors
+/// `PricingEngine`/`CancellationPolicy`) so "which entitlement does this cart
+/// item redeem, and how many are left" is directly unit-testable.
+enum PackageRedemptionPolicy {
+    /// Whether `redemption` has a slot left to book against. A redemption
+    /// that's already fully used can't silently over-redeem just because the
+    /// cart item still references it.
+    static func canRedeem(_ redemption: PackageRedemption) -> Bool {
+        !redemption.isExhausted
+    }
+
+    /// Applies one booking against `redemption`, returning the updated row.
+    /// Throws rather than clamping/ignoring — an attempt to redeem an
+    /// exhausted entitlement is a bug (stale cart item, double-booking, a
+    /// race with another booking) that should surface, not be silently
+    /// absorbed.
+    static func redeem(_ redemption: PackageRedemption) throws -> PackageRedemption {
+        guard canRedeem(redemption) else {
+            throw DomainError.validation("This package's visits have all been used.")
+        }
+        var updated = redemption
+        updated.usedCount += 1
+        return updated
+    }
+
+    /// "3 of 4 visits used" — the display string `PackagesView`'s "my
+    /// packages" progress reads directly, so the UI never has to know the
+    /// underlying arithmetic.
+    static func progressLabel(_ redemption: PackageRedemption) -> String {
+        "\(redemption.usedCount) of \(redemption.totalCount) used"
     }
 }
 

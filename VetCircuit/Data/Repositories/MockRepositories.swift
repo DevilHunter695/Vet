@@ -406,6 +406,8 @@ actor MockCatalogRepository: CatalogRepository {
 }
 
 actor MockPackageRepository: PackageRepository {
+    private var redemptions: [PackageRedemption] = []
+
     func listPackages(vertical: Vertical?) async throws -> [Package] {
         guard let vertical else { return MockData.packages }
         return MockData.packages.filter { $0.vertical == vertical }
@@ -417,10 +419,50 @@ actor MockPackageRepository: PackageRepository {
         }
         return package
     }
+
+    func createRedemption(userId: UUID, packageId: UUID, packageItemId: UUID, serviceId: UUID, totalCount: Int) async throws -> PackageRedemption {
+        let redemption = PackageRedemption(
+            id: UUID(), userId: userId, packageId: packageId, packageItemId: packageItemId,
+            serviceId: serviceId, totalCount: totalCount, usedCount: 0, purchasedAt: .now
+        )
+        redemptions.append(redemption)
+        return redemption
+    }
+
+    func redemptions(userId: UUID) async throws -> [PackageRedemption] {
+        redemptions.filter { $0.userId == userId }
+    }
+
+    func redemption(id: UUID) async throws -> PackageRedemption {
+        guard let redemption = redemptions.first(where: { $0.id == id }) else {
+            throw DomainError.notFound("Package redemption")
+        }
+        return redemption
+    }
+
+    /// D4: called by `MockVisitRepository.createVisit` in the same spirit
+    /// `book_visit()`'s SQL locks + bumps `used_count` in one transaction —
+    /// this actor's own isolation is what serializes concurrent redeems here.
+    fileprivate func redeem(id: UUID) throws -> PackageRedemption {
+        guard let index = redemptions.firstIndex(where: { $0.id == id }) else {
+            throw DomainError.notFound("Package redemption")
+        }
+        let updated = try PackageRedemptionPolicy.redeem(redemptions[index])
+        redemptions[index] = updated
+        return updated
+    }
 }
 
 actor MockVisitRepository: VisitRepository {
     private var visits: [Visit] = MockData.visits
+    /// D4: threaded in so a redeeming booking can atomically bump the
+    /// matching `PackageRedemption.usedCount` — set by `DependencyContainer`
+    /// to the same `MockPackageRepository` instance the rest of the app uses.
+    private let packageRepository: MockPackageRepository?
+
+    init(packageRepository: MockPackageRepository? = nil) {
+        self.packageRepository = packageRepository
+    }
     /// Simulates the DB's `idempotency_keys` table (Appendix D): the same
     /// key always returns the same visit rather than creating a duplicate.
     private var visitsByIdempotencyKey: [String: UUID] = [:]
@@ -436,7 +478,7 @@ actor MockVisitRepository: VisitRepository {
         statusEvents[visitId, default: []].append(VisitStatusEvent(id: UUID(), visitId: visitId, status: status, occurredAt: .now))
     }
 
-    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String) async throws -> Visit {
+    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?) async throws -> Visit {
         if let existingVisitId = visitsByIdempotencyKey[idempotencyKey],
            let existing = visits.first(where: { $0.id == existingVisitId }) {
             return existing
@@ -445,9 +487,17 @@ actor MockVisitRepository: VisitRepository {
         guard slot.bookedCount + alreadyBooked < slot.capacity else {
             throw DomainError.slotUnavailable
         }
+        // D4: redeem the package entitlement (if any) *before* inserting the
+        // visit — mirrors book_visit()'s ordering, so a bug/race that would
+        // over-redeem an exhausted entitlement fails the whole booking
+        // instead of leaving a visit on record that never actually decremented it.
+        if let packageRedemptionId {
+            _ = try await packageRepository?.redeem(id: packageRedemptionId)
+        }
         let visit = Visit(
             id: UUID(), userId: MockData.user.id, petId: petId, vetId: vetId, circuitId: circuitId,
-            status: .requested, scheduledAt: slot.startTime, completedAt: nil, notes: nil, paymentId: nil
+            status: .requested, scheduledAt: slot.startTime, completedAt: nil, notes: nil, paymentId: nil,
+            serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId
         )
         visits.append(visit)
         visitsByIdempotencyKey[idempotencyKey] = visit.id

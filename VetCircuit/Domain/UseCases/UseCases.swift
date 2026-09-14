@@ -66,12 +66,26 @@ struct BookVisitUseCase {
     /// per call so existing call sites keep working, but a real checkout flow
     /// should generate one client-side *once* per attempt and reuse it across
     /// retries — that's what makes a retried tap safe.
-    func execute(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String = UUID().uuidString) async throws -> Visit {
+    ///
+    /// D4: `serviceId`/`variantId`/`packageRedemptionId` default nil for the
+    /// same reason — a plain à la carte booking doesn't set them, while
+    /// `BookingCheckoutUseCase`'s cart-driven paths pass them through so the
+    /// resulting `Visit` records what was booked and, when applicable,
+    /// atomically redeems the matching `PackageRedemption` in the same
+    /// `book_visit()` transaction (`VisitRepository.createVisit`'s doc
+    /// comment) — never as a separate, unguarded follow-up write.
+    func execute(
+        petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String = UUID().uuidString,
+        serviceId: UUID? = nil, variantId: UUID? = nil, packageRedemptionId: UUID? = nil
+    ) async throws -> Visit {
         guard slot.isAvailable else { throw DomainError.slotUnavailable }
         guard slot.startTime > Date() else {
             throw DomainError.validation("Please choose a slot in the future.")
         }
-        return try await visitRepository.createVisit(petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey)
+        return try await visitRepository.createVisit(
+            petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey,
+            serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId
+        )
     }
 }
 
@@ -869,8 +883,14 @@ struct BookingCheckoutUseCase {
     /// the given signed quote. `StartCheckoutUseCase` itself rejects an
     /// expired quote, so a stale quote fails here rather than silently
     /// booking at the wrong price.
-    func start(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, quote: Quote, idempotencyKey: String) async throws -> Session {
-        let visit = try await bookVisitUseCase.execute(petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey)
+    func start(
+        petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, quote: Quote, idempotencyKey: String,
+        serviceId: UUID? = nil, variantId: UUID? = nil, packageRedemptionId: UUID? = nil
+    ) async throws -> Session {
+        let visit = try await bookVisitUseCase.execute(
+            petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey,
+            serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId
+        )
         let checkoutURL = try await startCheckoutUseCase.execute(visitId: visit.id, quote: quote)
         return Session(visit: visit, checkoutURL: checkoutURL)
     }
@@ -884,8 +904,14 @@ struct BookingCheckoutUseCase {
     /// hosted-checkout webview and waiting on a webhook, the payment is
     /// created directly in `.payAfterVisit` status and attached immediately,
     /// so the visit is confirmed in one step with nothing left to `resolve`.
-    func startPayAfterVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, quote: Quote, idempotencyKey: String) async throws -> Visit {
-        let visit = try await bookVisitUseCase.execute(petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey)
+    func startPayAfterVisit(
+        petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, quote: Quote, idempotencyKey: String,
+        serviceId: UUID? = nil, variantId: UUID? = nil, packageRedemptionId: UUID? = nil
+    ) async throws -> Visit {
+        let visit = try await bookVisitUseCase.execute(
+            petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey,
+            serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId
+        )
         let paymentId = try await startCheckoutUseCase.executePayAfterVisit(visitId: visit.id, quote: quote)
         return try await visitRepository.attachPayment(visitId: visit.id, paymentId: paymentId)
     }
@@ -1353,12 +1379,15 @@ struct BrowsePackagesUseCase {
     }
 }
 
-/// D4 stub: buying a package expands it into one cart line per included
-/// service occurrence (its cheapest variant, for every selected pet) so the
-/// customer reaches the same checkout/quote path as an à la carte booking.
-/// Full redemption/entitlement tracking — crediting "3 of 4 visits used"
-/// against future bookings instead of charging each one — is out of scope
-/// here; see Appendix F gap list.
+/// D4: buying a package expands it into one cart line per included service
+/// occurrence (its cheapest variant, for every selected pet) so the customer
+/// reaches the same checkout/quote path as an à la carte booking — and, for
+/// each `PackageItem`, creates one `PackageRedemption` entitlement row
+/// (`totalCount` = that item's quantity) so there is something for a later
+/// booking to actually redeem against. Every cart line this creates is
+/// tagged with that redemption's id (`CartItem.packageRedemptionId`), so
+/// `BookingCheckoutUseCase`/`BookVisitUseCase` know to redeem it — rather
+/// than charge for a fresh booking — the moment the customer books against it.
 struct BuyPackageUseCase {
     let packageRepository: PackageRepository
     let catalogRepository: CatalogRepository
@@ -1373,11 +1402,62 @@ struct BuyPackageUseCase {
         for item in package.items {
             let service = try await catalogRepository.service(id: item.serviceId)
             guard let variant = service.variants.first else { continue }
+            let redemption = try await packageRepository.createRedemption(
+                userId: userId, packageId: package.id, packageItemId: item.id,
+                serviceId: service.id, totalCount: item.quantity
+            )
             for _ in 0..<item.quantity {
-                cart.items.append(CartItem(id: UUID(), serviceId: service.id, variantId: variant.id, petIds: petIds))
+                cart.items.append(CartItem(
+                    id: UUID(), serviceId: service.id, variantId: variant.id, petIds: petIds,
+                    packageRedemptionId: redemption.id
+                ))
             }
         }
         return try await cartRepository.save(cart)
+    }
+}
+
+/// D4: "3 of 4 visits used" for a purchased package — one row per
+/// `PackageRedemption` the customer holds, joined back to the `Package`/
+/// `PackageItem`/`Service` it came from purely for display (name, which
+/// service). Kept as its own use case (mirrors `BrowsePackagesUseCase`)
+/// rather than folded into `BuyPackageUseCase`, since "browse what I've
+/// bought" and "buy something new" are different screens/moments.
+struct GetMyPackageRedemptionsUseCase {
+    let packageRepository: PackageRepository
+    let catalogRepository: CatalogRepository
+
+    struct RedeemableEntitlement: Identifiable, Equatable {
+        var id: UUID { redemption.id }
+        var redemption: PackageRedemption
+        var packageName: String
+        var serviceName: String
+
+        var progressLabel: String { PackageRedemptionPolicy.progressLabel(redemption) }
+    }
+
+    func execute(userId: UUID) async throws -> [RedeemableEntitlement] {
+        let redemptions = try await packageRepository.redemptions(userId: userId)
+        guard !redemptions.isEmpty else { return [] }
+        let packageIds = Set(redemptions.map(\.packageId))
+        var packagesById: [UUID: Package] = [:]
+        for id in packageIds {
+            packagesById[id] = try? await packageRepository.package(id: id)
+        }
+        let serviceIds = Set(redemptions.map(\.serviceId))
+        var servicesById: [UUID: Service] = [:]
+        for id in serviceIds {
+            servicesById[id] = try? await catalogRepository.service(id: id)
+        }
+        return redemptions
+            .sorted { $0.purchasedAt > $1.purchasedAt }
+            .map { redemption in
+                RedeemableEntitlement(
+                    redemption: redemption,
+                    packageName: packagesById[redemption.packageId]?.name ?? "Package",
+                    serviceName: servicesById[redemption.serviceId]?.name ?? "Visit"
+                )
+            }
     }
 }
 

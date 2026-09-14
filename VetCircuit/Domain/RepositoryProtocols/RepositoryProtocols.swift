@@ -20,7 +20,12 @@ protocol VisitRepository: Sendable {
     /// idempotency key, no exceptions") makes a retried booking — a double
     /// tap, a retry after a flaky network response — return the *same*
     /// visit instead of creating a duplicate.
-    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String) async throws -> Visit
+    /// D4: `serviceId`/`variantId` record what was actually booked;
+    /// `packageRedemptionId`, when non-nil, is the `PackageRedemption` this
+    /// booking should atomically redeem one unit of (mirrors the slot's own
+    /// capacity-lock so a retried/concurrent call can never double-redeem).
+    /// All three default nil so every existing call site keeps compiling.
+    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?) async throws -> Visit
     func listVisits(userId: UUID) async throws -> [Visit]
     func visit(id: UUID) async throws -> Visit
     func updateStatus(visitId: UUID, status: Visit.VisitStatus) async throws -> Visit
@@ -43,6 +48,16 @@ protocol VisitRepository: Sendable {
     /// (0046_visit_status_events.sql), since the client never knew *when*
     /// a past transition happened, only what the current status is.
     func statusHistory(visitId: UUID) async throws -> [VisitStatusEvent]
+}
+
+extension VisitRepository {
+    /// Convenience overload for the many existing call sites that book a
+    /// plain à la carte visit with no service/variant/package context —
+    /// protocol requirements can't carry default argument values themselves,
+    /// so this extension supplies the nils instead of touching every caller.
+    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String) async throws -> Visit {
+        try await createVisit(petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey, serviceId: nil, variantId: nil, packageRedemptionId: nil)
+    }
 }
 
 protocol AccountRepository: Sendable {
@@ -425,6 +440,16 @@ protocol PackageRepository: Sendable {
     /// D4: packages/bundles, browsed the same way services are.
     func listPackages(vertical: Vertical?) async throws -> [Package]
     func package(id: UUID) async throws -> Package
+
+    /// D4: creates one redeemable entitlement row — called once per
+    /// `PackageItem` at purchase time (`BuyPackageUseCase`), distinct from
+    /// `Package` itself (the catalog/purchased-entitlement side).
+    func createRedemption(userId: UUID, packageId: UUID, packageItemId: UUID, serviceId: UUID, totalCount: Int) async throws -> PackageRedemption
+    /// D4: every redemption entitlement this user has ever purchased —
+    /// `PackagesView`'s "my packages" progress is derived entirely from
+    /// this, never from a static purchased/expanded flag.
+    func redemptions(userId: UUID) async throws -> [PackageRedemption]
+    func redemption(id: UUID) async throws -> PackageRedemption
 }
 
 protocol LoyaltyRepository: Sendable {

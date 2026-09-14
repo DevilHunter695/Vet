@@ -654,22 +654,59 @@ final class SupabasePackageRepository: PackageRepository {
         guard let row = rows.first else { throw DomainError.notFound("Package") }
         return row.toDomain()
     }
+
+    func createRedemption(userId: UUID, packageId: UUID, packageItemId: UUID, serviceId: UUID, totalCount: Int) async throws -> PackageRedemption {
+        struct Insert: Encodable {
+            let userId: UUID, packageId: UUID, packageItemId: UUID, serviceId: UUID, totalCount: Int
+            enum CodingKeys: String, CodingKey {
+                case userId = "user_id", packageId = "package_id", packageItemId = "package_item_id"
+                case serviceId = "service_id", totalCount = "total_count"
+            }
+        }
+        let rows: [SupabasePackageRedemptionRow] = try await client
+            .from("package_redemptions")
+            .insert(Insert(userId: userId, packageId: packageId, packageItemId: packageItemId, serviceId: serviceId, totalCount: totalCount))
+            .select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func redemptions(userId: UUID) async throws -> [PackageRedemption] {
+        let rows: [SupabasePackageRedemptionRow] = try await client
+            .from("package_redemptions").select().eq("user_id", value: userId)
+            .order("purchased_at", ascending: false)
+            .execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func redemption(id: UUID) async throws -> PackageRedemption {
+        let rows: [SupabasePackageRedemptionRow] = try await client
+            .from("package_redemptions").select().eq("id", value: id).execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Package redemption") }
+        return row.toDomain()
+    }
 }
 
 final class SupabaseVisitRepository: VisitRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
-    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String) async throws -> Visit {
-        // Calls the atomic book_visit() Postgres function (Appendix D) rather
-        // than a raw insert — it locks the slot row, checks capacity, and
-        // records the idempotency key all inside one transaction, so a
-        // retried request can never oversell or double-book.
-        let row: SupabaseVisitRow = try await client.rpc("book_visit", params: [
+    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?) async throws -> Visit {
+        // Calls the atomic book_visit() Postgres function (Appendix D,
+        // extended by 0062_package_redemptions.sql) rather than a raw insert
+        // — it locks the slot row, checks capacity, and (when
+        // packageRedemptionId is given) locks + redeems that entitlement, all
+        // inside one transaction, so a retried request can never oversell,
+        // double-book, or double-redeem.
+        var params: [String: String] = [
             "p_pet_id": petId.uuidString, "p_vet_id": vetId.uuidString, "p_circuit_id": circuitId.uuidString,
             "p_slot_id": slot.id.uuidString, "p_scheduled_at": ISO8601DateFormatter().string(from: slot.startTime),
             "p_idempotency_key": idempotencyKey,
-        ]).execute().value
+        ]
+        if let serviceId { params["p_service_id"] = serviceId.uuidString }
+        if let variantId { params["p_variant_id"] = variantId.uuidString }
+        if let packageRedemptionId { params["p_package_redemption_id"] = packageRedemptionId.uuidString }
+        let row: SupabaseVisitRow = try await client.rpc("book_visit", params: params).execute().value
         return row.toDomain()
     }
 
@@ -2113,18 +2150,45 @@ private struct SupabaseVisitRow: Decodable {
     let diagnosisNotes: String?
     let proceduresPerformed: [String]?
     let medicationsGiven: [String]?
+    /// D4 (0062_package_redemptions.sql).
+    let serviceId: UUID?
+    let variantId: UUID?
+    let packageRedemptionId: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id, userId = "user_id", petId = "pet_id", vetId = "vet_id", circuitId = "circuit_id"
         case status, scheduledAt = "scheduled_at", completedAt = "completed_at", notes, paymentId = "payment_id"
         case diagnosisNotes = "diagnosis_notes", proceduresPerformed = "procedures_performed", medicationsGiven = "medications_given"
+        case serviceId = "service_id", variantId = "variant_id", packageRedemptionId = "package_redemption_id"
     }
 
     func toDomain() -> Visit {
         Visit(id: id, userId: userId, petId: petId, vetId: vetId, circuitId: circuitId,
               status: Visit.VisitStatus(rawValue: status) ?? .requested,
               scheduledAt: scheduledAt, completedAt: completedAt, notes: notes, paymentId: paymentId,
-              diagnosisNotes: diagnosisNotes, proceduresPerformed: proceduresPerformed ?? [], medicationsGiven: medicationsGiven ?? [])
+              diagnosisNotes: diagnosisNotes, proceduresPerformed: proceduresPerformed ?? [], medicationsGiven: medicationsGiven ?? [],
+              serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId)
+    }
+}
+
+private struct SupabasePackageRedemptionRow: Decodable {
+    let id: UUID
+    let userId: UUID
+    let packageId: UUID
+    let packageItemId: UUID
+    let serviceId: UUID
+    let totalCount: Int
+    let usedCount: Int
+    let purchasedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, userId = "user_id", packageId = "package_id", packageItemId = "package_item_id"
+        case serviceId = "service_id", totalCount = "total_count", usedCount = "used_count", purchasedAt = "purchased_at"
+    }
+
+    func toDomain() -> PackageRedemption {
+        PackageRedemption(id: id, userId: userId, packageId: packageId, packageItemId: packageItemId,
+                           serviceId: serviceId, totalCount: totalCount, usedCount: usedCount, purchasedAt: purchasedAt)
     }
 }
 

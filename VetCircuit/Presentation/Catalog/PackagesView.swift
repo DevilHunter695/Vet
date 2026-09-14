@@ -1,14 +1,17 @@
 import SwiftUI
 
 /// D4: packages/bundles ("Puppy first-year: 4 visits + 3 vaccines") browsed
-/// the same way the à la carte catalog is. Buying one is a checkout-time
-/// stub — see BuyPackageUseCase — that expands into individual cart lines;
-/// there is no redemption/entitlement tracking yet (Appendix F gap list).
+/// the same way the à la carte catalog is. Buying one expands into individual
+/// cart lines (`BuyPackageUseCase`) *and* creates a real, redeemable
+/// `PackageRedemption` per included service — this screen's "My packages"
+/// section shows genuine "3 of 4 visits used" progress derived from those
+/// rows (`GetMyPackageRedemptionsUseCase`), not a static purchased flag.
 @Observable
 @MainActor
 final class PackagesViewModel {
     var packages: [Package] = []
     var catalog: [Service] = []
+    var myRedemptions: [GetMyPackageRedemptionsUseCase.RedeemableEntitlement] = []
     var isLoading = false
     var isBuying = false
     var errorMessage: String?
@@ -17,8 +20,9 @@ final class PackagesViewModel {
     private let browsePackagesUseCase = DependencyContainer.shared.browsePackagesUseCase()
     private let buyPackageUseCase = DependencyContainer.shared.buyPackageUseCase()
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
+    private let getMyPackageRedemptionsUseCase = DependencyContainer.shared.getMyPackageRedemptionsUseCase()
 
-    func load(vertical: Vertical) async {
+    func load(vertical: Vertical, userId: UUID?) async {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -27,6 +31,9 @@ final class PackagesViewModel {
             async let catalogResult = getCatalogUseCase.execute(vertical: vertical)
             packages = try await packagesResult
             catalog = try await catalogResult
+            if let userId {
+                myRedemptions = try await getMyPackageRedemptionsUseCase.execute(userId: userId)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -38,6 +45,7 @@ final class PackagesViewModel {
         defer { isBuying = false }
         do {
             _ = try await buyPackageUseCase.execute(packageId: package.id, petIds: petIds, userId: userId)
+            myRedemptions = try await getMyPackageRedemptionsUseCase.execute(userId: userId)
             Haptics.success()
             withAnimation(Theme.springSoft) { boughtPackageId = package.id }
         } catch {
@@ -70,6 +78,10 @@ struct PackagesView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
+                        if !viewModel.myRedemptions.isEmpty {
+                            MyPackagesSection(entitlements: viewModel.myRedemptions)
+                        }
+
                         Text("Save by bundling the visits your pet will need anyway.")
                             .font(.brandBody).foregroundStyle(.secondary)
                         ForEach(Array(viewModel.packages.enumerated()), id: \.element.id) { index, package in
@@ -96,7 +108,34 @@ struct PackagesView: View {
         }
         .navigationTitle("Packages")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await viewModel.load(vertical: vertical) }
+        .task { await viewModel.load(vertical: vertical, userId: session.currentUser?.id) }
+    }
+}
+
+/// D4: "3 of 4 visits used" — real progress per purchased entitlement,
+/// derived from `PackageRedemption.usedCount`/`totalCount`
+/// (`PackageRedemptionPolicy.progressLabel`), not a static purchased flag.
+private struct MyPackagesSection: View {
+    let entitlements: [GetMyPackageRedemptionsUseCase.RedeemableEntitlement]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("My packages").font(.brandHeadline)
+            ForEach(entitlements) { entitlement in
+                Card {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("\(entitlement.packageName) — \(entitlement.serviceName)")
+                            .font(.brandBody)
+                        ProgressView(value: Double(entitlement.redemption.usedCount), total: Double(entitlement.redemption.totalCount))
+                            .tint(entitlement.redemption.isExhausted ? Theme.success : Theme.primary)
+                        Text(entitlement.progressLabel)
+                            .font(.brandCaption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
     }
 }
 
