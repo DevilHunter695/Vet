@@ -30,6 +30,17 @@ final class BookingViewModel {
     var isLoading = false
     var errorMessage: String?
     var bookedVisit: Visit?
+    /// E6-E10/G6: set once `confirmBooking` has started a real, quote-gated
+    /// checkout — presented as a sheet; `resolveCheckout` runs when it's
+    /// dismissed (success, failure, or the customer just backing out).
+    var checkoutURL: URL?
+    /// The visit created (status `.requested`, unpaid) while checkout is in
+    /// flight — kept around so a dismissed/failed/pending checkout can be
+    /// resumed instead of the booking silently vanishing.
+    private(set) var pendingVisit: Visit?
+    private(set) var canRetryPayment = false
+    private var lastQuote: Quote?
+    private var retryAttempts = 0
     /// E7: a 10-min hold placed the moment a slot is picked, so it can't be
     /// sold to someone else while this customer is still filling out the form.
     private(set) var activeHold: SlotHold?
@@ -53,6 +64,11 @@ final class BookingViewModel {
     /// E10: receipt notification (push, or SMS fallback per J8's policy)
     /// once a booking is confirmed.
     private let sendTransactionalNotificationUseCase = DependencyContainer.shared.sendTransactionalNotificationUseCase()
+    /// E6/E8/G6: the real quote -> checkout -> confirmed-visit pipeline.
+    private let getQuoteUseCase = DependencyContainer.shared.getQuoteUseCase()
+    private let bookingCheckoutUseCase = DependencyContainer.shared.bookingCheckoutUseCase()
+    private let retryPaymentUseCase = DependencyContainer.shared.retryPaymentUseCase()
+    private let paymentRepository = DependencyContainer.shared.paymentRepository
 
     /// F5's toggle is offered only for the categories the plan calls out —
     /// deworming (monthly) and physio (weekly) — everything else defaults
@@ -115,6 +131,15 @@ final class BookingViewModel {
         }
     }
 
+    /// E6/E8/G6: a real, service-priced quote can only be assembled when the
+    /// catalog flow handed this screen a specific service + variant (F5's
+    /// same precondition). Without that context (the generic "tap a circuit"
+    /// entry point from `CircuitsListView`, which never picks a service),
+    /// there's nothing to price against a signed quote — that path keeps the
+    /// pre-existing direct-book-no-payment behavior as a named, narrower
+    /// remaining gap rather than silently mis-pricing something.
+    var canCheckoutWithPayment: Bool { serviceId != nil && variantId != nil }
+
     /// One primary action per screen: confirm the booking once pet + slot are chosen.
     func confirmBooking() async {
         guard let pet = selectedPet, let slot = selectedSlot else {
@@ -125,36 +150,111 @@ final class BookingViewModel {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            bookedVisit = try await bookVisitUseCase.execute(
-                petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
-                idempotencyKey: bookingIdempotencyKey
-            )
-            // The hold's job ends where the confirmed booking begins.
-            if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
-
-            // E10: "order confirmation" receipt — push if available, else
-            // the J8 SMS-fallback policy decides (never a blocking failure:
-            // the booking itself already succeeded above).
-            if let user = currentUser, let visit = bookedVisit {
-                let when = visit.scheduledAt.formatted(date: .abbreviated, time: .shortened)
-                _ = try? await sendTransactionalNotificationUseCase.execute(
-                    user: user, category: .visitConfirmed,
-                    body: "Your visit for \(pet.name) is confirmed for \(when)."
+            if canCheckoutWithPayment, let serviceId, let variantId, let userId = currentUserId {
+                // E6: a real signed quote for exactly this pet+service+slot —
+                // the cart here is a throwaway in-memory value (never saved
+                // to `carts`); `GetQuoteUseCase` only needs its shape.
+                let cart = Cart(
+                    id: UUID(), userId: userId, addressId: nil, circuitId: circuit.id, slotId: slot.id,
+                    items: [CartItem(id: UUID(), serviceId: serviceId, variantId: variantId, petIds: [pet.id])]
                 )
-            }
-
-            // F5: best-effort — a failure here shouldn't undo an otherwise
-            // successful booking, just leave the customer without the rule.
-            if makeRecurring, offersRecurring, let serviceId, let variantId, let visit = bookedVisit {
-                let next = RecurrenceScheduler.nextOccurrence(after: visit.scheduledAt, cadence: recurringCadence)
-                _ = try? await manageRecurringBookingUseCase.execute(
-                    userId: visit.userId, petId: pet.id, serviceId: serviceId, variantId: variantId,
-                    circuitId: circuit.id, cadence: recurringCadence, firstOccurrenceAt: next
+                let quote = try await getQuoteUseCase.execute(cart: cart)
+                lastQuote = quote
+                let session = try await bookingCheckoutUseCase.start(
+                    petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
+                    quote: quote, idempotencyKey: bookingIdempotencyKey
                 )
+                pendingVisit = session.visit
+                checkoutURL = session.checkoutURL
+                // The hold's job ends once the visit is booked (pending payment).
+                if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
+            } else {
+                bookedVisit = try await bookVisitUseCase.execute(
+                    petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
+                    idempotencyKey: bookingIdempotencyKey
+                )
+                if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
+                await sendConfirmationReceipt(pet: pet)
+                await createRecurringRuleIfNeeded(pet: pet)
             }
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Runs once the checkout sheet is dismissed — covers the customer
+    /// finishing payment, the payment failing, or them just backing out.
+    func resolveCheckout() async {
+        guard let visit = pendingVisit else { return }
+        do {
+            let (updatedVisit, outcome) = try await bookingCheckoutUseCase.resolve(visitId: visit.id, priorAttempts: retryAttempts)
+            switch outcome {
+            case .confirmVisit:
+                pendingVisit = nil
+                canRetryPayment = false
+                bookedVisit = updatedVisit
+                if let pet = selectedPet {
+                    await sendConfirmationReceipt(pet: pet)
+                    await createRecurringRuleIfNeeded(pet: pet)
+                }
+            case .awaitingPayment:
+                pendingVisit = updatedVisit
+                errorMessage = "We haven't heard back from the payment yet. This slot is still held for your booking — resume checkout below when you're ready."
+            case .paymentFailed(let canRetry, let reason):
+                pendingVisit = updatedVisit
+                retryAttempts += 1
+                canRetryPayment = canRetry
+                errorMessage = reason ?? "That payment didn't go through."
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// G3: re-opens checkout for the same pending visit, gated by
+    /// `PaymentRetryPolicy` via `RetryPaymentUseCase`.
+    func retryCheckout() async {
+        guard let visit = pendingVisit, let quote = lastQuote else { return }
+        guard !quote.isExpired else {
+            errorMessage = "This price quote has expired — go back and start the booking again for a fresh price."
+            canRetryPayment = false
+            return
+        }
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            guard let paymentId = try await paymentRepository.latestPaymentId(forVisit: visit.id) else {
+                errorMessage = "Couldn't find the previous payment attempt — please start the booking again."
+                return
+            }
+            checkoutURL = try await retryPaymentUseCase.execute(visitId: visit.id, paymentId: paymentId, quote: quote, priorAttempts: retryAttempts)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// E10: "order confirmation" receipt — push if available, else the J8
+    /// SMS-fallback policy decides (never a blocking failure: the booking
+    /// itself already succeeded by the time this runs).
+    private func sendConfirmationReceipt(pet: Pet) async {
+        guard let user = currentUser, let visit = bookedVisit else { return }
+        let when = visit.scheduledAt.formatted(date: .abbreviated, time: .shortened)
+        _ = try? await sendTransactionalNotificationUseCase.execute(
+            user: user, category: .visitConfirmed,
+            body: "Your visit for \(pet.name) is confirmed for \(when)."
+        )
+    }
+
+    /// F5: best-effort — a failure here shouldn't undo an otherwise
+    /// successful booking, just leave the customer without the rule.
+    private func createRecurringRuleIfNeeded(pet: Pet) async {
+        guard makeRecurring, offersRecurring, let serviceId, let variantId, let visit = bookedVisit else { return }
+        let next = RecurrenceScheduler.nextOccurrence(after: visit.scheduledAt, cadence: recurringCadence)
+        _ = try? await manageRecurringBookingUseCase.execute(
+            userId: visit.userId, petId: pet.id, serviceId: serviceId, variantId: variantId,
+            circuitId: circuit.id, cadence: recurringCadence, firstOccurrenceAt: next
+        )
     }
 }
 
@@ -268,9 +368,14 @@ struct BookingView: View {
 
                 if let errorMessage = viewModel.errorMessage {
                     ErrorBanner(message: errorMessage)
+                    if viewModel.canRetryPayment {
+                        PrimaryButton(title: "Retry payment", isLoading: viewModel.isLoading) {
+                            Task { await viewModel.retryCheckout() }
+                        }
+                    }
                 }
 
-                PrimaryButton(title: "Confirm booking", isLoading: viewModel.isLoading) {
+                PrimaryButton(title: viewModel.canCheckoutWithPayment ? "Get price & pay" : "Confirm booking", isLoading: viewModel.isLoading) {
                     confirmBookingTapped()
                 }
             }
@@ -286,6 +391,9 @@ struct BookingView: View {
         }
         .navigationDestination(item: $viewModel.bookedVisit) { visit in
             BookingConfirmedView(visit: visit)
+        }
+        .sheet(item: $viewModel.checkoutURL, onDismiss: { Task { await viewModel.resolveCheckout() } }) { url in
+            CheckoutWebView(url: url)
         }
         .animation(Theme.crossFade, value: viewModel.holdSecondsRemaining)
         .onDisappear {
