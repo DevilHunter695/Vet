@@ -15,7 +15,11 @@ final class BookingViewModel {
     /// the customer never re-picks it.
     let preselectedPetId: UUID?
     var pets: [Pet] = []
-    var selectedPet: Pet?
+    var selectedPet: Pet? {
+        didSet {
+            if selectedPet?.id != oldValue?.id { Task { await refreshPreviewQuote() } }
+        }
+    }
     /// F5: user's choice to also create a recurring rule alongside this booking.
     var makeRecurring = false
     var recurringCadence: RecurringBookingRule.Cadence = .monthly
@@ -24,6 +28,7 @@ final class BookingViewModel {
             if selectedSlot?.id != oldValue?.id {
                 bookingIdempotencyKey = UUID().uuidString
                 Task { await refreshHold() }
+                Task { await refreshPreviewQuote() }
             }
         }
     }
@@ -43,6 +48,13 @@ final class BookingViewModel {
     /// resumed instead of the booking silently vanishing.
     private(set) var pendingVisit: Visit?
     private(set) var canRetryPayment = false
+    /// E3: the price the customer can see *before* committing. Previously the
+    /// first time any number appeared was inside the hosted-checkout sheet,
+    /// which is far too late to be asking someone to trust you. This is the
+    /// same signed quote `confirmBooking` uses — it is re-fetched at
+    /// confirmation time, so this is a preview, never the authority.
+    private(set) var previewQuote: Quote?
+    private(set) var isPricing = false
     private var lastQuote: Quote?
     private var retryAttempts = 0
     /// E7: a 10-min hold placed the moment a slot is picked, so it can't be
@@ -90,6 +102,31 @@ final class BookingViewModel {
         self.recurringCadence = serviceCategory == .physioSession ? .weekly : .monthly
     }
 
+    /// Prices the current pet+slot selection so the total can be shown before
+    /// the customer commits. Only possible on the catalog path, where a
+    /// specific service+variant is known (same precondition as
+    /// `canCheckoutWithPayment`); the generic "tap a circuit" path has
+    /// nothing to price and says so in the UI instead of inventing a number.
+    private func refreshPreviewQuote() async {
+        guard canCheckoutWithPayment,
+              let serviceId, let variantId,
+              let pet = selectedPet, let slot = selectedSlot,
+              let userId = currentUserId
+        else {
+            previewQuote = nil
+            return
+        }
+        isPricing = true
+        defer { isPricing = false }
+        let cart = Cart(
+            id: UUID(), userId: userId, addressId: nil, circuitId: circuit.id, slotId: slot.id,
+            items: [CartItem(id: UUID(), serviceId: serviceId, variantId: variantId, petIds: [pet.id])]
+        )
+        // Best-effort: a pricing hiccup hides the preview rather than
+        // blocking the booking, which is still quote-gated at confirm time.
+        previewQuote = try? await getQuoteUseCase.execute(cart: cart)
+    }
+
     private func refreshHold() async {
         holdTimer?.cancel()
         if let previousHold = activeHold { try? await slotHoldRepository.releaseHold(id: previousHold.id) }
@@ -130,6 +167,10 @@ final class BookingViewModel {
         do {
             pets = try await managePetsUseCase.list(ownerId: ownerId)
             selectedPet = preselectedPetId.flatMap { id in pets.first { $0.id == id } } ?? pets.first
+            // `selectedPet`'s observer fires before `currentUserId` matters
+            // only because it is set above; price explicitly here too so the
+            // preview appears as soon as a slot is picked.
+            await refreshPreviewQuote()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -329,14 +370,21 @@ struct BookingView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Which pet?").font(.headline)
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeader(title: "Which pet?", systemImage: "pawprint.fill")
                     if viewModel.pets.isEmpty {
-                        Text("Add a pet in your profile first.").foregroundStyle(.secondary)
+                        CalloutNote(
+                            text: "You haven't added a pet yet. Add one from your profile and their record will be ready for the vet before they arrive.",
+                            systemImage: "exclamationmark.circle.fill", tint: Theme.warning
+                        )
                     } else {
                         ForEach(Array(viewModel.pets.enumerated()), id: \.element.id) { index, pet in
-                            SelectableRow(title: "\(pet.name) · \(pet.species.rawValue.capitalized)",
-                                          isSelected: viewModel.selectedPet?.id == pet.id) {
+                            SelectableRow(
+                                title: pet.name,
+                                subtitle: petSubtitle(pet),
+                                systemImage: petIcon(pet),
+                                isSelected: viewModel.selectedPet?.id == pet.id
+                            ) {
                                 viewModel.selectedPet = pet
                             }
                             .appearAnimation(delay: Theme.staggerDelay(index))
@@ -344,19 +392,7 @@ struct BookingView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Pick a time slot").font(.headline)
-                    ForEach(Array(viewModel.circuit.schedule.filter(\.isAvailable).enumerated()), id: \.element.id) { index, slot in
-                        SelectableRow(
-                            title: slot.startTime.formatted(date: .abbreviated, time: .shortened),
-                            subtitle: "\(slot.remainingCapacity) spot\(slot.remainingCapacity == 1 ? "" : "s") left",
-                            isSelected: viewModel.selectedSlot?.id == slot.id
-                        ) {
-                            viewModel.selectedSlot = slot
-                        }
-                        .appearAnimation(delay: Theme.staggerDelay(index))
-                    }
-                }
+                slotPicker
 
                 if viewModel.offersRecurring {
                     Card {
@@ -379,25 +415,55 @@ struct BookingView: View {
                 }
 
                 if viewModel.canCheckoutWithPayment {
-                    Card {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("How do you want to pay?").font(.brandBody.bold())
-                            SelectableRow(title: "Pay now", subtitle: "UPI, card, netbanking or wallet", isSelected: !viewModel.payAfterVisit) {
-                                viewModel.payAfterVisit = false
-                            }
-                            SelectableRow(title: "Pay after visit", subtitle: "Cash or UPI to the vet on-site", isSelected: viewModel.payAfterVisit) {
-                                viewModel.payAfterVisit = true
-                            }
+                    VStack(alignment: .leading, spacing: 12) {
+                        SectionHeader(title: "How do you want to pay?", systemImage: "creditcard.fill")
+                        SelectableRow(
+                            title: "Pay now", subtitle: "UPI, card, netbanking or wallet",
+                            systemImage: "bolt.fill", isSelected: !viewModel.payAfterVisit
+                        ) {
+                            viewModel.payAfterVisit = false
+                        }
+                        SelectableRow(
+                            title: "Pay after visit", subtitle: "Cash or UPI to the vet on-site",
+                            systemImage: "hand.wave.fill", isSelected: viewModel.payAfterVisit
+                        ) {
+                            viewModel.payAfterVisit = true
                         }
                     }
+
+                    priceBreakdown
+                } else {
+                    // Honest about the narrower path: this entry point has no
+                    // service/variant to price against, so quoting anything
+                    // would be a guess.
+                    CalloutNote(
+                        text: "You're requesting a visit directly with this vet. They'll confirm the slot and the price is settled from the service catalogue at the visit.",
+                        systemImage: "info.circle.fill"
+                    )
                 }
 
                 if let seconds = viewModel.holdSecondsRemaining {
-                    Label("This slot is held for you — \(seconds / 60):\(String(format: "%02d", seconds % 60))",
-                          systemImage: "clock.badge.checkmark")
-                        .font(.brandCaption)
-                        .foregroundStyle(Theme.inProgress)
-                        .transition(.opacity)
+                    // E7: the hold is the app doing something for the customer
+                    // — worth stating plainly, with the clock, rather than as
+                    // a grey footnote.
+                    HStack(spacing: 10) {
+                        Image(systemName: "lock.badge.clock.fill")
+                            .foregroundStyle(Theme.inProgress)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("This slot is held for you")
+                                .font(.brandCaption)
+                            Text("No one else can take it for the next \(seconds / 60):\(String(format: "%02d", seconds % 60))")
+                                .font(.brandCaption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        Text("\(seconds / 60):\(String(format: "%02d", seconds % 60))")
+                            .font(.brandMono(.callout, weight: .bold))
+                            .foregroundStyle(Theme.inProgress)
+                    }
+                    .padding(12)
+                    .background(Theme.inProgress.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .transition(.opacity)
                 }
 
                 if let errorMessage = viewModel.errorMessage {
@@ -409,11 +475,19 @@ struct BookingView: View {
                     }
                 }
 
-                PrimaryButton(title: viewModel.canCheckoutWithPayment ? (viewModel.payAfterVisit ? "Confirm booking — pay after visit" : "Get price & pay") : "Confirm booking", isLoading: viewModel.isLoading) {
-                    confirmBookingTapped()
-                }
             }
-            .padding()
+            .padding(16)
+            // Room for the pinned action bar, so the last card is never
+            // stranded underneath it.
+            .padding(.bottom, 108)
+        }
+        .scrollContentBackground(.hidden)
+        .auroraScreenBackground()
+        .safeAreaInset(edge: .bottom) {
+            // The primary action is pinned rather than living at the end of a
+            // long scroll: on a screen where the customer is deciding, the
+            // commit step should never require hunting for it.
+            confirmBar
         }
         .navigationTitle("Book visit")
         .navigationBarTitleDisplayMode(.inline)
@@ -442,11 +516,244 @@ struct BookingView: View {
             }
         }
     }
+
+    // MARK: - Slot picker (F1/F2)
+
+    /// Slots grouped by day, with the times for each day as a wrapping row of
+    /// chips. The previous version listed every slot as a full-width row, so a
+    /// vet running three stops a day for a week produced a 20-row wall the
+    /// customer had to read linearly to find "Saturday morning".
+    private var slotPicker: some View {
+        let available = viewModel.circuit.schedule.filter(\.isAvailable).sorted { $0.startTime < $1.startTime }
+        let byDay = Dictionary(grouping: available) { Calendar.current.startOfDay(for: $0.startTime) }
+        let days = byDay.keys.sorted()
+
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(
+                title: "Pick a time",
+                subtitle: available.isEmpty ? nil : "\(available.count) slot\(available.count == 1 ? "" : "s") open",
+                systemImage: "clock.fill"
+            )
+
+            if available.isEmpty {
+                CalloutNote(
+                    text: "This circuit has no open slots left. Try another vet in your area, or check back — schedules are published a week ahead.",
+                    systemImage: "calendar.badge.exclamationmark", tint: Theme.warning
+                )
+            } else {
+                ForEach(days, id: \.self) { day in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(dayLabel(day)).brandEyebrow()
+                        FlowRow(spacing: 8) {
+                            ForEach(byDay[day] ?? []) { slot in
+                                SlotChip(
+                                    slot: slot,
+                                    isSelected: viewModel.selectedSlot?.id == slot.id
+                                ) {
+                                    viewModel.selectedSlot = slot
+                                }
+                            }
+                        }
+                    }
+                    .padding(14)
+                    .glassCard(cornerRadius: 18)
+                }
+            }
+        }
+    }
+
+    private func dayLabel(_ day: Date) -> String {
+        if Calendar.current.isDateInToday(day) { return "Today" }
+        if Calendar.current.isDateInTomorrow(day) { return "Tomorrow" }
+        return day.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))
+    }
+
+    private func petIcon(_ pet: Pet) -> String {
+        switch pet.species {
+        case .dog: return "dog.fill"
+        case .cat: return "cat.fill"
+        case .bird: return "bird.fill"
+        case .other: return "pawprint.fill"
+        }
+    }
+
+    private func petSubtitle(_ pet: Pet) -> String {
+        var parts = [pet.species.rawValue.capitalized]
+        if let breed = pet.breed, !breed.isEmpty { parts.append(breed) }
+        if let weight = pet.weightKg { parts.append(String(format: "%.1f kg", weight)) }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: - Price (E3)
+
+    /// E3: "transparent price breakdown" — every line the quote contains,
+    /// including negative ones, above a total. Shown before the customer
+    /// commits, not inside the checkout sheet afterwards.
+    @ViewBuilder
+    private var priceBreakdown: some View {
+        if viewModel.isPricing && viewModel.previewQuote == nil {
+            ShimmerView(cornerRadius: 18).frame(height: 120)
+        } else if let quote = viewModel.previewQuote {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "What you'll pay", systemImage: "indianrupeesign.circle.fill")
+                VStack(spacing: 10) {
+                    ForEach(quote.breakdown.lineItems) { item in
+                        InfoRow(
+                            label: item.label,
+                            value: (item.amountMinorUnits < 0 ? "−" : "") + CurrencyFormatter.rupees(abs(item.amountMinorUnits)),
+                            valueColor: item.amountMinorUnits < 0 ? Theme.success : nil,
+                            isMonospaced: true
+                        )
+                    }
+                    Divider().opacity(0.4)
+                    HStack {
+                        Text("Total").font(.brandHeadline)
+                        Spacer()
+                        Text(CurrencyFormatter.rupees(quote.breakdown.totalMinorUnits))
+                            .font(.brandMono(.title3, weight: .bold))
+                            .brandDisplayText()
+                    }
+                    Text("Price is locked for 10 minutes and re-checked against the server when you confirm — it can't change between here and payment.")
+                        .font(.brandCaption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(16)
+                .featuredGlassCard()
+            }
+        }
+    }
+
+    // MARK: - Pinned action bar
+
+    private var confirmBar: some View {
+        VStack(spacing: 10) {
+            if let quote = viewModel.previewQuote {
+                HStack {
+                    Text("Total").font(.brandCaption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(CurrencyFormatter.rupees(quote.breakdown.totalMinorUnits))
+                        .font(.brandMono(.headline, weight: .bold))
+                }
+            }
+
+            PrimaryButton(
+                title: confirmTitle,
+                systemImage: viewModel.canCheckoutWithPayment && !viewModel.payAfterVisit ? "lock.fill" : "checkmark",
+                isLoading: viewModel.isLoading,
+                isEnabled: viewModel.selectedPet != nil && viewModel.selectedSlot != nil
+            ) {
+                confirmBookingTapped()
+            }
+
+            if viewModel.selectedSlot == nil {
+                Text("Pick a time slot to continue")
+                    .font(.brandCaption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(.bar)
+    }
+
+    private var confirmTitle: String {
+        guard viewModel.canCheckoutWithPayment else { return "Request this visit" }
+        return viewModel.payAfterVisit ? "Confirm — pay after visit" : "Confirm & pay securely"
+    }
 }
 
+/// A wrapping row: lays children out left to right and moves to a new line
+/// when the next one won't fit. `LazyVGrid` can't do this — its columns are
+/// fixed, so a row of time chips of different widths either overflows or
+/// leaves ragged gaps.
+private struct FlowRow: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: maxWidth == .infinity ? x : maxWidth, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + size.width > bounds.maxX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+/// One bookable time. 44pt tall so it is a real target, and it says how much
+/// room is left (F2) rather than just the time.
+private struct SlotChip: View {
+    let slot: ScheduleSlot
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptics.selection()
+            action()
+        } label: {
+            VStack(spacing: 1) {
+                Text(slot.startTime.formatted(date: .omitted, time: .shortened))
+                    .font(.brandMono(.subheadline, weight: .semibold))
+                if slot.remainingCapacity <= 2 {
+                    Text("\(slot.remainingCapacity) left")
+                        .font(.system(size: 9, design: .rounded).weight(.medium))
+                        .foregroundStyle(isSelected ? .white.opacity(0.85) : AnyShapeStyle(Theme.warning))
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .foregroundStyle(isSelected ? .white : .primary)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelected ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color.primary.opacity(0.07)))
+                    .allowsHitTesting(false)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(isSelected ? Color.clear : Color.primary.opacity(0.10), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(PressableStyle(scale: 0.93))
+        .animation(Theme.springQuick, value: isSelected)
+        .accessibilityLabel("\(slot.startTime.formatted(date: .abbreviated, time: .shortened)), \(slot.remainingCapacity) spot\(slot.remainingCapacity == 1 ? "" : "s") left")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+}
+
+/// The shared "pick one of these" row used for pets and payment method. The
+/// whole row is the Button's label, so the full width is tappable rather than
+/// just the text — the selected state comes from the app-wide
+/// `selectable(isSelected:)` treatment so every picker looks the same.
 private struct SelectableRow: View {
     let title: String
     var subtitle: String? = nil
+    var systemImage: String? = nil
     let isSelected: Bool
     let action: () -> Void
 
@@ -455,22 +762,35 @@ private struct SelectableRow: View {
             Haptics.selection()
             withAnimation(Theme.springQuick) { action() }
         } label: {
-            HStack {
+            HStack(spacing: 14) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(isSelected ? .white : AnyShapeStyle(Theme.primary))
+                        .frame(width: 38, height: 38)
+                        .background {
+                            Circle()
+                                .fill(isSelected ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Theme.primary.opacity(0.12)))
+                                .allowsHitTesting(false)
+                        }
+                }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.brandBody)
+                    Text(title).font(.brandHeadline).foregroundStyle(.primary)
                     if let subtitle {
-                        Text(subtitle).font(.brandCaption).foregroundStyle(.secondary)
+                        Text(subtitle)
+                            .font(.brandCaption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
-                Spacer()
+                Spacer(minLength: 8)
             }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(isSelected ? AnyShapeStyle(Theme.accentSoft) : AnyShapeStyle(Color(.secondarySystemBackground)))
-            )
+            .padding(14)
+            .frame(minHeight: 44)
+            .glassCard(cornerRadius: 14)
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        .buttonStyle(PressableStyle())
+        .buttonStyle(PressableStyle(scale: 0.985))
         .selectable(isSelected: isSelected)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
@@ -481,43 +801,69 @@ struct BookingConfirmedView: View {
     let visit: Visit
     @State private var checkmarkScale: CGFloat = 0.4
     @State private var ringOpacity: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
-            ConfettiView()
+            AuroraBackground(intensity: 1.4)
+            ConfettiView().allowsHitTesting(false)
 
             VStack(spacing: 18) {
                 ZStack {
                     Circle()
-                        .stroke(Color.green.opacity(0.25), lineWidth: 8)
+                        .stroke(Theme.success.opacity(0.3), lineWidth: 8)
                         .frame(width: 96, height: 96)
                         .scaleEffect(ringOpacity == 0 ? 0.6 : 1.3)
                         .opacity(1 - ringOpacity)
 
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 68))
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Theme.success)
                         .scaleEffect(checkmarkScale)
+                        .shadow(color: Theme.success.opacity(0.5), radius: 16, y: 6)
                 }
+                .allowsHitTesting(false)
                 .onAppear {
+                    guard !reduceMotion else {
+                        checkmarkScale = 1
+                        ringOpacity = 1
+                        return
+                    }
+                    // Bounce is earned here: this is the rare celebratory
+                    // moment, not a control the user fires all day.
                     withAnimation(.spring(response: 0.45, dampingFraction: 0.55)) { checkmarkScale = 1 }
                     withAnimation(.easeOut(duration: 0.9).delay(0.1)) { ringOpacity = 1 }
                 }
 
-                Text("Booking requested!").font(.brandTitle).brandDisplayText()
-                Text("We'll notify you once the vet confirms your slot.")
-                    .font(.brandBody)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                // E10: order confirmation receipt was just sent (push, or SMS
-                // per J8's fallback policy) — surfaced here so it isn't a
-                // silent side effect the customer never sees confirmed.
-                Text("A confirmation has been sent to your phone.")
-                    .font(.brandCaption)
-                    .foregroundStyle(.secondary)
+                VStack(spacing: 8) {
+                    Text("Booking requested").font(.brandLargeTitle).brandDisplayText()
+                    Text("We'll notify you the moment a vet confirms your slot — usually within a few minutes.")
+                        .font(.brandCallout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 StatusBadge(status: visit.status)
+
+                VStack(spacing: 10) {
+                    InfoRow(
+                        label: "When", value: visit.scheduledAt.formatted(date: .abbreviated, time: .shortened),
+                        systemImage: "calendar"
+                    )
+                    // E10: the receipt notification was just sent — surfaced
+                    // here so it isn't a silent side effect.
+                    InfoRow(label: "Confirmation", value: "Sent to your phone", systemImage: "bell.badge")
+                }
+                .padding(16)
+                .glassCard()
+
+                CalloutNote(
+                    text: "You can track the vet live, message them, and cancel from the Visits tab. Cancelling more than \(Int(CancellationPolicy.freeWindowHours))h ahead is free.",
+                    systemImage: "info.circle.fill"
+                )
             }
-            .padding()
+            .padding(24)
             .appearAnimation()
         }
         .navigationBarBackButtonHidden()
