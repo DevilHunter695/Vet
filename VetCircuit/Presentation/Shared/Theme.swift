@@ -129,6 +129,12 @@ extension View {
 struct PressableStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            // Without this, taps only register on the label's non-transparent
+            // children (text/icons) — any Spacer() or background-only area in
+            // a row's HStack/VStack silently ignores taps. Applying it here,
+            // centrally, makes every row using this style tappable across its
+            // whole visual bounds instead of only its intrinsic content.
+            .contentShape(Rectangle())
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(Theme.springQuick, value: configuration.isPressed)
     }
