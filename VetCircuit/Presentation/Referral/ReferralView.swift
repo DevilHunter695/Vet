@@ -97,6 +97,10 @@ struct ReferralView: View {
                 }
             }
         }
+        // The aurora is the app's ground everywhere else; a List that keeps
+        // its own opaque system background would read as a different app.
+        .scrollContentBackground(.hidden)
+        .auroraScreenBackground()
         .navigationTitle("Invite friends")
         .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
     }

@@ -67,6 +67,10 @@ struct AddressListView: View {
             }
         }
         .animation(Theme.crossFade, value: viewModel.addresses.map(\.id))
+        // The aurora is the app's ground everywhere else; a List that keeps
+        // its own opaque system background would read as a different app.
+        .scrollContentBackground(.hidden)
+        .auroraScreenBackground()
         .navigationTitle("Addresses")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

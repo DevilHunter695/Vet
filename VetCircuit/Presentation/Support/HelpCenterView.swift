@@ -78,6 +78,10 @@ struct HelpCenterView: View {
             }
         }
         .searchable(text: $viewModel.searchText, prompt: "Search help articles")
+        // The aurora is the app's ground everywhere else; a List that keeps
+        // its own opaque system background would read as a different app.
+        .scrollContentBackground(.hidden)
+        .auroraScreenBackground()
         .navigationTitle("Help centre")
         .task { await viewModel.load() }
         .alert("Support is closed right now", isPresented: $showingOutsideHoursAlert) {

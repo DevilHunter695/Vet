@@ -172,6 +172,10 @@ struct HouseholdView: View {
                 }
             }
         }
+        // The aurora is the app's ground everywhere else; a List that keeps
+        // its own opaque system background would read as a different app.
+        .scrollContentBackground(.hidden)
+        .auroraScreenBackground()
         .navigationTitle("Household")
         .task {
             if let user = session.currentUser {

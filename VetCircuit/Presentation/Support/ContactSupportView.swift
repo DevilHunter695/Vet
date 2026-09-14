@@ -66,6 +66,10 @@ struct ContactSupportView: View {
                     ErrorBanner(message: errorMessage)
                 }
             }
+            // The aurora is the app's ground everywhere else; a List that keeps
+            // its own opaque system background would read as a different app.
+            .scrollContentBackground(.hidden)
+            .auroraScreenBackground()
             .navigationTitle(viewModel.visitId != nil ? "Report a problem" : "Contact support")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

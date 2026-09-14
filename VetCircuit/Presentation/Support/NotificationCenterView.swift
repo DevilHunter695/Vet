@@ -64,6 +64,10 @@ struct NotificationCenterView: View {
                 .accessibilityHint(notification.isRead ? "" : "Double tap to mark as read")
             }
         }
+        // The aurora is the app's ground everywhere else; a List that keeps
+        // its own opaque system background would read as a different app.
+        .scrollContentBackground(.hidden)
+        .auroraScreenBackground()
         .navigationTitle("Notifications")
         .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
     }
