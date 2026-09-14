@@ -12,6 +12,11 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>hi</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
@@ -22,6 +27,8 @@
 	<string>2</string>
 	<key>NSCameraUsageDescription</key>
 	<string>VetCircuit uses your camera to let you attach photos of your pet to chat with your vet.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>VetCircuit uses Face ID to keep your pet's medical records and account locked to you, when app lock is turned on.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>VetCircuit uses your location to show nearby vet circuits and let you track your vet's arrival.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

@@ -35,6 +35,7 @@ targets:
         NSPhotoLibraryUsageDescription: "VetCircuit uses your photo library so you can share photos of your pet with your vet."
         NSLocationWhenInUseUsageDescription: "VetCircuit uses your location to show nearby vet circuits and let you track your vet's arrival."
         NSUserTrackingUsageDescription: "VetCircuit does not track you across other apps or websites."
+        NSFaceIDUsageDescription: "VetCircuit uses Face ID to keep your pet's medical records and account locked to you, when app lock is turned on."
         # O2: English + Hindi at launch (Localizable.xcstrings under
         # Resources). Coverage is partial by design — see TECHNICAL_PLAN.md's
         # O2 note for exactly which screens are fully localized.

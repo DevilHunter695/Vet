@@ -148,10 +148,27 @@ final class SupabaseQuoteRepository: QuoteRepository {
         // H6: the edge function re-derives and re-checks entitlement
         // eligibility itself (see the protocol doc comment) — this flag is
         // only "the client thinks a credit applies here," never authority.
-        let response: Response = try await client.functions.invoke("create-quote", options: .init(body: [
-            "cart_id": cart.id.uuidString, "use_wallet_balance": useWalletBalance,
-            "apply_entitlement_credit": applyEntitlementCredit,
-        ] as [String: Any]))
+        struct Body: Encodable {
+            let cartId: String
+            let useWalletBalance: Bool
+            let applyEntitlementCredit: Bool
+
+            enum CodingKeys: String, CodingKey {
+                case cartId = "cart_id"
+                case useWalletBalance = "use_wallet_balance"
+                case applyEntitlementCredit = "apply_entitlement_credit"
+            }
+        }
+
+        let body = Body(
+            cartId: cart.id.uuidString,
+            useWalletBalance: useWalletBalance,
+            applyEntitlementCredit: applyEntitlementCredit
+        )
+        let response: Response = try await client.functions.invoke(
+            "create-quote",
+            options: .init(body: body)
+        )
         return Quote(id: response.id, cartId: response.cartId, breakdown: response.breakdown,
                      signature: response.signature, expiresAt: response.expiresAt)
     }

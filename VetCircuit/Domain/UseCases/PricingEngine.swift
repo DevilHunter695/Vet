@@ -32,10 +32,13 @@ enum PricingEngine {
     static func quote(_ input: Input) -> PriceBreakdown {
         var lineItems: [PriceLineItem] = []
 
+        let base = input.entitlementCreditApplied
+            ? 0
+            : (input.vetOverridePriceMinorUnits ?? input.variant.priceMinorUnits)
+
         if input.entitlementCreditApplied {
             lineItems.append(PriceLineItem(label: "\(input.variant.name) (subscription credit)", amountMinorUnits: 0))
         } else {
-            let base = input.vetOverridePriceMinorUnits ?? input.variant.priceMinorUnits
             lineItems.append(PriceLineItem(label: input.variant.name, amountMinorUnits: base))
         }
 

@@ -49,7 +49,7 @@ final class LiveTrackingViewModel {
             Task { @MainActor in
                 self?.location = update
                 self?.updateCamera()
-                self?.updateLiveActivity()
+                await self?.updateLiveActivity()
             }
         }
     }
@@ -65,10 +65,10 @@ final class LiveTrackingViewModel {
         #endif
     }
 
-    private func updateLiveActivity() {
+    private func updateLiveActivity() async {
         #if canImport(ActivityKit)
         if #available(iOS 16.1, *) {
-            VetEnRouteActivityManager.update(etaMinutes: location?.etaMinutes, status: .enRoute)
+            await VetEnRouteActivityManager.update(etaMinutes: location?.etaMinutes, status: .enRoute)
         }
         #endif
     }
