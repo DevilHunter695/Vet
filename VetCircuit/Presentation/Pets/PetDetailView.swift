@@ -192,7 +192,7 @@ struct PetDetailView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .auroraScreenBackground()
         .navigationTitle(viewModel.pet.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load() }

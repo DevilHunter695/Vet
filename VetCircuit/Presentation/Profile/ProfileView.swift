@@ -9,6 +9,19 @@ final class ProfileViewModel {
     var newPetName: String = ""
     var newPetSpecies: Pet.Species = .dog
     var loyaltyAccount: LoyaltyAccount?
+    /// Header summary figures. Kept on the view model rather than fetched by
+    /// the header view itself so the whole screen settles in one pass instead
+    /// of each tile popping in separately.
+    var walletBalanceMinorUnits: Int = 0
+    var completedVisitCount: Int = 0
+    var upcomingVisit: Visit?
+
+    private let getWalletBalanceUseCase = DependencyContainer.shared.getWalletBalanceUseCase()
+    private let getVisitHistoryUseCase = DependencyContainer.shared.getVisitHistoryUseCase()
+
+    /// Pets that still count as "yours" today — archived ones stay reachable
+    /// in the list below but shouldn't inflate the headline count.
+    var activePets: [Pet] { pets.filter { !$0.isArchived } }
 
     private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
     private let subscriptionRepository = DependencyContainer.shared.subscriptionRepository
@@ -34,6 +47,14 @@ final class ProfileViewModel {
             pets = try await managePetsUseCase.list(ownerId: userId, includeArchived: true)
             subscription = try await subscriptionRepository.currentSubscription(userId: userId)
             loyaltyAccount = try await getLoyaltyAccountUseCase.execute(userId: userId)
+            // Best-effort: a wallet or history hiccup should degrade the
+            // summary tiles, never fail the whole profile load.
+            walletBalanceMinorUnits = (try? await getWalletBalanceUseCase.balance(userId: userId)) ?? 0
+            let history = (try? await getVisitHistoryUseCase.execute(userId: userId)) ?? []
+            completedVisitCount = history.filter { $0.status == .completed }.count
+            upcomingVisit = history
+                .filter { $0.scheduledAt > .now && $0.status.isUpcoming }
+                .min { $0.scheduledAt < $1.scheduledAt }
             if let subscription {
                 // H5: the profile tab is a routine, frequently-visited screen
                 // (same trigger-point pattern F4/I8 used on VisitHistoryView),
@@ -118,191 +139,96 @@ struct ProfileView: View {
     var body: some View {
         // N7: path driven by the shared Router, mirroring VisitHistoryView —
         // lets `vetcircuit://household` push straight to HouseholdView
-        // instead of only switching to this tab. The existing
-        // `NavigationLink("Household") { HouseholdView() }` below is
-        // untouched and keeps working the same way inside this path-backed
-        // stack.
+        // instead of only switching to this tab.
         NavigationStack(path: Bindable(router).profilePath) {
-            List {
-                if let user = session.currentUser {
-                    Section {
-                        HStack(spacing: 14) {
-                            PawMascot(size: 56, animated: false)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(user.name).font(.brandTitle).brandDisplayText()
-                                if let phone = user.phone {
-                                    Text(phone).font(.brandCaption).foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                        }
-                        .padding(.vertical, 6)
-                        .listRowBackground(Color.clear)
-                        .accessibilityElement(children: .combine)
-                    }
-                    .appearAnimation()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 22) {
+                    if let user = session.currentUser {
+                        ProfileHeroCard(
+                            user: user,
+                            tier: viewModel.loyaltyAccount?.tier,
+                            tierColor: viewModel.loyaltyAccount.map { tierColor($0.tier) } ?? Theme.primary
+                        )
+                        .appearAnimation()
 
-                    Section {
-                        NavigationLink("Edit profile") {
-                            EditProfileView()
-                        }
-                    }
-                }
-
-                Section("Care type") {
-                    Picker("Care type", selection: selectedVertical) {
-                        ForEach(Vertical.allCases) { vertical in
-                            Label(vertical.displayName, systemImage: vertical.systemImage).tag(vertical)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
-                    .onChange(of: selectedVerticalRaw) { _, _ in Haptics.selection() }
-                }
-
-                Section("Appearance") {
-                    Picker("Appearance", selection: appearance) {
-                        ForEach(AppearanceOption.allCases) { option in
-                            Label(option.displayName, systemImage: option.systemImage).tag(option)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: appearanceRaw) { _, _ in Haptics.selection() }
-                }
-
-                if let loyalty = viewModel.loyaltyAccount {
-                    Section("Rewards") {
-                        LoyaltyProgressCard(account: loyalty, color: tierColor(loyalty.tier), progress: tierProgress(loyalty))
-                    }
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-
-                Section("Subscription") {
-                    if let subscription = viewModel.subscription, subscription.status != .cancelled {
-                        LabeledContent("Plan", value: subscription.planType.displayName)
-                        LabeledContent("Status", value: subscription.status.rawValue.capitalized)
-                        LabeledContent("Renews", value: subscription.renewalDate.formatted(date: .abbreviated, time: .omitted))
-                        if subscription.planType.isBulk {
-                            LabeledContent("Seats", value: "\(subscription.seatCount)")
-                        }
-                        NavigationLink("Manage subscription") {
-                            ManageSubscriptionView()
-                        }
-                    } else {
-                        // H1: full inclusions + fair-use limits shown before
-                        // purchase, rather than a bare "Subscribe" button.
-                        NavigationLink("View plans") {
-                            PlanCatalogView()
-                        }
-                    }
-                }
-                .transition(.opacity)
-                .animation(Theme.crossFade, value: viewModel.subscription?.id)
-
-                Section {
-                    NavigationLink("Wallet") {
-                        WalletBalanceView()
-                    }
-                    NavigationLink("Addresses") {
-                        AddressListView()
-                    }
-                    NavigationLink("Payment methods") {
-                        PaymentMethodsView()
-                    }
-                    NavigationLink("Household") {
-                        HouseholdView()
-                    }
-                    NavigationLink("Notifications") {
-                        NotificationPreferencesView()
-                    }
-                    NavigationLink("Privacy & consent") {
-                        PrivacyConsentView()
-                    }
-                    Toggle("Require Face ID to open app", isOn: $biometricLockEnabled)
-                        .onChange(of: biometricLockEnabled) { _, _ in Haptics.selection() }
-                    NavigationLink("Notifications centre") {
-                        NotificationCenterView()
-                    }
-                    // F5: recurring bookings management (view/pause/cancel).
-                    NavigationLink("Your recurring bookings") {
-                        RecurringBookingsView()
-                    }
-                }
-
-                Section("Support & legal") {
-                    NavigationLink("Help centre") {
-                        HelpCenterView()
-                    }
-                    NavigationLink("Contact support") {
-                        ContactSupportView()
-                    }
-                    NavigationLink("My tickets") {
-                        MyTicketsView()
-                    }
-                    NavigationLink("Privacy Policy") {
-                        PrivacyPolicyView()
-                    }
-                    NavigationLink("Terms of Service") {
-                        TermsOfServiceView()
-                    }
-                }
-
-                Section("Pets") {
-                    ForEach(viewModel.pets) { pet in
-                        NavigationLink {
-                            PetDetailView(pet: pet)
-                        } label: {
-                            HStack {
-                                Text("\(pet.name) · \(pet.species.rawValue.capitalized)")
-                                if pet.isArchived {
-                                    Spacer()
-                                    Text(pet.archiveReason?.displayName ?? "")
-                                        .font(.brandCaption).foregroundStyle(.secondary)
-                                }
-                            }
-                            .accessibilityElement(children: .combine)
-                        }
-                    }
-                    .onDelete { indexSet in
-                        Haptics.warning()
-                        // B1: soft-delete only — swiping never hard-deletes a
-                        // pet row, it archives it (visit history must survive).
-                        Task {
-                            for index in indexSet where !viewModel.pets[index].isArchived {
-                                await viewModel.archivePet(viewModel.pets[index])
-                            }
-                        }
+                        summaryTiles
+                            .appearAnimation(delay: 0.04)
                     }
 
-                    HStack {
-                        TextField("Pet name", text: $viewModel.newPetName)
-                        Picker("Species", selection: $viewModel.newPetSpecies) {
-                            ForEach(Pet.Species.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                    if let visit = viewModel.upcomingVisit {
+                        NextVisitCard(visit: visit) {
+                            // Hands off to the Visits tab, which owns the
+                            // visit-detail destination.
+                            router.selectedTab = 1
                         }
-                        .labelsHidden()
-                        .onChange(of: viewModel.newPetSpecies) { _, _ in Haptics.selection() }
-                        Button("Add") {
-                            Haptics.confirm()
-                            Task { if let user = session.currentUser { await viewModel.addPet(ownerId: user.id) } }
+                        .appearAnimation(delay: 0.08)
+                    }
+
+                    if let loyalty = viewModel.loyaltyAccount {
+                        VStack(alignment: .leading, spacing: 12) {
+                            SectionHeader(
+                                title: "Rewards",
+                                subtitle: rewardsSubtitle(loyalty),
+                                systemImage: "star.circle.fill"
+                            )
+                            LoyaltyProgressCard(
+                                account: loyalty,
+                                color: tierColor(loyalty.tier),
+                                progress: tierProgress(loyalty),
+                                pointsToNextTier: pointsToNextTier(loyalty)
+                            )
+                            .padding(16)
+                            .glassCard()
                         }
-                        .disabled(viewModel.newPetName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                     }
-                }
 
-                Section {
-                    NavigationLink("Invite friends") {
-                        ReferralView()
+                    subscriptionSection
+
+                    petsSection
+
+                    ProfileGroup(title: "Your account", systemImage: "person.text.rectangle") {
+                        ProfileLinkRow(title: "Edit profile", subtitle: "Name, email, photo", systemImage: "person.crop.circle") { EditProfileView() }
+                        ProfileLinkRow(title: "Wallet", subtitle: CurrencyFormatter.rupees(viewModel.walletBalanceMinorUnits) + " available", systemImage: "indianrupeesign.circle") { WalletBalanceView() }
+                        ProfileLinkRow(title: "Addresses", subtitle: "Where your vet comes to", systemImage: "mappin.and.ellipse") { AddressListView() }
+                        ProfileLinkRow(title: "Payment methods", subtitle: "Cards & UPI", systemImage: "creditcard") { PaymentMethodsView() }
+                        ProfileLinkRow(title: "Household", subtitle: "Share pets & bookings", systemImage: "person.2") { HouseholdView() }
+                        ProfileLinkRow(title: "Recurring bookings", subtitle: "Pause or cancel a schedule", systemImage: "repeat") { RecurringBookingsView() }
+                        ProfileLinkRow(title: "Invite friends", subtitle: "Both of you get credit", systemImage: "gift", tint: Theme.accent) { ReferralView() }
                     }
-                }
 
-                Section {
-                    Button("Sign out", role: .destructive) {
+                    preferencesSection
+
+                    ProfileGroup(title: "Support & legal", systemImage: "lifepreserver") {
+                        ProfileLinkRow(title: "Help centre", subtitle: "Answers to common questions", systemImage: "questionmark.circle") { HelpCenterView() }
+                        ProfileLinkRow(title: "Contact support", subtitle: "Open a ticket with our team", systemImage: "bubble.left.and.text.bubble.right") { ContactSupportView() }
+                        ProfileLinkRow(title: "My tickets", subtitle: "Track what you've raised", systemImage: "tray.full") { MyTicketsView() }
+                        ProfileLinkRow(title: "Privacy & consent", subtitle: "What we store and why", systemImage: "hand.raised") { PrivacyConsentView() }
+                        ProfileLinkRow(title: "Privacy Policy", systemImage: "doc.text") { PrivacyPolicyView() }
+                        ProfileLinkRow(title: "Terms of Service", systemImage: "doc.plaintext") { TermsOfServiceView() }
+                    }
+
+                    if let error = viewModel.errorMessage {
+                        ErrorBanner(message: error)
+                    }
+
+                    SecondaryButton(title: "Sign out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
                         Haptics.warning()
                         Task { await session.signOut() }
                     }
-                    .tint(Theme.danger)
+
+                    Text("VetCircuit \(appVersionText)")
+                        .font(.brandCaption2)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 4)
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 32)
             }
+            .scrollContentBackground(.hidden)
+            .auroraScreenBackground()
             .navigationTitle("Profile")
             .navigationDestination(for: Route.self) { route in
                 switch route {
@@ -315,10 +241,233 @@ struct ProfileView: View {
                 }
             }
             .animation(Theme.crossFade, value: viewModel.loyaltyAccount?.points)
+            .refreshable {
+                if let user = session.currentUser { await viewModel.load(userId: user.id, currentUser: user) }
+            }
             .task { if let user = session.currentUser { await viewModel.load(userId: user.id, currentUser: user) } }
             .sheet(item: $checkoutURL) { url in
                 CheckoutWebView(url: url)
             }
+        }
+    }
+
+    private var appVersionText: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        return "v\(version) (\(build))"
+    }
+
+    /// Four figures that answer "how am I doing here?" without making the
+    /// user open four screens. A prototype shows navigation; a finished
+    /// product shows state.
+    private var summaryTiles: some View {
+        // Two columns, not four: four tiles across a phone leaves each figure
+        // ~55pt of room, which forces "₹1,250" to shrink until it stops
+        // reading as a headline number.
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+            StatTile(
+                value: CurrencyFormatter.rupees(viewModel.walletBalanceMinorUnits),
+                label: "Wallet", systemImage: "indianrupeesign.circle.fill", tint: Theme.emerald
+            )
+            StatTile(
+                value: "\(viewModel.loyaltyAccount?.points ?? 0)",
+                label: "Points", systemImage: "star.fill",
+                tint: viewModel.loyaltyAccount.map { tierColor($0.tier) } ?? Theme.goldTier
+            )
+            StatTile(
+                value: "\(viewModel.activePets.count)",
+                label: viewModel.activePets.count == 1 ? "Pet" : "Pets",
+                systemImage: "pawprint.fill", tint: Theme.primary
+            )
+            StatTile(
+                value: "\(viewModel.completedVisitCount)",
+                label: "Visits done", systemImage: "checkmark.seal.fill", tint: Theme.primaryLight
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var subscriptionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Membership", systemImage: "crown.fill")
+
+            if let subscription = viewModel.subscription, subscription.status != .cancelled {
+                VStack(spacing: 12) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(subscription.planType.displayName)
+                                .font(.brandTitle3)
+                            Text("Renews \(subscription.renewalDate.formatted(date: .abbreviated, time: .omitted))")
+                                .font(.brandCaption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        TagChip(
+                            text: subscription.status.rawValue.capitalized,
+                            systemImage: subscription.status == .active ? "checkmark.circle.fill" : "pause.circle.fill",
+                            tint: subscription.status == .active ? Theme.success : Theme.warning
+                        )
+                    }
+                    if subscription.planType.isBulk {
+                        Divider().opacity(0.4)
+                        InfoRow(label: "Seats", value: "\(subscription.seatCount)", systemImage: "person.3", isMonospaced: true)
+                    }
+                    NavigationLink {
+                        ManageSubscriptionView()
+                    } label: {
+                        HStack {
+                            Text("Manage membership").font(.brandCaption)
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption2)
+                        }
+                        .foregroundStyle(Theme.primary)
+                        .frame(minHeight: 30)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressableStyle())
+                }
+                .padding(16)
+                .featuredGlassCard()
+            } else {
+                // H1: full inclusions + fair-use limits shown before purchase,
+                // rather than a bare "Subscribe" button.
+                NavigationLink {
+                    PlanCatalogView()
+                } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: "sparkles")
+                            .font(.title2)
+                            .foregroundStyle(Theme.emeraldLight)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Join VetCircuit Care").font(.brandHeadline)
+                            Text("Free visits, priority slots and member pricing from ₹499/month.")
+                                .font(.brandCaption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 4)
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(16)
+                    .featuredGlassCard(tint: Theme.emerald)
+                    .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                }
+                .buttonStyle(PressableStyle())
+            }
+        }
+        .animation(Theme.crossFade, value: viewModel.subscription?.id)
+    }
+
+    @ViewBuilder
+    private var petsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(
+                title: "Your pets",
+                subtitle: viewModel.pets.isEmpty ? "Add one to start booking" : "\(viewModel.activePets.count) in your care",
+                systemImage: "pawprint.fill"
+            )
+
+            if viewModel.pets.isEmpty {
+                CalloutNote(
+                    text: "Add your first pet below — their weight, vaccinations and prescriptions all live in one record the vet can read before arriving.",
+                    systemImage: "pawprint.circle.fill"
+                )
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(viewModel.pets) { pet in
+                            NavigationLink {
+                                PetDetailView(pet: pet)
+                            } label: {
+                                PetCard(pet: pet)
+                            }
+                            .buttonStyle(PressableStyle())
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                    .padding(.vertical, 4)
+                }
+                // The card row overflows its container horizontally by
+                // design; without this the scroll view clips the shadows.
+                .scrollClipDisabled()
+            }
+
+            AddPetField(
+                name: $viewModel.newPetName,
+                species: $viewModel.newPetSpecies,
+                onAdd: {
+                    Task { if let user = session.currentUser { await viewModel.addPet(ownerId: user.id) } }
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var preferencesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Preferences", systemImage: "slider.horizontal.3")
+
+            VStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Care type").brandEyebrow()
+                    Picker("Care type", selection: selectedVertical) {
+                        ForEach(Vertical.allCases) { vertical in
+                            Text(vertical.displayName).tag(vertical)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: selectedVerticalRaw) { _, _ in Haptics.selection() }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Appearance").brandEyebrow()
+                    Picker("Appearance", selection: appearance) {
+                        ForEach(AppearanceOption.allCases) { option in
+                            Text(option.displayName).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: appearanceRaw) { _, _ in Haptics.selection() }
+                    Text("The blue-green aurora is tuned for both — dark leans into it, light keeps it as a wash.")
+                        .font(.brandCaption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider().opacity(0.4)
+
+                Toggle(isOn: $biometricLockEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Require Face ID to open").font(.brandCallout)
+                        Text("Locks the app whenever it goes to the background.")
+                            .font(.brandCaption2).foregroundStyle(.secondary)
+                    }
+                }
+                .tint(Theme.primary)
+                .onChange(of: biometricLockEnabled) { _, _ in Haptics.selection() }
+            }
+            .padding(16)
+            .glassCard()
+
+            ProfileGroup(title: "Notifications", systemImage: "bell.badge") {
+                ProfileLinkRow(title: "Notification preferences", subtitle: "Choose what reaches you", systemImage: "bell") { NotificationPreferencesView() }
+                ProfileLinkRow(title: "Notification centre", subtitle: "Everything we've sent you", systemImage: "tray") { NotificationCenterView() }
+            }
+        }
+    }
+
+    private func rewardsSubtitle(_ account: LoyaltyAccount) -> String {
+        let remaining = pointsToNextTier(account)
+        guard remaining > 0 else { return "You're at the top tier" }
+        return "\(remaining) points to the next tier"
+    }
+
+    /// Mirrors `LoyaltyAccount.Tier.forPoints` thresholds (200 / 600) so the
+    /// progress bar and the tier the server assigns never disagree.
+    private func pointsToNextTier(_ account: LoyaltyAccount) -> Int {
+        switch account.tier {
+        case .bronze: return max(0, 200 - account.points)
+        case .silver: return max(0, 600 - account.points)
+        case .gold: return 0
         }
     }
 
@@ -345,21 +494,35 @@ private struct LoyaltyProgressCard: View {
     let account: LoyaltyAccount
     let color: Color
     let progress: CGFloat
+    let pointsToNextTier: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("\(account.points) points", systemImage: "star.circle.fill")
-                    .font(.brandHeadline)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(account.points)")
+                    .font(.brandMono(.title, weight: .bold))
                     .foregroundStyle(color)
+                    .brandDisplayText()
+                Text("points")
+                    .font(.brandCallout)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 TierBadge(tier: account.tier, color: color)
             }
+
             ProgressTrack(color: color, progress: progress)
-                .frame(height: 6)
+                .frame(height: 8)
                 .accessibilityHidden(true)
+
+            Text(
+                pointsToNextTier > 0
+                    ? "\(pointsToNextTier) more points unlocks the next tier — you earn them on every completed visit."
+                    : "You're at the top tier. Points still convert to wallet credit at checkout."
+            )
+            .font(.brandCaption2)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityValue("\(Int(progress * 100)) percent to next tier")
     }
@@ -386,10 +549,21 @@ private struct ProgressTrack: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color(.tertiarySystemFill))
-                Capsule().fill(color).frame(width: geo.size.width * progress)
+                Capsule().fill(Color.primary.opacity(0.10))
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [color.opacity(0.7), color],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                    )
+                    // A zero-width capsule renders as a dot; clamp to nothing
+                    // so an empty bar looks empty rather than broken.
+                    .frame(width: max(0, geo.size.width * progress))
+                    .shadow(color: color.opacity(0.5), radius: 6, y: 2)
             }
         }
+        .allowsHitTesting(false)
         .animation(Theme.springSoft, value: progress)
     }
 }
@@ -400,4 +574,300 @@ extension URL: @retroactive Identifiable {
 
 #Preview {
     ProfileView().environment(SessionStore()).environment(Router())
+}
+
+
+// MARK: - Profile screen components
+
+/// The identity card at the top of the tab: photo (or the paw mascot), name,
+/// phone, and the loyalty tier, over a brand-tinted glass surface. This is the
+/// first thing on the screen, so it carries the aurora rather than a grey row.
+private struct ProfileHeroCard: View {
+    let user: User
+    let tier: LoyaltyAccount.Tier?
+    let tierColor: Color
+
+    var body: some View {
+        HStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(Theme.gradient)
+                    .frame(width: 68, height: 68)
+                    .shadow(color: Theme.primary.opacity(0.4), radius: 12, y: 6)
+                if let photoURL = user.photoURL {
+                    AsyncImage(url: photoURL) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        PawMascot(size: 68, animated: false)
+                    }
+                    .frame(width: 68, height: 68)
+                    .clipShape(Circle())
+                } else {
+                    Text(initials)
+                        .font(.system(size: 26, design: .rounded).weight(.bold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .allowsHitTesting(false)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(user.name)
+                    .font(.brandTitle)
+                    .brandDisplayText()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                if let phone = user.phone {
+                    Text(phone)
+                        .font(.brandCaption)
+                        .foregroundStyle(.secondary)
+                }
+                if let tier {
+                    TagChip(text: "\(tier.rawValue.capitalized) member", systemImage: "star.fill", tint: tierColor)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(18)
+        .featuredGlassCard()
+        .accessibilityElement(children: .combine)
+    }
+
+    private var initials: String {
+        let parts = user.name.split(separator: " ").prefix(2)
+        let letters = parts.compactMap { $0.first }.map(String.init).joined()
+        return letters.isEmpty ? "?" : letters.uppercased()
+    }
+}
+
+/// The "what's next" card. A pet owner's single most common question on
+/// opening the app is "when is the vet coming?" — answering it above the fold
+/// is worth more than any amount of chrome.
+private struct NextVisitCard: View {
+    let visit: Visit
+    let onOpen: () -> Void
+
+    private var countdownText: String {
+        let interval = visit.scheduledAt.timeIntervalSinceNow
+        guard interval > 0 else { return "Starting now" }
+        let hours = Int(interval / 3600)
+        if hours < 1 { return "In \(max(1, Int(interval / 60))) min" }
+        if hours < 24 { return "In \(hours) hr" }
+        return "In \(hours / 24) day\(hours / 24 == 1 ? "" : "s")"
+    }
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            onOpen()
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Next visit").brandEyebrow()
+                    Spacer()
+                    StatusBadge(status: visit.status)
+                }
+                HStack(alignment: .center, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(visit.scheduledAt.formatted(date: .abbreviated, time: .shortened))
+                            .font(.brandTitle3)
+                        Text(countdownText)
+                            .font(.brandCaption)
+                            .foregroundStyle(Theme.emeraldLight)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(16)
+            .featuredGlassCard(tint: Theme.emerald)
+            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityLabel("Next visit \(visit.scheduledAt.formatted(date: .abbreviated, time: .shortened)), \(visit.status.displayText)")
+    }
+}
+
+/// A titled card that groups related navigation rows. Replaces the long,
+/// undifferentiated `List` of plain `NavigationLink`s that made the screen
+/// read like a settings dump rather than a product.
+private struct ProfileGroup<Content: View>: View {
+    let title: String
+    var systemImage: String? = nil
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: title, systemImage: systemImage)
+            VStack(spacing: 0) {
+                content
+            }
+            .glassCard()
+        }
+    }
+}
+
+/// One row inside a `ProfileGroup`. The whole row is the Button's label, so
+/// the entire width is tappable — the previous plain-`List` rows relied on
+/// the system's row chrome for that, which custom cards don't provide.
+private struct ProfileLinkRow<Destination: View>: View {
+    let title: String
+    var subtitle: String? = nil
+    let systemImage: String
+    var tint: Color = Theme.primary
+    @ViewBuilder let destination: Destination
+
+    var body: some View {
+        NavigationLink {
+            destination
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(tint)
+                    .frame(width: 30, height: 30)
+                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.brandCallout).foregroundStyle(.primary)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.brandCaption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 16)
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle(scale: 0.99))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(subtitle.map { "\(title). \($0)" } ?? title)
+    }
+}
+
+/// A pet, as a card rather than a line of text — species, age and the flags a
+/// vet would want to know at a glance (allergies, chronic conditions), plus a
+/// clear archived treatment instead of a grey word at the end of a row.
+private struct PetCard: View {
+    let pet: Pet
+
+    private var ageText: String? {
+        guard let dob = pet.dateOfBirth else { return nil }
+        let months = Calendar.current.dateComponents([.month], from: dob, to: .now).month ?? 0
+        if months < 24 { return "\(max(0, months)) mo" }
+        return "\(months / 12) yr"
+    }
+
+    private var speciesIcon: String {
+        switch pet.species {
+        case .dog: return "dog.fill"
+        case .cat: return "cat.fill"
+        case .bird: return "bird.fill"
+        case .other: return "pawprint.fill"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(Theme.gradient)
+                    .frame(width: 46, height: 46)
+                if let photoURL = pet.photoURL {
+                    AsyncImage(url: photoURL) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Image(systemName: speciesIcon).foregroundStyle(.white)
+                    }
+                    .frame(width: 46, height: 46)
+                    .clipShape(Circle())
+                } else {
+                    Image(systemName: speciesIcon)
+                        .font(.system(size: 20))
+                        .foregroundStyle(.white)
+                }
+            }
+            .allowsHitTesting(false)
+            .opacity(pet.isArchived ? 0.45 : 1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(pet.name)
+                    .font(.brandHeadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text([pet.breed, ageText].compactMap { $0 }.joined(separator: " · "))
+                    .font(.brandCaption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            if pet.isArchived {
+                TagChip(text: pet.archiveReason?.displayName ?? "Archived", systemImage: "archivebox", tint: Theme.neutral)
+            } else if pet.allergies?.isEmpty == false {
+                TagChip(text: "Allergies on file", systemImage: "exclamationmark.triangle.fill", tint: Theme.warning)
+            } else if let weight = pet.weightKg {
+                TagChip(text: String(format: "%.1f kg", weight), systemImage: "scalemass", tint: Theme.emerald)
+            } else {
+                TagChip(text: "Tap to complete", systemImage: "plus.circle", tint: Theme.primary)
+            }
+        }
+        .frame(width: 152, alignment: .leading)
+        .padding(14)
+        .glassCard(cornerRadius: 18)
+        .opacity(pet.isArchived ? 0.72 : 1)
+    }
+}
+
+/// Inline "add a pet" composer. Kept on the profile screen (rather than behind
+/// a sheet) because adding the first pet is the step that unblocks booking.
+private struct AddPetField: View {
+    @Binding var name: String
+    @Binding var species: Pet.Species
+    let onAdd: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    private var canAdd: Bool { !name.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "plus.circle.fill")
+                    .foregroundStyle(Theme.primary)
+                TextField("Add a pet's name", text: $name)
+                    .font(.brandCallout)
+                    .focused($isFocused)
+                    .submitLabel(.done)
+                    .onSubmit { if canAdd { add() } }
+            }
+
+            Picker("Species", selection: $species) {
+                ForEach(Pet.Species.allCases, id: \.self) {
+                    Text($0.rawValue.capitalized).tag($0)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: species) { _, _ in Haptics.selection() }
+
+            PrimaryButton(title: "Add pet", systemImage: "pawprint.fill", isEnabled: canAdd) {
+                add()
+            }
+        }
+        .padding(16)
+        .glassCard()
+    }
+
+    private func add() {
+        guard canAdd else { return }
+        isFocused = false
+        onAdd()
+    }
 }

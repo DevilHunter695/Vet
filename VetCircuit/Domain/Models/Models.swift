@@ -291,6 +291,21 @@ struct Visit: Identifiable, Codable, Equatable, Hashable {
         var isCancelled: Bool {
             self == .cancelledByUser || self == .cancelledByVet || self == .noShowUser
         }
+
+        /// A visit that still has something ahead of it — booked but not yet
+        /// finished, cancelled or written off. Used wherever the UI needs
+        /// "what's next" rather than "what happened".
+        var isUpcoming: Bool { !isTerminal && self != .disputed }
+
+        /// The vet is actively on their way or on site. These are the states
+        /// that earn a live treatment in the UI (pulsing badge, "happening
+        /// now" card, Live Activity).
+        var isLive: Bool {
+            switch self {
+            case .enRoute, .arrived, .inProgress: return true
+            default: return false
+            }
+        }
     }
 
     /// Appendix B's legal-transition table, enforced here so the client and

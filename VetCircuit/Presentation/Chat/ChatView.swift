@@ -133,7 +133,7 @@ struct ChatView: View {
                     .padding()
                     .animation(Theme.springQuick, value: viewModel.messages.count)
                 }
-                .background(Color(.systemGroupedBackground))
+                .auroraScreenBackground()
                 .onChange(of: viewModel.messages.count) {
                     if let last = viewModel.messages.last {
                         withAnimation(Theme.springQuick) { proxy.scrollTo(last.id, anchor: .bottom) }

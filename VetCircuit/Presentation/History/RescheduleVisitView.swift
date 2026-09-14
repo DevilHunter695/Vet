@@ -94,7 +94,7 @@ struct RescheduleVisitView: View {
                     }
                 }
             }
-            .background(Color(.systemGroupedBackground))
+            .auroraScreenBackground()
             .navigationTitle("Reschedule")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

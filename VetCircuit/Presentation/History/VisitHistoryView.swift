@@ -149,7 +149,7 @@ struct VisitHistoryView: View {
                         }
                     }
                     .scrollContentBackground(.hidden)
-                    .background(Color(.systemGroupedBackground))
+                    .auroraScreenBackground()
                     .animation(Theme.springQuick, value: viewModel.visits.count)
                 }
             }

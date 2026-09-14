@@ -187,13 +187,14 @@ struct CircuitsListView: View {
                                         CircuitRow(circuit: circuit)
                                     }
                                     .buttonStyle(PressableStyle())
-                                    .simultaneousGesture(TapGesture().onEnded { viewModel.recordView(circuit) })
                                     .appearAnimation(delay: Theme.staggerDelay(index))
+                                    // Fades rows slightly as they leave the
+                                    // viewport. Opacity only: a scroll
+                                    // transition that scales or blurs moves
+                                    // the row's hit-test geometry while the
+                                    // user is reaching for it.
                                     .scrollTransition { content, phase in
-                                        content
-                                            .opacity(phase.isIdentity ? 1 : 0.6)
-                                            .scaleEffect(phase.isIdentity ? 1 : 0.94)
-                                            .blur(radius: phase.isIdentity ? 0 : 2)
+                                        content.opacity(phase.isIdentity ? 1 : 0.65)
                                     }
                                 }
                             }
@@ -201,7 +202,7 @@ struct CircuitsListView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
                     }
-                    .background(Color(.systemGroupedBackground))
+                    .auroraScreenBackground()
                 }
             }
             .animation(Theme.crossFade, value: viewModel.isLoading)
@@ -294,6 +295,10 @@ struct CircuitsListView: View {
             }
             .navigationDestination(for: Circuit.self) { circuit in
                 BookingView(circuit: circuit)
+                    // C9: recorded on arrival rather than via a tap gesture
+                    // racing the NavigationLink — the destination appearing
+                    // *is* the proof the circuit was viewed.
+                    .onAppear { viewModel.recordView(circuit) }
             }
             .navigationDestination(item: $rebookDestination) { circuit in
                 BookingView(circuit: circuit)
@@ -347,7 +352,6 @@ struct CircuitsListView: View {
                         ForEach(circuits) { circuit in
                             NavigationLink(value: circuit) { CircuitRow(circuit: circuit) }
                                 .buttonStyle(PressableStyle())
-                                .simultaneousGesture(TapGesture().onEnded { viewModel.recordView(circuit) })
                         }
                     }
                     if let services = result?.services, !services.isEmpty {

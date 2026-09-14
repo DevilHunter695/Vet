@@ -181,7 +181,7 @@ struct ServiceDetailView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .auroraScreenBackground()
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { selectedVariantId = preselectedVariantId ?? service.variants.first?.id }
         .task { await loadPets() }

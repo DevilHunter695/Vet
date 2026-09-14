@@ -65,7 +65,7 @@ struct EmergencyView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .auroraScreenBackground()
         .navigationTitle("Emergency")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load() }

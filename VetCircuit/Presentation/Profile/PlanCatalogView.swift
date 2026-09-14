@@ -59,7 +59,7 @@ struct PlanCatalogView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .auroraScreenBackground()
         .navigationTitle("Plans")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $viewModel.checkoutURL) { url in

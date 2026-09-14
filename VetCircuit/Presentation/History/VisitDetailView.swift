@@ -370,7 +370,7 @@ struct VisitDetailView: View {
             }
             .padding()
         }
-        .background(Color(.systemGroupedBackground))
+        .auroraScreenBackground()
         .navigationTitle("Visit details")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingReview) {
