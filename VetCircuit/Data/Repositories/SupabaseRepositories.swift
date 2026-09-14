@@ -856,6 +856,55 @@ final class SupabaseInvoiceRepository: InvoiceRepository {
     }
 }
 
+/// H7: corporate/RWA seat assignment roster (0048_corporate_seat_assignments.sql).
+final class SupabaseCorporateSeatAssignmentRepository: CorporateSeatAssignmentRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    private struct Row: Codable {
+        let id: UUID, subscriptionId: UUID, assignedPhone: String, assignedUserId: UUID?, assignedAt: Date
+        enum CodingKeys: String, CodingKey {
+            case id
+            case subscriptionId = "subscription_id", assignedPhone = "assigned_phone"
+            case assignedUserId = "assigned_user_id", assignedAt = "assigned_at"
+        }
+        func toDomain() -> CorporateSeatAssignment {
+            CorporateSeatAssignment(id: id, subscriptionId: subscriptionId, assignedPhone: assignedPhone, assignedUserId: assignedUserId, assignedAt: assignedAt)
+        }
+    }
+
+    func assignments(subscriptionId: UUID) async throws -> [CorporateSeatAssignment] {
+        let rows: [Row] = try await client.from("corporate_seat_assignments").select()
+            .eq("subscription_id", value: subscriptionId).execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func assignSeat(subscriptionId: UUID, phone: String, seatCount: Int) async throws -> CorporateSeatAssignment {
+        // The seat-count ceiling is a client-side pre-check for a fast error
+        // message; the unique(subscription_id, phone) constraint plus RLS's
+        // insert policy are what actually make this safe under RLS — a
+        // stricter server-side count check would need a Postgres function,
+        // same honest gap as several other "policy enforced client-side,
+        // re-checked structurally at the DB level" spots in this codebase.
+        let current = try await assignments(subscriptionId: subscriptionId)
+        guard current.count < seatCount else {
+            throw DomainError.validation("All \(seatCount) seats are already assigned — remove one first.")
+        }
+        struct Body: Encodable {
+            let subscriptionId: UUID, assignedPhone: String
+            enum CodingKeys: String, CodingKey { case subscriptionId = "subscription_id", assignedPhone = "assigned_phone" }
+        }
+        let rows: [Row] = try await client.from("corporate_seat_assignments")
+            .insert(Body(subscriptionId: subscriptionId, assignedPhone: phone)).select().execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+
+    func unassignSeat(id: UUID) async throws {
+        try await client.from("corporate_seat_assignments").delete().eq("id", value: id).execute()
+    }
+}
+
 /// I7: read-only — items are written vet/ops-side only (0047_visit_checklists.sql).
 final class SupabaseVisitChecklistRepository: VisitChecklistRepository {
     private let client: SupabaseClient

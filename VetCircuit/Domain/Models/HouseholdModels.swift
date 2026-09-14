@@ -32,6 +32,20 @@ struct HouseholdMember: Identifiable, Codable, Equatable, Hashable {
     }
 }
 
+// MARK: - H7: corporate/RWA seat assignment. `Subscription.seatCount` is
+// just the billed quantity; this is *who* fills each seat — mirrors
+// `HouseholdMember`'s "invite by phone, joins later" shape, since assigning
+// a seat is conceptually the same "grant this phone number access" action.
+struct CorporateSeatAssignment: Identifiable, Codable, Equatable, Hashable {
+    let id: UUID
+    var subscriptionId: UUID
+    /// Set until the assignee's own user row exists, exactly like
+    /// `HouseholdMember.invitedPhone`.
+    var assignedPhone: String
+    var assignedUserId: UUID?
+    var assignedAt: Date
+}
+
 // MARK: - Waitlist for uncovered clusters (plan §3 C10)
 
 struct WaitlistEntry: Identifiable, Codable, Equatable, Hashable {

@@ -504,6 +504,29 @@ actor MockPaymentDisputeRepository: PaymentDisputeRepository {
 // G5: generates a stand-in GST invoice for any visit so InvoiceView has
 // something real to render in mock mode — the Supabase conformer instead
 // reads an already-issued row (invoice numbering/GST math is server-side).
+/// H7: corporate/RWA seat assignment roster.
+actor MockCorporateSeatAssignmentRepository: CorporateSeatAssignmentRepository {
+    private var assignments: [CorporateSeatAssignment] = []
+
+    func assignments(subscriptionId: UUID) async throws -> [CorporateSeatAssignment] {
+        assignments.filter { $0.subscriptionId == subscriptionId }
+    }
+
+    func assignSeat(subscriptionId: UUID, phone: String, seatCount: Int) async throws -> CorporateSeatAssignment {
+        let current = assignments.filter { $0.subscriptionId == subscriptionId }
+        guard current.count < seatCount else {
+            throw DomainError.validation("All \(seatCount) seats are already assigned — remove one first.")
+        }
+        let assignment = CorporateSeatAssignment(id: UUID(), subscriptionId: subscriptionId, assignedPhone: phone, assignedUserId: nil, assignedAt: .now)
+        assignments.append(assignment)
+        return assignment
+    }
+
+    func unassignSeat(id: UUID) async throws {
+        assignments.removeAll { $0.id == id }
+    }
+}
+
 /// I8: device-local dedupe for the post-visit summary push — see the honest
 /// gap noted on `PostVisitSummaryRepository`. Used regardless of Mock/
 /// Supabase backend, since there's no server-side equivalent to call.

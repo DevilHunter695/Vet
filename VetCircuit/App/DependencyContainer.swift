@@ -73,6 +73,8 @@ final class DependencyContainer {
     let visitChecklistRepository: VisitChecklistRepository
     /// I8: device-local dedupe for the post-visit summary push.
     let postVisitSummaryRepository: PostVisitSummaryRepository
+    /// H7: corporate/RWA seat assignment roster.
+    let corporateSeatAssignmentRepository: CorporateSeatAssignmentRepository
 
     private init() {
         // TODO: once Supabase package + Config.plist are added, branch here:
@@ -130,6 +132,7 @@ final class DependencyContainer {
         self.labTestReportRepository = MockLabTestReportRepository()
         self.visitChecklistRepository = MockVisitChecklistRepository()
         self.postVisitSummaryRepository = LocalPostVisitSummaryRepository()
+        self.corporateSeatAssignmentRepository = MockCorporateSeatAssignmentRepository()
     }
 
     // MARK: Use case factories
@@ -246,5 +249,9 @@ final class DependencyContainer {
     /// I8: post-visit summary push, de-duplicated on-device.
     func sendPostVisitSummaryUseCase() -> SendPostVisitSummaryUseCase {
         SendPostVisitSummaryUseCase(sendTransactionalNotificationUseCase: sendTransactionalNotificationUseCase(), postVisitSummaryRepository: postVisitSummaryRepository)
+    }
+    /// H7: corporate/RWA seat assignment.
+    func manageCorporateSeatsUseCase() -> ManageCorporateSeatsUseCase {
+        ManageCorporateSeatsUseCase(repository: corporateSeatAssignmentRepository)
     }
 }

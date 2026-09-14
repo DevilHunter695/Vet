@@ -115,6 +115,10 @@ struct ManageSubscriptionView: View {
                     LabeledContent("Renews", value: subscription.renewalDate.formatted(date: .abbreviated, time: .omitted))
                     if subscription.planType.isBulk {
                         LabeledContent("Seats", value: "\(subscription.seatCount)")
+                        // H7: who fills each billed seat.
+                        NavigationLink("Assign seats") {
+                            CorporateSeatAssignmentView(subscription: subscription)
+                        }
                     }
                 }
                 .appearAnimation()

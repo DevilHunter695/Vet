@@ -360,6 +360,17 @@ protocol RescheduleProposalRepository: Sendable {
     func respond(id: UUID, accept: Bool) async throws -> RescheduleProposal
 }
 
+/// H7: corporate/RWA seat assignment — who fills each of a corporate
+/// subscription's billed seats. `SubscriptionManagementPolicy`'s seat-floor
+/// rule stays the money-side authority; this is purely the roster.
+protocol CorporateSeatAssignmentRepository: Sendable {
+    func assignments(subscriptionId: UUID) async throws -> [CorporateSeatAssignment]
+    /// Throws if every seat is already filled — enforced against
+    /// `Subscription.seatCount`, the real (billed) ceiling.
+    func assignSeat(subscriptionId: UUID, phone: String, seatCount: Int) async throws -> CorporateSeatAssignment
+    func unassignSeat(id: UUID) async throws
+}
+
 protocol NotificationPreferencesRepository: Sendable {
     /// Returns the default (all-on except promotions) preferences if the user
     /// has never saved any — there is always a value to render toggles from.

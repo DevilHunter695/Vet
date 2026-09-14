@@ -331,6 +331,26 @@ struct RenewalReminderUseCase {
     }
 }
 
+/// H7: corporate/RWA seat assignment — the roster of who fills each of a
+/// corporate subscription's billed seats.
+struct ManageCorporateSeatsUseCase {
+    let repository: CorporateSeatAssignmentRepository
+
+    func list(subscriptionId: UUID) async throws -> [CorporateSeatAssignment] {
+        try await repository.assignments(subscriptionId: subscriptionId)
+    }
+
+    func assign(subscriptionId: UUID, phone: String, seatCount: Int) async throws -> CorporateSeatAssignment {
+        let trimmed = phone.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { throw DomainError.validation("Enter a phone number.") }
+        return try await repository.assignSeat(subscriptionId: subscriptionId, phone: trimmed, seatCount: seatCount)
+    }
+
+    func unassign(id: UUID) async throws {
+        try await repository.unassignSeat(id: id)
+    }
+}
+
 struct SendChatMessageUseCase {
     let chatRepository: ChatRepository
 

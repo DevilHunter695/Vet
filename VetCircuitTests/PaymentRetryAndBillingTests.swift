@@ -109,6 +109,35 @@ struct VisitStatusHistoryTests {
     }
 }
 
+// H7: corporate/RWA seat assignment.
+
+@Suite("ManageCorporateSeatsUseCase")
+struct ManageCorporateSeatsUseCaseTests {
+    @Test("assigns seats up to the seat count, then refuses")
+    func refusesOverCapacity() async throws {
+        let repo = MockCorporateSeatAssignmentRepository()
+        let useCase = ManageCorporateSeatsUseCase(repository: repo)
+        let subscriptionId = UUID()
+
+        _ = try await useCase.assign(subscriptionId: subscriptionId, phone: "+911111111111", seatCount: 1)
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.assign(subscriptionId: subscriptionId, phone: "+912222222222", seatCount: 1)
+        }
+    }
+
+    @Test("unassigning frees the seat for reassignment")
+    func unassignFreesSeat() async throws {
+        let repo = MockCorporateSeatAssignmentRepository()
+        let useCase = ManageCorporateSeatsUseCase(repository: repo)
+        let subscriptionId = UUID()
+
+        let assignment = try await useCase.assign(subscriptionId: subscriptionId, phone: "+911111111111", seatCount: 1)
+        try await useCase.unassign(id: assignment.id)
+        let second = try await useCase.assign(subscriptionId: subscriptionId, phone: "+912222222222", seatCount: 1)
+        #expect(second.assignedPhone == "+912222222222")
+    }
+}
+
 // H1: plan catalog — inclusions & fair-use limits visible before purchase.
 
 @Suite("PlanCatalogEntry")
