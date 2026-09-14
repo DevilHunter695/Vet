@@ -91,6 +91,7 @@ final class ProfileViewModel {
 
 struct ProfileView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(Router.self) private var router
     @State private var viewModel = ProfileViewModel()
     @State private var checkoutURL: URL?
     @AppStorage("vc.selected_vertical") private var selectedVerticalRaw: String = Vertical.vet.rawValue
@@ -115,7 +116,13 @@ struct ProfileView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        // N7: path driven by the shared Router, mirroring VisitHistoryView —
+        // lets `vetcircuit://household` push straight to HouseholdView
+        // instead of only switching to this tab. The existing
+        // `NavigationLink("Household") { HouseholdView() }` below is
+        // untouched and keeps working the same way inside this path-backed
+        // stack.
+        NavigationStack(path: Bindable(router).profilePath) {
             List {
                 if let user = session.currentUser {
                     Section {
@@ -295,6 +302,16 @@ struct ProfileView: View {
                 }
             }
             .navigationTitle("Profile")
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .household:
+                    HouseholdView()
+                case .visitDetail, .chat:
+                    // Not this tab's routes — Router only ever pushes these
+                    // onto visitsPath, never profilePath.
+                    EmptyView()
+                }
+            }
             .animation(Theme.crossFade, value: viewModel.loyaltyAccount?.points)
             .task { if let user = session.currentUser { await viewModel.load(userId: user.id, currentUser: user) } }
             .sheet(item: $checkoutURL) { url in
@@ -377,5 +394,5 @@ extension URL: @retroactive Identifiable {
 }
 
 #Preview {
-    ProfileView().environment(SessionStore())
+    ProfileView().environment(SessionStore()).environment(Router())
 }
