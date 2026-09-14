@@ -256,6 +256,16 @@ struct VisitDetailView: View {
                 }
 
                 if visit.status == .completed {
+                    // G5: GST-compliant invoice, rendered on-device from the
+                    // server-issued Invoice row.
+                    NavigationLink {
+                        InvoiceView(visit: visit)
+                    } label: {
+                        ActionRow(title: "View invoice", systemImage: "doc.text.fill", tint: Theme.primary)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .appearAnimation(delay: 0.09)
+
                     PrimaryButton(title: "Rate this visit") { showingReview = true }
                         .appearAnimation(delay: 0.1)
 

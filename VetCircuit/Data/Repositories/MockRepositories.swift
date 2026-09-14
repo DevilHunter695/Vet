@@ -469,8 +469,20 @@ actor MockPaymentDisputeRepository: PaymentDisputeRepository {
     }
 }
 
+// G5: generates a stand-in GST invoice for any visit so InvoiceView has
+// something real to render in mock mode — the Supabase conformer instead
+// reads an already-issued row (invoice numbering/GST math is server-side).
 actor MockInvoiceRepository: InvoiceRepository {
-    func invoice(visitId: UUID) async throws -> Invoice? { nil }
+    func invoice(visitId: UUID) async throws -> Invoice? {
+        let subtotal = 59_900
+        let gst = Int((Double(subtotal) * 0.18).rounded())
+        return Invoice(
+            id: UUID(), visitId: visitId,
+            invoiceNumber: "VC-\(String(format: "%06d", abs(visitId.uuidString.hashValue % 999_999)))",
+            breakdown: PriceBreakdown(lineItems: [PriceLineItem(label: "Home visit consultation", amountMinorUnits: subtotal)], totalMinorUnits: subtotal),
+            gstMinorUnits: gst, issuedAt: .now
+        )
+    }
 }
 
 actor MockSubscriptionRepository: SubscriptionRepository {
