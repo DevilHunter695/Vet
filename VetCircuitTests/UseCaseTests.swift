@@ -618,6 +618,62 @@ struct GetLoyaltyAccountUseCaseTests {
     }
 }
 
+// E5: loyalty point redemption at checkout.
+
+@Suite("LoyaltyRedemptionPolicy")
+struct LoyaltyRedemptionPolicyTests {
+    @Test("converts points to minor units at the fixed rate")
+    func convertsPoints() {
+        #expect(LoyaltyRedemptionPolicy.minorUnits(forPoints: 100) == 5_000)
+    }
+
+    @Test("rejects redeeming below the minimum")
+    func rejectsBelowMinimum() {
+        #expect(LoyaltyRedemptionPolicy.validate(points: 50, availablePoints: 500) != nil)
+    }
+
+    @Test("rejects redeeming more than available")
+    func rejectsOverAvailable() {
+        #expect(LoyaltyRedemptionPolicy.validate(points: 500, availablePoints: 100) != nil)
+    }
+
+    @Test("allows a valid redemption")
+    func allowsValidRedemption() {
+        #expect(LoyaltyRedemptionPolicy.validate(points: 200, availablePoints: 500) == nil)
+    }
+}
+
+@Suite("RedeemLoyaltyPointsUseCase")
+struct RedeemLoyaltyPointsUseCaseTests {
+    @Test("redeems points and moves them into wallet credit")
+    func redeemsAndCreditsWallet() async throws {
+        let walletRepo = MockWalletRepository()
+        let loyaltyRepo = MockLoyaltyRepository(walletRepository: walletRepo)
+        let userId = UUID()
+        _ = try await loyaltyRepo.awardPoints(userId: userId, points: 500)
+        let balanceBefore = try await walletRepo.balanceMinorUnits(userId: userId)
+
+        let useCase = RedeemLoyaltyPointsUseCase(loyaltyRepository: loyaltyRepo)
+        let account = try await useCase.execute(userId: userId, points: 200)
+
+        #expect(account.points == 300)
+        let balanceAfter = try await walletRepo.balanceMinorUnits(userId: userId)
+        #expect(balanceAfter == balanceBefore + LoyaltyRedemptionPolicy.minorUnits(forPoints: 200))
+    }
+
+    @Test("rejects redeeming more points than the account has")
+    func rejectsOverdraw() async throws {
+        let loyaltyRepo = MockLoyaltyRepository()
+        let userId = UUID()
+        _ = try await loyaltyRepo.awardPoints(userId: userId, points: 100)
+
+        let useCase = RedeemLoyaltyPointsUseCase(loyaltyRepository: loyaltyRepo)
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(userId: userId, points: 500)
+        }
+    }
+}
+
 @Suite("RunTriageUseCase")
 struct RunTriageUseCaseTests {
     @Test("rejects empty symptom description")

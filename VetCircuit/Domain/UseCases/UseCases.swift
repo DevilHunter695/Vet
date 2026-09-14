@@ -674,6 +674,21 @@ struct GetLoyaltyAccountUseCase {
     }
 }
 
+/// E5: loyalty point redemption — validates against the caller's own real
+/// balance (never a client-supplied one) before asking the repository to
+/// perform the redemption.
+struct RedeemLoyaltyPointsUseCase {
+    let loyaltyRepository: LoyaltyRepository
+
+    func execute(userId: UUID, points: Int) async throws -> LoyaltyAccount {
+        let account = try await loyaltyRepository.account(userId: userId)
+        if let error = LoyaltyRedemptionPolicy.validate(points: points, availablePoints: account.points) {
+            throw error
+        }
+        return try await loyaltyRepository.redeemPoints(userId: userId, points: points)
+    }
+}
+
 struct ManageAccountDeletionUseCase {
     let accountRepository: AccountRepository
     let authRepository: AuthRepository

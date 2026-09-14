@@ -516,6 +516,34 @@ enum Vertical: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - E5: loyalty point redemption at checkout — converts points into
+// wallet credit (which CartView's existing "use wallet balance" toggle
+// already spends) rather than a parallel discount mechanism, so pricing has
+// exactly one place that applies a balance, not two.
+enum LoyaltyRedemptionPolicy {
+    /// 1 point = ₹0.50 (50 paise) — arbitrary but fixed, same shape as
+    /// `CancellationPolicy`'s hardcoded 4h window: a real deployment would
+    /// tune this, the important part is client and server agree on one number.
+    static let minorUnitsPerPoint = 50
+    /// Redeeming a handful of points isn't worth a ledger row.
+    static let minimumRedeemablePoints = 100
+
+    static func minorUnits(forPoints points: Int) -> Int { max(0, points) * minorUnitsPerPoint }
+
+    /// Pure validation — mirrors `SubscriptionManagementPolicy.validate`'s
+    /// shape: nil means allowed, otherwise the reason it isn't.
+    static func validate(points: Int, availablePoints: Int) -> DomainError? {
+        guard points > 0 else { return .validation("Enter a number of points to redeem.") }
+        guard points >= minimumRedeemablePoints else {
+            return .validation("Redeem at least \(minimumRedeemablePoints) points at a time.")
+        }
+        guard points <= availablePoints else {
+            return .validation("You only have \(availablePoints) points available.")
+        }
+        return nil
+    }
+}
+
 struct LoyaltyAccount: Codable, Equatable {
     var userId: UUID
     var points: Int

@@ -249,6 +249,18 @@ actor MockWalletRepository: WalletRepository {
     func entries(userId: UUID) async throws -> [WalletLedgerEntry] {
         seededEntries(userId: userId).sorted { $0.createdAt > $1.createdAt }
     }
+
+    /// E5: not part of `WalletRepository` — called directly (concrete type,
+    /// not the protocol) only by `MockLoyaltyRepository.redeemPoints`, so a
+    /// local-dev redemption actually moves the mock wallet balance too,
+    /// mirroring what the real `redeem_loyalty_points` Postgres function
+    /// does atomically server-side.
+    func creditFromLoyaltyRedemption(userId: UUID, amountMinorUnits: Int) {
+        var entries = seededEntries(userId: userId)
+        entries.append(WalletLedgerEntry(id: UUID(), userId: userId, amountMinorUnits: amountMinorUnits,
+                                          reason: "Loyalty points redeemed", relatedVisitId: nil, relatedRefundId: nil, createdAt: .now))
+        entriesByUser[userId] = entries
+    }
 }
 
 actor MockCouponRepository: CouponRepository {
@@ -887,6 +899,13 @@ actor MockCallRepository: CallRepository {
 
 actor MockLoyaltyRepository: LoyaltyRepository {
     private var accounts: [UUID: LoyaltyAccount] = [:]
+    // E5: concrete type, not the protocol — see `creditFromLoyaltyRedemption`'s
+    // doc comment for why redemption needs the extra non-protocol method.
+    private let walletRepository: MockWalletRepository?
+
+    init(walletRepository: MockWalletRepository? = nil) {
+        self.walletRepository = walletRepository
+    }
 
     func account(userId: UUID) async throws -> LoyaltyAccount {
         accounts[userId] ?? LoyaltyAccount(userId: userId, points: 0, tier: .bronze)
@@ -897,6 +916,18 @@ actor MockLoyaltyRepository: LoyaltyRepository {
         current.points += points
         current.tier = .forPoints(current.points)
         accounts[userId] = current
+        return current
+    }
+
+    func redeemPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount {
+        var current = try await account(userId: userId)
+        guard LoyaltyRedemptionPolicy.validate(points: points, availablePoints: current.points) == nil else {
+            throw DomainError.validation("Not enough points to redeem.")
+        }
+        current.points -= points
+        current.tier = .forPoints(current.points)
+        accounts[userId] = current
+        await walletRepository?.creditFromLoyaltyRedemption(userId: userId, amountMinorUnits: LoyaltyRedemptionPolicy.minorUnits(forPoints: points))
         return current
     }
 }

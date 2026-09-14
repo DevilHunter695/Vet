@@ -197,6 +197,48 @@ final class SupabaseWalletRepository: WalletRepository {
     }
 }
 
+/// Note: not yet wired into `DependencyContainer` (loyalty stays Mock-only
+/// there today, unlike most other repositories) — added so the Supabase
+/// side of E5's point redemption exists in code, matching this codebase's
+/// convention of shipping both conformers even before the container branches
+/// on `RemoteAppConfig.isBackendConfigured`.
+final class SupabaseLoyaltyRepository: LoyaltyRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    private struct Row: Decodable {
+        let userId: UUID
+        let points: Int
+        let tier: String
+        enum CodingKeys: String, CodingKey { case userId = "user_id", points, tier }
+        func toDomain() -> LoyaltyAccount { LoyaltyAccount(userId: userId, points: points, tier: LoyaltyAccount.Tier(rawValue: tier) ?? .bronze) }
+    }
+
+    func account(userId: UUID) async throws -> LoyaltyAccount {
+        let rows: [Row] = try await client.from("loyalty_accounts").select().eq("user_id", value: userId).execute().value
+        return rows.first?.toDomain() ?? LoyaltyAccount(userId: userId, points: 0, tier: .bronze)
+    }
+
+    /// Server/trigger-owned column per 0001_init.sql's RLS comment ("points
+    /// are only ever awarded server-side... never directly writable by the
+    /// client") — this exists to satisfy the protocol; a real client build
+    /// should never actually call it, only a completed-visit trigger should.
+    func awardPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount {
+        throw DomainError.validation("Points are awarded server-side only.")
+    }
+
+    /// E5: single RPC does both mutations atomically (deduct points, credit
+    /// wallet_ledger) — see 0050_redeem_loyalty_points.sql. Never two
+    /// separate client writes, which could partially fail.
+    func redeemPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount {
+        let rows: [Row] = try await client.rpc("redeem_loyalty_points", params: [
+            "p_user_id": userId.uuidString, "p_points": String(points),
+        ]).execute().value
+        guard let row = rows.first else { throw DomainError.unknown }
+        return row.toDomain()
+    }
+}
+
 final class SupabaseCouponRepository: CouponRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }

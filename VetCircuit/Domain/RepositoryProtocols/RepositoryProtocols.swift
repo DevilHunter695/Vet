@@ -325,6 +325,14 @@ protocol LoyaltyRepository: Sendable {
     func account(userId: UUID) async throws -> LoyaltyAccount
     /// Called when a visit completes; awards points and returns the updated account.
     func awardPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount
+    /// E5: redeems `points` into wallet credit (at `LoyaltyRedemptionPolicy`'s
+    /// rate) and returns the updated account. The one client-facing surface
+    /// onto the otherwise server-write-only wallet ledger — scoped to "spend
+    /// your own points", never a general-purpose credit — mirrors
+    /// `wallet_ledger`'s "no client insert policy at all" discipline (0026)
+    /// by doing both mutations inside a single server-side function rather
+    /// than exposing a generic wallet-write method on the client.
+    func redeemPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount
 }
 
 // MARK: - D5: per-vet service overrides — public read (customers need to see
