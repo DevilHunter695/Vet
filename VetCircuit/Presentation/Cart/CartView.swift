@@ -469,12 +469,16 @@ private struct CartItemRow: View {
                 Stepper("Qty: \(quantity)", value: $quantity, in: 1...20)
                     .font(.brandCaption)
                     .fixedSize()
+                    .accessibilityLabel("Quantity")
+                    .accessibilityValue("\(quantity)")
             }
             Spacer()
             Text(price).font(.brandBody).foregroundStyle(.secondary)
+                .accessibilityLabel("Price \(price)")
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.neutral)
             }
+            .accessibilityLabel("Remove \(name) from cart")
         }
         .padding()
         .glassCard()
