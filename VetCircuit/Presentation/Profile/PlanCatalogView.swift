@@ -32,6 +32,19 @@ struct PlanCatalogView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Membership").brandEyebrow()
+                    Text("Pay less, wait less")
+                        .font(.brandTitle)
+                        .brandDisplayText()
+                    Text("Members get included visits, priority slots on every circuit, and member pricing on everything else. Cancel any time — there's no lock-in.")
+                        .font(.brandCallout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 4)
+
                 ForEach(PlanCatalogEntry.all.filter { !$0.planType.isBulk }) { entry in
                     PlanCatalogCard(
                         entry: entry,
@@ -49,7 +62,11 @@ struct PlanCatalogView: View {
                         Task { await viewModel.subscribe(userId: user.id, plan: .corporate, seatCount: seatCount) }
                     }
                 } label: {
-                    ActionRow2(title: "Corporate / RWA bulk plan", systemImage: "building.2.fill")
+                    ActionRow2(
+                        title: "Corporate / RWA bulk plan",
+                        subtitle: "One plan covering every household in your complex or office",
+                        systemImage: "building.2.fill"
+                    )
                 }
                 .buttonStyle(PressableStyle())
 
@@ -74,49 +91,78 @@ private struct PlanCatalogCard: View {
     let onSubscribe: () -> Void
 
     var body: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text(entry.planType.displayName).font(.brandHeadline)
-                    Spacer()
-                    Text(CurrencyFormatter.rupees(entry.priceMinorUnits)).font(.brandHeadline).foregroundStyle(Theme.primary)
-                }
-                Text(entry.billingPeriodLabel).font(.brandCaption).foregroundStyle(.secondary)
-
-                Divider()
-
-                ForEach(entry.inclusions, id: \.self) { inclusion in
-                    Label(inclusion, systemImage: "checkmark.circle.fill")
-                        .font(.brandCaption)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(entry.planType.displayName)
+                    .font(.brandTitle3)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text(CurrencyFormatter.rupees(entry.priceMinorUnits))
+                        .font(.brandMono(.title3, weight: .bold))
+                        .foregroundStyle(Theme.primary)
+                        .brandDisplayText()
+                    Text(entry.billingPeriodLabel)
+                        .font(.brandCaption2)
                         .foregroundStyle(.secondary)
                 }
-
-                // H1: fair-use limit stated plainly, before commitment.
-                Label(entry.fairUseSummary, systemImage: "info.circle")
-                    .font(.brandCaption)
-                    .foregroundStyle(Theme.warning)
-
-                PrimaryButton(title: "Subscribe", isLoading: isSubscribing, action: onSubscribe)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Divider().opacity(0.4)
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(entry.inclusions, id: \.self) { inclusion in
+                    HStack(alignment: .top, spacing: 9) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.success)
+                        Text(inclusion)
+                            .font(.brandCallout)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+
+            // H1: fair-use limit stated plainly, before commitment — not
+            // buried in terms the customer reads after paying.
+            CalloutNote(text: entry.fairUseSummary, systemImage: "info.circle.fill", tint: Theme.warning)
+
+            PrimaryButton(title: "Subscribe", isLoading: isSubscribing, action: onSubscribe)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .featuredGlassCard()
     }
 }
 
 private struct ActionRow2: View {
     let title: String
+    var subtitle: String? = nil
     let systemImage: String
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage).foregroundStyle(Theme.primary)
-            Text(title).font(.brandHeadline).foregroundStyle(.primary)
-            Spacer()
-            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+        HStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Theme.primary)
+                .frame(width: 34, height: 34)
+                .background(Theme.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.brandHeadline).foregroundStyle(.primary)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.brandCaption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
         }
-        .padding()
-        .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: Theme.cardShadow, radius: 8, y: 3)
+        .padding(16)
+        .glassCard(cornerRadius: 16)
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 

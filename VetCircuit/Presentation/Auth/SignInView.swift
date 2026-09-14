@@ -51,7 +51,12 @@ struct SignInView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.heroGradient.ignoresSafeArea()
+                // The full aurora at extra intensity — this is the one screen
+                // where the background *is* the product's first impression,
+                // so it gets the blue→green→black gradient with both lights
+                // turned up rather than the flat hero fill.
+                AuroraBackground(intensity: 1.5)
+                    .environment(\.colorScheme, .dark)
 
                 VStack(spacing: 0) {
                     Spacer(minLength: 24)
@@ -115,6 +120,8 @@ struct SignInView: View {
                         .animation(Theme.springQuick, value: viewModel.isOTPSent)
                     }
                     .padding(20)
+                    .glassCard(cornerRadius: 24)
+                    .environment(\.colorScheme, .dark)
                     .appearAnimation(delay: 0.15)
 
                     Spacer(minLength: 32)
