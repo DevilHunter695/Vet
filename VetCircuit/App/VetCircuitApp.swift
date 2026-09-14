@@ -64,6 +64,9 @@ struct VetCircuitApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var session = SessionStore()
     @State private var pendingDeepLink = PendingDeepLinkStore()
+    // N7: the shared Router — see App/Router.swift for exactly which tabs'
+    // NavigationStacks it drives and which deep links it can push onto them.
+    @State private var router = Router()
     @AppStorage("vc.appearance") private var appearanceRaw: String = AppearanceOption.system.rawValue
 
     var sharedModelContainer: ModelContainer = {
@@ -81,13 +84,22 @@ struct VetCircuitApp: App {
             RootView()
                 .environment(session)
                 .environment(pendingDeepLink)
+                .environment(router)
                 .tint(Theme.primary)
                 .preferredColorScheme((AppearanceOption(rawValue: appearanceRaw) ?? .system).colorScheme)
                 .task { await session.bootstrap() }
                 .task { await PushNotificationManager.shared.requestAuthorizationAndRegister() }
                 // N7: both the custom scheme and (once configured in the
-                // Associated Domains entitlement) a universal link land here.
-                .onOpenURL { url in pendingDeepLink.handle(url) }
+                // Associated Domains entitlement) a universal link land
+                // here. `pendingDeepLink` still carries `.book`, which
+                // CircuitsListView resolves itself against its own loaded
+                // circuits (see Router's doc comment for why); `router`
+                // now also switches tab *and* pushes the specific Route for
+                // `.visit`/`.chat`/`.household`.
+                .onOpenURL { url in
+                    pendingDeepLink.handle(url)
+                    router.handle(DeepLinkParser.parse(url))
+                }
         }
         .modelContainer(sharedModelContainer)
     }
@@ -176,34 +188,32 @@ struct RootView: View {
 
 struct MainTabView: View {
     @Environment(PendingDeepLinkStore.self) private var pendingDeepLink
-    @State private var selectedTab = 0
+    @Environment(Router.self) private var router
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        @Bindable var router = router
+        TabView(selection: $router.selectedTab) {
             CircuitsListView()
-                .tabItem { Label("Book", systemImage: selectedTab == 0 ? "calendar.badge.plus" : "calendar") }
+                .tabItem { Label("Book", systemImage: router.selectedTab == 0 ? "calendar.badge.plus" : "calendar") }
                 .tag(0)
 
             VisitHistoryView()
-                .tabItem { Label("Visits", systemImage: selectedTab == 1 ? "clock.fill" : "clock.arrow.circlepath") }
+                .tabItem { Label("Visits", systemImage: router.selectedTab == 1 ? "clock.fill" : "clock.arrow.circlepath") }
                 .tag(1)
 
             ProfileView()
-                .tabItem { Label("Profile", systemImage: selectedTab == 2 ? "person.crop.circle.fill" : "person.circle") }
+                .tabItem { Label("Profile", systemImage: router.selectedTab == 2 ? "person.crop.circle.fill" : "person.circle") }
                 .tag(2)
         }
-        .onChange(of: selectedTab) { _, _ in Haptics.selection() }
-        // N7: routes the pending deep link to the tab that can act on it.
-        // `.book` is fully resolved inside CircuitsListView; `.visit` only
-        // gets as far as the Visits tab (no shared Router to push a specific
-        // visit's detail screen onto — see PendingDeepLinkStore's doc comment).
+        .onChange(of: router.selectedTab) { _, _ in Haptics.selection() }
+        // N7: `.book` is the one DeepLink case Router.handle(_:) doesn't act
+        // on — CircuitsListView resolves it itself against its own loaded
+        // circuits (unchanged from before this Router existed). Every other
+        // case (`.visit`, `.chat`, `.household`) now switches tab *and*
+        // pushes its Route via `router.handle(_:)` in `.onOpenURL`, so
+        // nothing else needs handling here.
         .onChange(of: pendingDeepLink.pending) { _, link in
-            switch link {
-            case .book: selectedTab = 0
-            case .visit: selectedTab = 1
-            case .household: selectedTab = 2
-            case .unknown, nil: break
-            }
+            if case .book = link { router.selectedTab = 0 }
         }
     }
 }
