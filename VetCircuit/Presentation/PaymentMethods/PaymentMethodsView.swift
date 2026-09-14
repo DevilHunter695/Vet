@@ -93,6 +93,8 @@ struct PaymentMethodsView: View {
                         }
                     }
                     .contentShape(Rectangle())
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(method.displayLabel + (method.isDefault ? ", default" : ""))
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
                             guard let user = session.currentUser else { return }
@@ -168,6 +170,8 @@ struct SavedPaymentMethodPickerRow: View {
                     }
                     .buttonStyle(PressableStyle())
                     .selectable(isSelected: selectedMethodId == method.id, cornerRadius: 12)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(selectedMethodId == method.id ? .isSelected : [])
                 }
             }
         }
