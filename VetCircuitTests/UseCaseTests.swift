@@ -295,6 +295,94 @@ struct CancelVisitUseCaseTests {
     }
 }
 
+@Suite("FlagVisitNoShowUseCase")
+struct FlagVisitNoShowUseCaseTests {
+    @Test("leaves a still-current visit alone before the grace window elapses")
+    func ignoresVisitStillWithinGrace() async throws {
+        let visitRepo = MockVisitRepository()
+        let visit = try await visitRepo.createVisit(
+            petId: UUID(), vetId: UUID(), circuitId: UUID(),
+            slot: ScheduleSlot(id: UUID(), dayOfWeek: 1, startTime: .now.addingTimeInterval(-60), endTime: .now.addingTimeInterval(3600), capacity: 3, bookedCount: 0),
+            idempotencyKey: UUID().uuidString
+        )
+        let useCase = FlagVisitNoShowUseCase(
+            cancelVisitUseCase: CancelVisitUseCase(visitRepository: visitRepo, refundRepository: MockRefundRepository()),
+            noShowDetectionRepository: LocalNoShowDetectionRepository()
+        )
+        let flagged = try await useCase.execute(visit: visit)
+        #expect(!flagged)
+        let unchanged = try await visitRepo.visit(id: visit.id)
+        #expect(unchanged.status == .requested)
+    }
+
+    @Test("flags and cancels a requested visit once past the grace window, with no refund")
+    func flagsPastGraceVisit() async throws {
+        let visitRepo = MockVisitRepository()
+        let visit = try await visitRepo.createVisit(
+            petId: UUID(), vetId: UUID(), circuitId: UUID(),
+            slot: ScheduleSlot(id: UUID(), dayOfWeek: 1, startTime: .now.addingTimeInterval(-3600), endTime: .now.addingTimeInterval(-1800), capacity: 3, bookedCount: 0),
+            idempotencyKey: UUID().uuidString
+        )
+        let refundRepo = MockRefundRepository()
+        let useCase = FlagVisitNoShowUseCase(
+            cancelVisitUseCase: CancelVisitUseCase(visitRepository: visitRepo, refundRepository: refundRepo),
+            noShowDetectionRepository: LocalNoShowDetectionRepository()
+        )
+        let flagged = try await useCase.execute(visit: visit)
+        #expect(flagged)
+        let updated = try await visitRepo.visit(id: visit.id)
+        #expect(updated.status == .cancelledByUser)
+        let refunds = try await refundRepo.refunds(visitId: visit.id)
+        #expect(refunds.isEmpty)
+    }
+
+    @Test("never flags the same visit twice, even across separate use-case instances")
+    func dedupesAcrossCalls() async throws {
+        let visitRepo = MockVisitRepository()
+        let visit = try await visitRepo.createVisit(
+            petId: UUID(), vetId: UUID(), circuitId: UUID(),
+            slot: ScheduleSlot(id: UUID(), dayOfWeek: 1, startTime: .now.addingTimeInterval(-3600), endTime: .now.addingTimeInterval(-1800), capacity: 3, bookedCount: 0),
+            idempotencyKey: UUID().uuidString
+        )
+        let dedupeRepo = LocalNoShowDetectionRepository()
+        let firstUseCase = FlagVisitNoShowUseCase(
+            cancelVisitUseCase: CancelVisitUseCase(visitRepository: visitRepo, refundRepository: MockRefundRepository()),
+            noShowDetectionRepository: dedupeRepo
+        )
+        let firstFlag = try await firstUseCase.execute(visit: visit)
+        #expect(firstFlag)
+
+        // A fresh use case instance backed by the same dedupe repository —
+        // simulating the app reopening — must not re-process it, matching
+        // LocalPostVisitSummaryRepository's dedupe guarantee for I8.
+        let secondUseCase = FlagVisitNoShowUseCase(
+            cancelVisitUseCase: CancelVisitUseCase(visitRepository: visitRepo, refundRepository: MockRefundRepository()),
+            noShowDetectionRepository: dedupeRepo
+        )
+        var flaggedVisit = visit
+        flaggedVisit.status = .cancelledByUser
+        let secondFlag = try await secondUseCase.execute(visit: flaggedVisit)
+        #expect(!secondFlag)
+    }
+
+    @Test("ignores visits that are already past requested/confirmed")
+    func ignoresNonPreVisitStatuses() async throws {
+        let visitRepo = MockVisitRepository()
+        var visit = try await visitRepo.createVisit(
+            petId: UUID(), vetId: UUID(), circuitId: UUID(),
+            slot: ScheduleSlot(id: UUID(), dayOfWeek: 1, startTime: .now.addingTimeInterval(-3600), endTime: .now.addingTimeInterval(-1800), capacity: 3, bookedCount: 0),
+            idempotencyKey: UUID().uuidString
+        )
+        visit.status = .completed
+        let useCase = FlagVisitNoShowUseCase(
+            cancelVisitUseCase: CancelVisitUseCase(visitRepository: visitRepo, refundRepository: MockRefundRepository()),
+            noShowDetectionRepository: LocalNoShowDetectionRepository()
+        )
+        let flagged = try await useCase.execute(visit: visit)
+        #expect(!flagged)
+    }
+}
+
 @Suite("RescheduleVisitUseCase")
 struct RescheduleVisitUseCaseTests {
     @Test("rejects rescheduling inside the 4-hour policy window")
