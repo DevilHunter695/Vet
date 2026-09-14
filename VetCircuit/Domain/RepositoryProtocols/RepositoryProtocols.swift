@@ -24,6 +24,15 @@ protocol VisitRepository: Sendable {
     func listVisits(userId: UUID) async throws -> [Visit]
     func visit(id: UUID) async throws -> Visit
     func updateStatus(visitId: UUID, status: Visit.VisitStatus) async throws -> Visit
+    /// E6/G6: links a succeeded payment to the visit it paid for and moves
+    /// the visit out of `requested` into `confirmed` in the same step — the
+    /// one place `Visit.paymentId` is ever set. In production this mirrors
+    /// (and is superseded by) the payment-gateway webhook, which is the only
+    /// place a payment is ever *marked* succeeded in the first place; this
+    /// call just lets the already-signed-in client reflect that same,
+    /// already-true fact locally once it observes `paymentStatus == .succeeded`,
+    /// rather than the client being the one to decide a payment succeeded.
+    func attachPayment(visitId: UUID, paymentId: UUID) async throws -> Visit
     func cancelVisit(visitId: UUID) async throws
     /// F3: reschedule to a new slot — the visit keeps its identity (history,
     /// chat thread) rather than being cancelled and rebooked.
@@ -124,6 +133,13 @@ protocol PaymentRepository: Sendable {
     func createCheckout(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> URL
     func createCheckout(forSubscription plan: Subscription.PlanType) async throws -> URL
     func paymentStatus(paymentId: UUID) async throws -> Payment.Status
+    /// G6/E8: the id of the payment most recently created by
+    /// `createCheckout(forVisit:quoteId:amountMinorUnits:)` for this visit —
+    /// `createCheckout` itself only returns the hosted-checkout URL (kept
+    /// stable so it isn't a breaking change everywhere it's called), so the
+    /// booking pipeline looks the payment id up separately once it needs to
+    /// poll `paymentStatus` or attach the payment to the confirmed visit.
+    func latestPaymentId(forVisit visitId: UUID) async throws -> UUID?
     /// E11: tagged distinctly from a regular visit charge (payments.kind =
     /// 'tip') so the server can credit the vet 100% of it instead of the
     /// ~70% split a completed visit earns (0028_tips.sql).

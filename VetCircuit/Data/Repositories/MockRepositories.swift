@@ -458,6 +458,14 @@ actor MockVisitRepository: VisitRepository {
         return visits[index]
     }
 
+    func attachPayment(visitId: UUID, paymentId: UUID) async throws -> Visit {
+        guard let index = visits.firstIndex(where: { $0.id == visitId }) else { throw DomainError.notFound("Visit") }
+        visits[index].paymentId = paymentId
+        visits[index].status = .confirmed
+        logStatusEvent(visitId: visitId, status: .confirmed)
+        return visits[index]
+    }
+
     func cancelVisit(visitId: UUID) async throws {
         guard let index = visits.firstIndex(where: { $0.id == visitId }) else { throw DomainError.notFound("Visit") }
         visits[index].status = .cancelledByUser
@@ -647,8 +655,15 @@ actor MockSubscriptionRepository: SubscriptionRepository {
 }
 
 actor MockPaymentRepository: PaymentRepository {
+    // G6/E8: mirrors the `payments` table well enough for the booking
+    // pipeline to poll a real id/status pair rather than a hardcoded
+    // "always succeeded" — the id `createCheckout` implicitly creates is
+    // recorded here so `latestPaymentId(forVisit:)` can hand it back.
+    private var paymentIdsByVisit: [UUID: UUID] = [:]
+
     func createCheckout(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> URL {
-        URL(string: "https://checkout.example.com/visit/\(visitId)?quote=\(quoteId)&amount=\(amountMinorUnits)")!
+        paymentIdsByVisit[visitId] = UUID()
+        return URL(string: "https://checkout.example.com/visit/\(visitId)?quote=\(quoteId)&amount=\(amountMinorUnits)")!
     }
 
     func createCheckout(forSubscription plan: Subscription.PlanType) async throws -> URL {
@@ -656,6 +671,8 @@ actor MockPaymentRepository: PaymentRepository {
     }
 
     func paymentStatus(paymentId: UUID) async throws -> Payment.Status { .succeeded }
+
+    func latestPaymentId(forVisit visitId: UUID) async throws -> UUID? { paymentIdsByVisit[visitId] }
 
     func createTipCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL {
         URL(string: "https://checkout.example.com/tip/\(visitId)?amount=\(amountMinorUnits)")!

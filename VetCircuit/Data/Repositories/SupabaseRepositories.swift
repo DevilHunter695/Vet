@@ -717,6 +717,17 @@ final class SupabaseVisitRepository: VisitRepository {
         return rows.first?.amountMinorUnits ?? 0
     }
 
+    func attachPayment(visitId: UUID, paymentId: UUID) async throws -> Visit {
+        // Money discipline (Appendix C): a payment is only ever marked
+        // succeeded by the payment-gateway webhook (service role), which is
+        // also what writes `visits.payment_id`/`visits.status` server-side
+        // — this client never performs that write itself. By the time the
+        // app calls this (after observing `paymentStatus == .succeeded`)
+        // the webhook has already applied it, so this just re-fetches the
+        // now-updated row rather than racing or duplicating that write.
+        try await visit(id: visitId)
+    }
+
     func statusHistory(visitId: UUID) async throws -> [VisitStatusEvent] {
         // I2: server-recorded by 0046_visit_status_events.sql's trigger —
         // the client only ever reads, never writes, this table.
