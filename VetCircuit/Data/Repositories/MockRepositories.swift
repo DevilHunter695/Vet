@@ -588,9 +588,14 @@ actor MockRefundRepository: RefundRepository {
 
 actor MockPaymentDisputeRepository: PaymentDisputeRepository {
     // No mock visit has a real gateway dispute against it — mirrors
-    // MockInvoiceRepository's "nothing yet" stance. A future test can seed
-    // this array directly if a screen needs to preview the banner.
-    var seededDisputes: [PaymentDispute] = []
+    // MockInvoiceRepository's "nothing yet" stance.
+    private var seededDisputes: [PaymentDispute] = []
+
+    /// The comment here used to say "a future test can seed this array
+    /// directly", which wasn't actually possible: the property is
+    /// actor-isolated, so no test could mutate it from outside. This is that
+    /// seam, made real.
+    func seed(_ disputes: [PaymentDispute]) { seededDisputes = disputes }
 
     func disputes(visitId: UUID) async throws -> [PaymentDispute] {
         seededDisputes.filter { $0.visitId == visitId }
@@ -710,15 +715,44 @@ actor MockVisitChecklistRepository: VisitChecklistRepository {
 }
 
 actor MockInvoiceRepository: InvoiceRepository {
+    /// G5: a tax invoice has to agree with itself. The previous version
+    /// declared `gstMinorUnits` but put no GST line in the breakdown and set
+    /// `totalMinorUnits` to the *pre-tax* subtotal — so the document showed a
+    /// ₹599 total while separately claiming ₹107.82 of tax on it, and the tax
+    /// it claimed appeared nowhere in the itemisation. Both are things a
+    /// customer (or an auditor) would notice.
     func invoice(visitId: UUID) async throws -> Invoice? {
         let subtotal = 59_900
-        let gst = Int((Double(subtotal) * 0.18).rounded())
+        let gstRate = 0.18
+        let gst = Int((Double(subtotal) * gstRate).rounded())
         return Invoice(
             id: UUID(), visitId: visitId,
-            invoiceNumber: "VC-\(String(format: "%06d", abs(visitId.uuidString.hashValue % 999_999)))",
-            breakdown: PriceBreakdown(lineItems: [PriceLineItem(label: "Home visit consultation", amountMinorUnits: subtotal)], totalMinorUnits: subtotal),
+            invoiceNumber: Self.invoiceNumber(for: visitId),
+            breakdown: PriceBreakdown(
+                lineItems: [
+                    PriceLineItem(label: "Home visit consultation", amountMinorUnits: subtotal),
+                    // Itemised at the same rate and with the same label shape
+                    // `PricingEngine` uses, so the invoice and the quote the
+                    // customer approved describe the same charge.
+                    PriceLineItem(label: "GST (\(Int(gstRate * 100))%)", amountMinorUnits: gst)
+                ],
+                totalMinorUnits: subtotal + gst
+            ),
             gstMinorUnits: gst, issuedAt: .now
         )
+    }
+
+    /// Stable for the life of the visit, not just the life of the process.
+    /// This used to be `abs(visitId.uuidString.hashValue % 999_999)`, and
+    /// Swift seeds `String.hashValue` per process — so the same visit's
+    /// invoice number changed every time the app was relaunched, which is
+    /// exactly what an invoice number must never do. Derived from the UUID's
+    /// own bytes instead. (Real GST numbering is sequential and server-issued;
+    /// this is a deterministic stand-in, not a compliance implementation.)
+    private static func invoiceNumber(for visitId: UUID) -> String {
+        let bytes = withUnsafeBytes(of: visitId.uuid) { Array($0) }
+        let value = bytes.reduce(UInt64(0)) { ($0 &* 31) &+ UInt64($1) }
+        return "VC-\(String(format: "%06d", value % 1_000_000))"
     }
 }
 
@@ -1095,8 +1129,17 @@ actor MockPetDocumentRepository: PetDocumentRepository {
 actor MockPrescriptionRepository: PrescriptionRepository {
     private var prescriptions: [Prescription] = []
 
+    /// Without a seeding hook this mock was permanently empty, so
+    /// `ManagePrescriptionsUseCase.history` had no reachable data path and
+    /// B5 could not be tested at all.
+    func seed(_ prescriptions: [Prescription]) { self.prescriptions = prescriptions }
+
     func history(petId: UUID) async throws -> [Prescription] {
-        prescriptions.filter { $0.petId == petId }
+        // Newest first: a stale prescription at the top of a medication list
+        // is a dosing hazard, so the ordering is part of the contract.
+        prescriptions
+            .filter { $0.petId == petId }
+            .sorted { $0.issuedAt > $1.issuedAt }
     }
 }
 

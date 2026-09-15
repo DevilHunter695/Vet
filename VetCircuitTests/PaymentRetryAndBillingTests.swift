@@ -358,3 +358,151 @@ struct RenewalReminderUseCaseTests {
         #expect(await smsRepo.sentRecords.isEmpty)
     }
 }
+
+// MARK: - G5: GST tax invoice.
+
+@Suite("G5 GST invoice")
+struct GSTInvoiceTests {
+    @Test("an invoice carries a non-empty number that is stable for a visit and distinct across visits")
+    func invoiceNumberIsStableAndDistinct() async throws {
+        let repo = MockInvoiceRepository()
+        let visitA = UUID(), visitB = UUID()
+
+        let first = try #require(await repo.invoice(visitId: visitA))
+        let again = try #require(await repo.invoice(visitId: visitA))
+        let other = try #require(await repo.invoice(visitId: visitB))
+
+        #expect(!first.invoiceNumber.trimmingCharacters(in: .whitespaces).isEmpty)
+        #expect(first.invoiceNumber == again.invoiceNumber,
+                "re-fetching one visit's invoice must not mint a new number")
+        #expect(first.invoiceNumber != other.invoiceNumber,
+                "two visits must never share an invoice number")
+        #expect(first.visitId == visitA)
+        #expect(other.visitId == visitB)
+    }
+
+    @Test("gstMinorUnits agrees with the GST line in the invoice's own breakdown")
+    func gstFigureMatchesTheBreakdownLine() async throws {
+        let repo = MockInvoiceRepository()
+        let invoice = try #require(await repo.invoice(visitId: UUID()))
+
+        // A tax invoice whose headline GST figure isn't the GST it itemizes is
+        // a filing defect, not a cosmetic one.
+        let gstLine = try #require(invoice.breakdown.lineItems.first(where: { $0.label.localizedCaseInsensitiveContains("GST") }))
+        #expect(gstLine.amountMinorUnits == invoice.gstMinorUnits)
+    }
+
+    @Test("the invoice total is the taxable amount plus GST, and the line items sum to it")
+    func totalIncludesGST() async throws {
+        let repo = MockInvoiceRepository()
+        let invoice = try #require(await repo.invoice(visitId: UUID()))
+
+        let lineSum = invoice.breakdown.lineItems.reduce(0) { $0 + $1.amountMinorUnits }
+        #expect(lineSum == invoice.breakdown.totalMinorUnits,
+                "the itemization must add up to the total the customer is charged")
+        #expect(invoice.gstMinorUnits > 0)
+
+        let preTax = invoice.breakdown.lineItems
+            .filter { !$0.label.localizedCaseInsensitiveContains("GST") }
+            .reduce(0) { $0 + $1.amountMinorUnits }
+        #expect(invoice.breakdown.totalMinorUnits == preTax + invoice.gstMinorUnits,
+                "a total that omits the GST the invoice itself reports undercharges the customer and understates the tax filing")
+    }
+
+    @Test("an invoice's GST is 18% of its pre-tax lines, the rate PricingEngine charges")
+    func gstRateMatchesPricingEngine() async throws {
+        let repo = MockInvoiceRepository()
+        let invoice = try #require(await repo.invoice(visitId: UUID()))
+
+        let preTax = invoice.breakdown.lineItems
+            .filter { !$0.label.localizedCaseInsensitiveContains("GST") }
+            .reduce(0) { $0 + $1.amountMinorUnits }
+        #expect(invoice.gstMinorUnits == Int((Double(preTax) * 0.18).rounded()))
+    }
+}
+
+// MARK: - K8: payment disputes (chargebacks).
+
+/// `MockPaymentDisputeRepository` starts empty and its `seededDisputes` array
+/// is actor-isolated with no seeding API, so it cannot be given rows from a
+/// test. This double stands in for the same contract.
+actor FakePaymentDisputeRepository: PaymentDisputeRepository {
+    private let seeded: [PaymentDispute]
+    init(_ seeded: [PaymentDispute]) { self.seeded = seeded }
+
+    func disputes(visitId: UUID) async throws -> [PaymentDispute] {
+        seeded.filter { $0.visitId == visitId }
+    }
+}
+
+private func makeDispute(visitId: UUID, status: PaymentDispute.Status, reason: String = "Product not received") -> PaymentDispute {
+    PaymentDispute(id: UUID(), paymentId: UUID(), visitId: visitId, gatewayDisputeId: "dp_\(UUID().uuidString.prefix(8))",
+                   reason: reason, amountMinorUnits: 59_900, status: status,
+                   openedAt: .now.addingTimeInterval(-3_600),
+                   resolvedAt: status == .won || status == .lost ? .now : nil,
+                   evidenceSubmittedAt: nil)
+}
+
+@Suite("K8 payment disputes")
+struct PaymentDisputeTests {
+    @Test("an open dispute is active")
+    func openIsActive() {
+        #expect(makeDispute(visitId: UUID(), status: .open).isActive)
+    }
+
+    @Test("a dispute needing a response is still active")
+    func needsResponseIsActive() {
+        #expect(makeDispute(visitId: UUID(), status: .needsResponse).isActive)
+    }
+
+    @Test("a won dispute is resolved, not active")
+    func wonIsNotActive() {
+        #expect(!makeDispute(visitId: UUID(), status: .won).isActive)
+    }
+
+    @Test("a lost dispute is resolved, not active")
+    func lostIsNotActive() {
+        #expect(!makeDispute(visitId: UUID(), status: .lost).isActive)
+    }
+
+    @Test("every dispute status is classified, and exactly the unresolved two are active")
+    func activeSetIsExactlyOpenAndNeedsResponse() {
+        let visitId = UUID()
+        let all: [PaymentDispute.Status] = [.open, .needsResponse, .won, .lost]
+        let active = Set(all.filter { makeDispute(visitId: visitId, status: $0).isActive }.map(\.rawValue))
+        #expect(active == ["open", "needs_response"])
+    }
+
+    @Test("disputes(visitId:) returns this visit's rows and none of another visit's")
+    func disputesAreScopedToTheVisit() async throws {
+        let mine = UUID(), theirs = UUID()
+        let myOpen = makeDispute(visitId: mine, status: .open, reason: "Duplicate charge")
+        let myWon = makeDispute(visitId: mine, status: .won, reason: "Fraudulent")
+        let notMine = makeDispute(visitId: theirs, status: .open, reason: "Someone else's chargeback")
+        let repo = FakePaymentDisputeRepository([myOpen, notMine, myWon])
+
+        let rows = try await repo.disputes(visitId: mine)
+        // Both of this visit's rows present...
+        #expect(rows.count == 2)
+        #expect(rows.contains { $0.id == myOpen.id })
+        #expect(rows.contains { $0.id == myWon.id })
+        // ...and the other visit's is absent rather than the filter having
+        // simply emptied the list.
+        #expect(!rows.contains { $0.id == notMine.id })
+        #expect(rows.allSatisfy { $0.visitId == mine })
+
+        let theirRows = try await repo.disputes(visitId: theirs)
+        #expect(theirRows.map(\.id) == [notMine.id])
+    }
+
+    @Test("only the unresolved dispute drives the customer-facing active hold")
+    func activeHoldPicksTheOpenRow() async throws {
+        let visitId = UUID()
+        let open = makeDispute(visitId: visitId, status: .needsResponse)
+        let settled = makeDispute(visitId: visitId, status: .lost)
+        let repo = FakePaymentDisputeRepository([settled, open])
+
+        let active = try await repo.disputes(visitId: visitId).filter(\.isActive)
+        #expect(active.map(\.id) == [open.id])
+    }
+}
