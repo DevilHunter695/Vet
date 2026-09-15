@@ -69,7 +69,23 @@ targets:
     scheme:
       testTargets:
         - VetCircuitTests
+        - VetCircuitUITests
       gatherCoverageData: true
+  # An automated walkthrough of the running app. Unit tests prove the domain
+  # logic; only driving the real UI proves a screen renders, a control is
+  # reachable, and a tap actually registers — which is exactly what went
+  # unverified while a dead test target and a `continue-on-error` CI step hid
+  # everything.
+  VetCircuitUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: VetCircuitUITests
+    dependencies:
+      - target: VetCircuit
+    settings:
+      base:
+        TEST_TARGET_NAME: VetCircuit
   VetCircuitTests:
     type: bundle.unit-test
     platform: iOS
