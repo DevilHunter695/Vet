@@ -1210,8 +1210,16 @@ struct GetCatalogUseCaseTests {
         )
         await repo.seed([dogOnly])
 
+        // `MockCatalogRepository.seed` *appends* to the baseline MockData
+        // catalog rather than replacing it, and every baseline service is
+        // `species: nil` (legitimately available to all species). So the
+        // result can never be empty, and asserting `isEmpty` was testing the
+        // wrong thing — it would also have passed if the filter wrongly
+        // excluded everything. Assert the discriminating behaviour instead:
+        // the dog-only service is gone for cats, unrestricted ones remain.
         let forCats = try await useCase.execute(vertical: .vet, forSpecies: .cat)
-        #expect(forCats.isEmpty)
+        #expect(!forCats.contains { $0.id == dogOnly.id })
+        #expect(forCats.contains { $0.eligibility.species == nil })
 
         let forDogs = try await useCase.execute(vertical: .vet, forSpecies: .dog)
         #expect(forDogs.contains { $0.id == dogOnly.id })
