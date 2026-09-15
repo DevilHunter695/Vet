@@ -213,11 +213,20 @@ final class DependencyContainer {
     /// C7: served-cluster coverage for the map view.
     func getServedClustersUseCase() -> GetServedClustersUseCase { GetServedClustersUseCase(addressRepository: addressRepository) }
     func holdSlotUseCase() -> HoldSlotUseCase { HoldSlotUseCase(circuitRepository: circuitRepository, slotHoldRepository: slotHoldRepository) }
-    func manageCartUseCase() -> ManageCartUseCase { ManageCartUseCase(cartRepository: cartRepository) }
+    // D3: the catalog and pet repositories are what make the add-on
+    // eligibility gate actually run. Leaving them off (they default to nil)
+    // compiles perfectly and silently disables the check — the same failure
+    // mode as the species gate that shadowed its own parameter and always
+    // returned true. Wiring is part of the fix, not an optional extra.
+    func manageCartUseCase() -> ManageCartUseCase {
+        ManageCartUseCase(cartRepository: cartRepository, catalogRepository: catalogRepository,
+                          petRepository: petRepository)
+    }
     func getQuoteUseCase() -> GetQuoteUseCase {
         GetQuoteUseCase(quoteRepository: quoteRepository, catalogRepository: catalogRepository,
                          circuitRepository: circuitRepository, vetServiceOverrideRepository: vetServiceOverrideRepository,
-                         subscriptionRepository: subscriptionRepository, entitlementRepository: subscriptionEntitlementRepository)
+                         subscriptionRepository: subscriptionRepository, entitlementRepository: subscriptionEntitlementRepository,
+                         petRepository: petRepository)
     }
     func getWalletBalanceUseCase() -> GetWalletBalanceUseCase { GetWalletBalanceUseCase(walletRepository: walletRepository) }
     func applyCouponUseCase() -> ApplyCouponUseCase { ApplyCouponUseCase(couponRepository: couponRepository) }

@@ -1159,6 +1159,14 @@ struct ManageConsentUseCase {
 
 struct ManageCartUseCase {
     let cartRepository: CartRepository
+    // D3: needed to resolve the add-ons on a line and the pets they'd be
+    // performed on. Optional so call sites that only manipulate quantities
+    // (and the existing tests, which pass a bare cart repository) keep
+    // working; when either is absent the eligibility gate is simply not
+    // evaluated here and the server-side check at booking remains the
+    // backstop. Wire both in the composition root so it actually runs.
+    var catalogRepository: CatalogRepository? = nil
+    var petRepository: PetRepository? = nil
 
     func current(userId: UUID) async throws -> Cart {
         try await cartRepository.currentCart(userId: userId)
@@ -1168,9 +1176,33 @@ struct ManageCartUseCase {
         guard !item.petIds.isEmpty else {
             throw DomainError.validation("Choose at least one pet.")
         }
+        try await validateAddonEligibility(for: item, userId: cart.userId)
         var cart = cart
         cart.items.append(item)
         return try await cartRepository.save(cart)
+    }
+
+    /// D3: `Addon.eligibility` was declared but read nowhere, so a dog-only
+    /// add-on could be attached to a cat's line and priced straight into the
+    /// quote. Reject the line instead, naming the pet and the add-on so the
+    /// customer can see which combination is the problem.
+    private func validateAddonEligibility(for item: CartItem, userId: UUID) async throws {
+        guard !item.addonIds.isEmpty,
+              let catalogRepository, let petRepository else { return }
+        // A service that can't be resolved isn't this gate's business —
+        // quoting already throws `.notFound` for it.
+        guard let service = try? await catalogRepository.service(id: item.serviceId) else { return }
+        let addons = service.addons.filter { item.addonIds.contains($0.id) }
+        guard !addons.isEmpty else { return }
+        let pets = try await petRepository.listPets(ownerId: userId)
+            .filter { item.petIds.contains($0.id) }
+        guard !pets.isEmpty else { return }
+
+        for addon in addons {
+            for pet in pets where !addon.eligibility.allows(pet: pet) {
+                throw DomainError.validation("\(addon.name) isn't available for \(pet.name).")
+            }
+        }
     }
 
     func removeItem(id: UUID, from cart: Cart) async throws -> Cart {
@@ -1208,6 +1240,11 @@ struct GetQuoteUseCase {
     // credit applied, same as before this feature existed.
     var subscriptionRepository: SubscriptionRepository? = nil
     var entitlementRepository: SubscriptionEntitlementRepository? = nil
+    // D3: second line of defence for add-on eligibility. The quote is where
+    // an add-on actually turns into money, and a cart line can predate a
+    // catalog change, so the gate is re-run here rather than trusted from
+    // add-to-cart time. Optional for the same reason as above.
+    var petRepository: PetRepository? = nil
 
     /// E6: the app hands over its selections and gets back a signed,
     /// itemized, TTL'd quote — it never assembles a rupee amount itself.
@@ -1233,8 +1270,28 @@ struct GetQuoteUseCase {
             let circuit = try await circuitRepository.circuit(id: circuitId)
             overrides = try await vetServiceOverrideRepository.overrides(vetId: circuit.vetId)
         }
+        try await validateAddonEligibility(cart: cart, catalog: catalog)
         let applyCredit = await entitlementEligible(userId: cart.userId)
         return try await quoteRepository.createQuote(for: cart, catalog: catalog, overrides: overrides, useWalletBalance: useWalletBalance, applyEntitlementCredit: applyCredit)
+    }
+
+    /// D3: no ineligible add-on ever reaches a priced quote. Mirrors
+    /// `ManageCartUseCase`'s message so the customer sees the same wording
+    /// wherever the rejection surfaces.
+    private func validateAddonEligibility(cart: Cart, catalog: [Service]) async throws {
+        guard let petRepository,
+              cart.items.contains(where: { !$0.addonIds.isEmpty }) else { return }
+        let pets = try await petRepository.listPets(ownerId: cart.userId)
+        for item in cart.items where !item.addonIds.isEmpty {
+            guard let service = catalog.first(where: { $0.id == item.serviceId }) else { continue }
+            let addons = service.addons.filter { item.addonIds.contains($0.id) }
+            let linePets = pets.filter { item.petIds.contains($0.id) }
+            for addon in addons {
+                for pet in linePets where !addon.eligibility.allows(pet: pet) {
+                    throw DomainError.validation("\(addon.name) isn't available for \(pet.name).")
+                }
+            }
+        }
     }
 
     private func entitlementEligible(userId: UUID) async -> Bool {
@@ -1400,6 +1457,19 @@ struct GetCatalogUseCase {
         let services = try await catalogRepository.listServices(vertical: vertical)
         let eligible = species.map { s in services.filter { $0.eligibility.allows(species: s) } } ?? services
         return eligible.sorted { $0.name < $1.name }
+    }
+
+    /// D2: the pet-aware overload — species gate *plus*
+    /// `ServiceEligibility.minPetAgeMonths`, which until now was declared
+    /// and enforced nowhere (a six-month-minimum vaccination was bookable
+    /// for a two-week-old puppy). A pet with no `dateOfBirth` is NOT
+    /// filtered out: unknown age must not silently hide services (see
+    /// `ServiceEligibility.allows(species:ageMonths:)`).
+    func execute(vertical: Vertical, forPet pet: Pet, now: Date = .now) async throws -> [Service] {
+        let services = try await catalogRepository.listServices(vertical: vertical)
+        return services
+            .filter { $0.eligibility.allows(pet: pet, now: now) }
+            .sorted { $0.name < $1.name }
     }
 }
 

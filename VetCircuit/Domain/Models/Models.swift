@@ -49,6 +49,13 @@ struct Pet: Identifiable, Codable, Equatable, Hashable {
     var archivedAt: Date? = nil
     var archiveReason: ArchiveReason? = nil
 
+    /// D2: whole months since `dateOfBirth`, or nil when the owner never
+    /// entered one. Callers must treat nil as "unknown", not as "zero".
+    func ageInMonths(asOf now: Date = .now, calendar: Calendar = .current) -> Int? {
+        guard let dateOfBirth, dateOfBirth <= now else { return nil }
+        return calendar.dateComponents([.month], from: dateOfBirth, to: now).month
+    }
+
     enum Species: String, Codable, CaseIterable {
         case dog, cat, bird, other
     }
@@ -1181,6 +1188,29 @@ struct ServiceEligibility: Codable, Equatable, Hashable {
         guard let allowedSpecies = self.species else { return true }
         return allowedSpecies.contains(species)
     }
+
+    /// D2: the full gate — species *and* minimum age. Kept additive: the
+    /// species-only `allows(species:)` above stays as-is for the call sites
+    /// (and tests) that only have a species to hand.
+    ///
+    /// `ageMonths == nil` means "unknown age" (the pet has no
+    /// `dateOfBirth` on record) and deliberately PASSES the age gate:
+    /// silently hiding a service because we don't know the pet's birthday
+    /// would look like the service doesn't exist, with nothing the owner
+    /// could do about it. The age is re-checked server-side at booking, and
+    /// the vet checks it in person; an over-eager client-side filter here
+    /// only hides options, it doesn't make anyone safer.
+    func allows(species: Pet.Species, ageMonths: Int?) -> Bool {
+        guard allows(species: species) else { return false }
+        guard let minPetAgeMonths, let ageMonths else { return true }
+        return ageMonths >= minPetAgeMonths
+    }
+
+    /// Convenience over `allows(species:ageMonths:)` for when a whole `Pet`
+    /// is in hand. `now` is injectable so age evaluation stays testable.
+    func allows(pet: Pet, now: Date = .now) -> Bool {
+        allows(species: pet.species, ageMonths: pet.ageInMonths(asOf: now))
+    }
 }
 
 struct ServiceVariant: Identifiable, Codable, Equatable, Hashable {
@@ -1596,11 +1626,32 @@ struct IncidentReport: Identifiable, Codable, Equatable, Hashable {
 struct ChatPolicy {
     static let openWindow: TimeInterval = 48 * 3600
 
-    /// Chat stays open for any non-completed visit (there's still an active
-    /// booking to discuss); once completed, it closes 48h after `completedAt`.
+    /// Chat stays open while a visit still has something ahead of it; once
+    /// the visit reaches a TERMINAL status it closes 48h later.
+    ///
+    /// J5 fix: this used to key off `.completed` alone, so every other
+    /// terminal status (`.cancelledByUser`, `.cancelledByVet`,
+    /// `.noShowUser`, `.noShowVet`, `.resolved`) kept chat open forever —
+    /// cancelling a visit was a way to get unlimited free consulting, which
+    /// is precisely what the window exists to prevent.
+    ///
+    /// The closing clock is `completedAt` when present, otherwise the
+    /// visit's `scheduledAt` (a cancelled visit never completes, so it has
+    /// no `completedAt`; the slot it was booked for is the honest reference
+    /// point). A `.completed` visit missing `completedAt` keeps the previous
+    /// defensive behaviour and stays open — missing data must not lock a
+    /// customer out of a chat they're entitled to.
     static func isOpen(visit: Visit, now: Date = .now) -> Bool {
-        guard visit.status == .completed, let completedAt = visit.completedAt else { return true }
-        return now.timeIntervalSince(completedAt) < openWindow
+        guard visit.status.isTerminal else { return true }
+        let closesFrom: Date
+        if let completedAt = visit.completedAt {
+            closesFrom = completedAt
+        } else if visit.status == .completed {
+            return true
+        } else {
+            closesFrom = visit.scheduledAt
+        }
+        return now.timeIntervalSince(closesFrom) < openWindow
     }
 }
 
