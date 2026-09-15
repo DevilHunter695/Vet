@@ -183,7 +183,10 @@ protocol PaymentRepository: Sendable {
     /// existing payment — no new quote is being negotiated, so this stays a
     /// distinct overload rather than fabricating a client-side `Quote`.
     func createCheckout(forVisit visitId: UUID, retryingPaymentId: UUID, amountMinorUnits: Int) async throws -> URL
-    func createCheckout(forSubscription plan: Subscription.PlanType) async throws -> URL
+    /// H7: `seatCount` is part of the price for a bulk plan — a corporate/RWA
+    /// subscription is billed per seat, so checkout cannot be created without
+    /// it. Defaults to 1 so every individual-plan call site is unchanged.
+    func createCheckout(forSubscription plan: Subscription.PlanType, seatCount: Int) async throws -> URL
     func paymentStatus(paymentId: UUID) async throws -> Payment.Status
     /// G6/E8: the id of the payment most recently created by
     /// `createCheckout(forVisit:quoteId:amountMinorUnits:)` for this visit —

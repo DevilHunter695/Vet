@@ -98,7 +98,15 @@ struct CancelVisitUseCase {
     /// never left as a manual follow-up.
     @discardableResult
     func execute(visitId: UUID, currentStatus: Visit.VisitStatus, scheduledAt: Date, paymentId: UUID?) async throws -> CancellationPolicy.Outcome {
-        guard currentStatus == .requested || currentStatus == .confirmed else {
+        // Defer to the transition table rather than re-listing statuses here.
+        // This guard used to hardcode `.requested || .confirmed`, which
+        // contradicted `Visit.legalTransitions` — that table permits
+        // `.assigned -> .cancelledByUser`, and `.assigned` is reached the
+        // moment ops attaches a vet, potentially days before the slot. So a
+        // customer assigned a vet a week out was told the visit "can no
+        // longer be cancelled" and got no refund at all, even though
+        // `CancellationPolicy` would have returned 100%.
+        guard Visit.canTransition(from: currentStatus, to: .cancelledByUser) else {
             throw DomainError.validation("This visit can no longer be cancelled.")
         }
         let paidMinorUnits = try await visitRepository.paidAmountMinorUnits(visitId: visitId)
@@ -248,11 +256,23 @@ struct SubscribeToPlanUseCase {
 
     func execute(userId: UUID, plan: Subscription.PlanType, seatCount: Int = 1) async throws -> URL {
         if plan.isBulk {
-            guard seatCount >= 5 else {
-                throw DomainError.validation("Corporate/RWA plans require at least 5 seats.")
+            // The floor comes from the policy that also enforces it on pause
+            // (`SubscriptionManagementPolicy`), instead of a second literal
+            // `5` here that would drift away from it.
+            guard seatCount >= SubscriptionManagementPolicy.minimumCorporateSeats else {
+                throw DomainError.validation(
+                    "Corporate/RWA plans require at least \(SubscriptionManagementPolicy.minimumCorporateSeats) seats."
+                )
             }
         }
-        return try await paymentRepository.createCheckout(forSubscription: plan)
+        // `seatCount` has to reach checkout: a corporate plan is billed per
+        // seat, and the entitlement engine already grants one credit per seat
+        // per period. Validating the count and then dropping it meant a
+        // 50-seat RWA was billed as one seat while being entitled to fifty.
+        return try await paymentRepository.createCheckout(
+            forSubscription: plan,
+            seatCount: plan.isBulk ? seatCount : 1
+        )
     }
 }
 
@@ -1413,7 +1433,13 @@ struct BuyPackageUseCase {
         var cart = try await cartRepository.currentCart(userId: userId)
         for item in package.items {
             let service = try await catalogRepository.service(id: item.serviceId)
-            guard let variant = service.variants.first else { continue }
+            // The cheapest variant, not whatever order the repository happened
+            // to return. `Package.discountMinorUnits(catalog:)` computes the
+            // advertised saving from the cheapest variant, so picking
+            // `variants.first` here made the cart disagree with the saving
+            // shown on the package card whenever they differed.
+            guard let variant = service.variants.min(by: { $0.priceMinorUnits < $1.priceMinorUnits })
+            else { continue }
             let redemption = try await packageRepository.createRedemption(
                 userId: userId, packageId: package.id, packageItemId: item.id,
                 serviceId: service.id, totalCount: item.quantity
