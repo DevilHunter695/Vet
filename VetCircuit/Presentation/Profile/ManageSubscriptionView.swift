@@ -8,6 +8,9 @@ import SwiftUI
 final class ManageSubscriptionViewModel {
     var subscription: Subscription?
     var errorMessage: String?
+    /// Without this the screen tells a paying subscriber "No active
+    /// subscription" for the whole of the first fetch.
+    var isLoading = true
     var pendingAction: PendingAction?
     // H5: dunning — read-only "payment failed, retrying..." status.
     var dunningState: DunningState?
@@ -56,6 +59,8 @@ final class ManageSubscriptionViewModel {
     }
 
     func load(userId: UUID, currentUser: User?) async {
+        isLoading = true
+        defer { isLoading = false }
         do {
             subscription = try await subscriptionRepository.currentSubscription(userId: userId)
             if let subscriptionId = subscription?.id {
@@ -108,10 +113,24 @@ struct ManageSubscriptionView: View {
 
     var body: some View {
         List {
+            // Above the plan rows, not buried at the bottom of the screen.
+            if let errorMessage = viewModel.errorMessage {
+                ErrorBanner(message: errorMessage)
+                    .listRowBackground(Color.clear)
+            }
             if let subscription = viewModel.subscription {
                 Section("Current plan") {
                     LabeledContent("Plan", value: subscription.planType.displayName)
-                    LabeledContent("Status", value: subscription.status.rawValue.capitalized)
+                    HStack {
+                        Text("Status").font(.brandCallout).foregroundStyle(.secondary)
+                        Spacer()
+                        // Was `rawValue.capitalized` — "Pastdue".
+                        TagChip(
+                            text: subscription.status.displayName,
+                            systemImage: subscription.status.symbolName,
+                            tint: subscription.status.tint
+                        )
+                    }
                     LabeledContent("Renews", value: subscription.renewalDate.formatted(date: .abbreviated, time: .omitted))
                     if subscription.planType.isBulk {
                         LabeledContent("Seats", value: "\(subscription.seatCount)")
@@ -204,14 +223,16 @@ struct ManageSubscriptionView: View {
                         .tint(Theme.danger)
                     }
                 }
+            } else if viewModel.isLoading {
+                ForEach(0..<3, id: \.self) { _ in
+                    ShimmerView(cornerRadius: 12).frame(height: 28)
+                }
             } else {
                 EmptyStateView(systemImage: "creditcard", title: "No active subscription",
                                message: "Subscribe to a plan from your profile to manage it here.")
+                    .listRowBackground(Color.clear)
             }
 
-            if let errorMessage = viewModel.errorMessage {
-                Section { Text(errorMessage).foregroundStyle(Theme.danger) }
-            }
         }
         // The aurora is the app's ground everywhere else; a List that keeps
         // its own opaque system background would read as a different app.

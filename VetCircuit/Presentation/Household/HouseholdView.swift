@@ -66,6 +66,31 @@ final class HouseholdViewModel {
         }
     }
 
+    /// A9: a member invited by phone hasn't been reconciled to the caller's
+    /// real user id yet, so matching on `userId` alone found nothing and
+    /// "Leave household" quietly did nothing. Fall back to the phone number.
+    func myMembership(userId: UUID, phone: String?) -> HouseholdMember? {
+        if let byId = members.first(where: { $0.userId == userId }) { return byId }
+        guard let phone else { return nil }
+        let digits = Self.digits(phone)
+        guard !digits.isEmpty else { return nil }
+        return members.first { member in
+            guard let invited = member.invitedPhone else { return false }
+            let other = Self.digits(invited)
+            return !other.isEmpty && (other.hasSuffix(digits) || digits.hasSuffix(other))
+        }
+    }
+
+    private static func digits(_ value: String) -> String {
+        value.filter(\.isNumber)
+    }
+
+    /// Names the pet a household booking is for — "a booking on Tuesday" is
+    /// useless when four people share five animals.
+    func petName(for visit: Visit) -> String {
+        sharedPets.first { $0.id == visit.petId }?.name ?? "Household pet"
+    }
+
     var currentUserIsOwner: Bool {
         guard let household else { return false }
         return household.ownerId == currentUserId
@@ -82,6 +107,7 @@ struct HouseholdView: View {
     @Environment(SessionStore.self) private var session
     @State private var viewModel = HouseholdViewModel()
     @State private var newHouseholdName = ""
+    @State private var pendingLeave: HouseholdMember?
 
     var body: some View {
         List {
@@ -99,14 +125,21 @@ struct HouseholdView: View {
                         HStack {
                             Image(systemName: member.role == .owner ? "star.fill" : "person.fill")
                                 .foregroundStyle(member.role == .owner ? Theme.warning : Theme.primary)
-                            VStack(alignment: .leading) {
+                            VStack(alignment: .leading, spacing: 2) {
                                 Text(member.invitedPhone ?? "Member").font(.brandBody)
-                                if member.invitedPhone != nil {
-                                    Text("Invited — pending").font(.caption).foregroundStyle(.secondary)
-                                }
+                                Text(member.invitedPhone != nil
+                                     ? "Invited — waiting for them to join"
+                                     : (member.role == .owner
+                                        ? "Owns this household and its pets"
+                                        : "Can see and book for shared pets"))
+                                    .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Text(member.role.rawValue.capitalized).font(.caption).foregroundStyle(.secondary)
+                            TagChip(
+                                text: member.role == .owner ? "Owner" : "Member",
+                                systemImage: member.role == .owner ? "star.fill" : "person.fill",
+                                tint: member.role == .owner ? Theme.warning : Theme.primary
+                            )
                         }
                     }
                     .onDelete { indexSet in
@@ -118,7 +151,16 @@ struct HouseholdView: View {
                 if !viewModel.sharedPets.isEmpty {
                     Section("Shared pets") {
                         ForEach(viewModel.sharedPets) { pet in
-                            Text(pet.name).font(.brandBody)
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(pet.name).font(.brandBody)
+                                    if let breed = pet.breed, !breed.isEmpty {
+                                        Text(breed).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                TagChip(text: pet.species.displayName, systemImage: pet.species.symbolName)
+                            }
                         }
                     }
                 }
@@ -126,9 +168,17 @@ struct HouseholdView: View {
                 if !viewModel.sharedVisits.isEmpty {
                     Section("Household bookings") {
                         ForEach(viewModel.sharedVisits) { visit in
-                            VStack(alignment: .leading) {
-                                Text(visit.scheduledAt, style: .date).font(.brandBody)
-                                Text(visit.status.rawValue.capitalized).font(.caption).foregroundStyle(.secondary)
+                            HStack(alignment: .firstTextBaseline) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    // "A booking" means nothing in a shared
+                                    // household — whose pet is the point.
+                                    Text(viewModel.petName(for: visit)).font(.brandBody)
+                                    Text(visit.scheduledAt.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 8)
+                                // Was `rawValue.capitalized` — "Enroute".
+                                StatusBadge(status: visit.status)
                             }
                         }
                     }
@@ -149,9 +199,14 @@ struct HouseholdView: View {
                 Section {
                     Button(viewModel.currentUserIsOwner ? "Delete household" : "Leave household", role: .destructive) {
                         Haptics.warning()
-                        if let user = session.currentUser,
-                           let mine = viewModel.members.first(where: { $0.userId == user.id }) {
-                            Task { await viewModel.remove(mine) }
+                        guard let user = session.currentUser else { return }
+                        // Invited-but-not-yet-joined members carry a nil
+                        // `userId`, so matching on id alone silently found
+                        // nothing and the button did nothing at all.
+                        if let mine = viewModel.myMembership(userId: user.id, phone: user.phone) {
+                            pendingLeave = mine
+                        } else {
+                            viewModel.errorMessage = "We couldn't find your membership in this household. Pull to refresh, or contact support if it keeps happening."
                         }
                     }
                 }
@@ -177,6 +232,22 @@ struct HouseholdView: View {
         .scrollContentBackground(.hidden)
         .auroraScreenBackground()
         .navigationTitle("Household")
+        .confirmationDialog(
+            viewModel.currentUserIsOwner ? "Delete this household?" : "Leave this household?",
+            isPresented: Binding(get: { pendingLeave != nil }, set: { if !$0 { pendingLeave = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button(viewModel.currentUserIsOwner ? "Delete household" : "Leave household", role: .destructive) {
+                guard let member = pendingLeave else { return }
+                pendingLeave = nil
+                Task { await viewModel.remove(member) }
+            }
+            Button("Stay", role: .cancel) { pendingLeave = nil }
+        } message: {
+            Text(viewModel.currentUserIsOwner
+                 ? "Everyone loses access to the shared pets and bookings. Your own pets and records stay with you."
+                 : "You'll stop seeing this household's shared pets and bookings.")
+        }
         .task {
             if let user = session.currentUser {
                 viewModel.setCurrentUser(user.id)

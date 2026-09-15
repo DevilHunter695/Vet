@@ -164,11 +164,15 @@ struct ChatView: View {
 
             HStack(spacing: 10) {
                 PhotosPicker(selection: $photoPickerItem, matching: .images) {
+                    // The circle stays 36pt; the touch target around it is
+                    // 44pt, which is the part the finger actually needs.
                     Image(systemName: "camera.fill")
                         .font(.headline)
                         .foregroundStyle(Theme.primary)
                         .frame(width: 36, height: 36)
                         .background(Theme.primary.opacity(0.1), in: Circle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
                 }
                 .accessibilityLabel("Attach a photo")
                 .disabled(!viewModel.isChatOpen)
@@ -192,6 +196,8 @@ struct ChatView: View {
                         .frame(width: 36, height: 36)
                         .background(canSend ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color.gray.opacity(0.4)))
                         .clipShape(Circle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(PressableStyle())
                 .disabled(!canSend)

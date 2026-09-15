@@ -52,6 +52,25 @@ struct AddressListView: View {
             if let errorMessage = viewModel.errorMessage {
                 ErrorBanner(message: errorMessage)
             }
+            // `isLoading` was set and never read, and an empty list rendered
+            // as nothing at all.
+            if viewModel.isLoading && viewModel.addresses.isEmpty {
+                ForEach(0..<3, id: \.self) { _ in
+                    ShimmerView(cornerRadius: 12)
+                        .frame(height: 56)
+                        .listRowBackground(Color.clear)
+                }
+            } else if viewModel.addresses.isEmpty && viewModel.errorMessage == nil {
+                EmptyStateView(
+                    systemImage: "mappin.and.ellipse",
+                    title: "No addresses yet",
+                    message: "A vet comes to you, so we need somewhere to come to. Add your home, office or your parents' place — you pick one when you book.",
+                    actionTitle: "Add an address"
+                ) {
+                    showingAdd = true
+                }
+                .listRowBackground(Color.clear)
+            }
             ForEach(viewModel.addresses) { address in
                 AddressRow(address: address) {
                     Haptics.selection()
@@ -79,7 +98,10 @@ struct AddressListView: View {
                     showingAdd = true
                 } label: {
                     Image(systemName: "plus")
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
+                .accessibilityLabel("Add an address")
             }
         }
         .sheet(isPresented: $showingAdd) {

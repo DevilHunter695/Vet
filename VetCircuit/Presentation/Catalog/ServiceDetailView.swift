@@ -22,6 +22,7 @@ struct ServiceDetailView: View {
     @State private var selectedAddonIds: Set<UUID> = []
     @State private var isAddingToCart = false
     @State private var addedToCart = false
+    @State private var isShowingCart = false
     @State private var errorMessage: String?
 
     private let manageCartUseCase = DependencyContainer.shared.manageCartUseCase()
@@ -173,16 +174,32 @@ struct ServiceDetailView: View {
                     ErrorBanner(message: errorMessage)
                 }
 
-                PrimaryButton(title: addedToCart ? "Added to cart" : "Add to cart", isLoading: isAddingToCart) {
-                    Task { await addToCart() }
+                // Once something is in the cart the CTA used to stay
+                // permanently disabled, dead-ending anyone who wanted a
+                // second variant or another pet. Offer both next steps.
+                Group {
+                    if addedToCart {
+                        VStack(spacing: 10) {
+                            PrimaryButton(title: "Go to cart", systemImage: "cart.fill") {
+                                isShowingCart = true
+                            }
+                            SecondaryButton(title: "Add another") {
+                                addedToCart = false
+                            }
+                        }
+                    } else {
+                        PrimaryButton(title: "Add to cart", isLoading: isAddingToCart, isEnabled: !selectedPetIds.isEmpty) {
+                            Task { await addToCart() }
+                        }
+                    }
                 }
-                .disabled(selectedPetIds.isEmpty || addedToCart)
                 .appearAnimation(delay: 0.25)
             }
             .padding()
         }
         .auroraScreenBackground()
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $isShowingCart) { CartView() }
         .onAppear { selectedVariantId = preselectedVariantId ?? service.variants.first?.id }
         .task { await loadPets() }
         .toolbar {

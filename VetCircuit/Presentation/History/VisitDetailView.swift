@@ -15,6 +15,14 @@ struct VisitDetailView: View {
     /// rather than left to the customer to re-pick, closing the prior
     /// "same vet/circuit isn't yet enforced end-to-end" gap.
     @State private var followUpBooking: FollowUpBooking?
+    /// K5: the follow-up CTA used to fail silently — four guards, two of them
+    /// `try?`, all falling through to a bare `return`. Now the failure is
+    /// visible and the button reports that it is working.
+    @State private var followUpErrorMessage: String?
+    @State private var isPreparingFollowUp = false
+    /// Load failures on the detail fetches, surfaced instead of discarded.
+    @State private var otpErrorMessage: String?
+    @State private var detailLoadErrorMessage: String?
     @State private var showingTip = false
     @State private var hasTipped = false
     // F6: a pending vet-initiated reschedule proposal, if any.
@@ -165,6 +173,22 @@ struct VisitDetailView: View {
                     .buttonStyle(PressableStyle())
                     .appearAnimation(delay: 0.05)
                 }
+
+                // Load failures that used to be discarded by `try?`, kept in
+                // one Group so the surrounding VStack gains a single child.
+                Group {
+                    if let detailLoadErrorMessage {
+                        ErrorBanner(message: detailLoadErrorMessage)
+                    }
+                    if visit.status == .arrived, visitOTP == nil, let otpErrorMessage {
+                        CalloutNote(
+                            text: otpErrorMessage,
+                            systemImage: "lock.trianglebadge.exclamationmark",
+                            tint: Theme.warning
+                        )
+                    }
+                }
+                .appearAnimation()
 
                 if visit.status == .arrived, let visitOTP {
                     Card {
@@ -359,12 +383,25 @@ struct VisitDetailView: View {
                 // K5: 1-tap follow-up — same pet, same vet/circuit, the free
                 // "within 14 days" variant preselected, no re-picking anything.
                 if FollowUpBookingPolicy.isEligible(visit: visit) {
-                    Button {
-                        Task { await prepareFollowUp() }
-                    } label: {
-                        ActionRow(title: "Book free follow-up", systemImage: "arrow.uturn.forward.circle.fill", tint: Theme.accent)
+                    Group {
+                        if let followUpErrorMessage {
+                            ErrorBanner(message: followUpErrorMessage)
+                        }
+                        Button {
+                            guard !isPreparingFollowUp else { return }
+                            Haptics.tap()
+                            Task { await prepareFollowUp() }
+                        } label: {
+                            ActionRow(
+                                title: isPreparingFollowUp ? "Finding your vet…" : "Book free follow-up",
+                                systemImage: "arrow.uturn.forward.circle.fill",
+                                tint: Theme.accent,
+                                isLoading: isPreparingFollowUp
+                            )
+                        }
+                        .buttonStyle(PressableStyle())
+                        .disabled(isPreparingFollowUp)
                     }
-                    .buttonStyle(PressableStyle())
                     .appearAnimation(delay: 0.12)
                 }
             }
@@ -398,14 +435,38 @@ struct VisitDetailView: View {
             }
         }
         .task {
+            // These four fetches were all `try?`. A missing OTP or an
+            // unresolved payment status then looked identical to "there
+            // isn't one", which is exactly the wrong thing to tell someone
+            // standing at the door with a vet.
             if visit.status == .arrived {
-                visitOTP = try? await visitOTPRepository.generateOTP(visitId: visit.id)
+                do {
+                    visitOTP = try await visitOTPRepository.generateOTP(visitId: visit.id)
+                } catch {
+                    otpErrorMessage = "We couldn't generate your door code. Ask your vet to confirm the visit manually — \(error.localizedDescription)"
+                }
             }
-            pendingProposal = try? await rescheduleProposalRepository.pendingProposal(visitId: visit.id)
-            activeDispute = try? await paymentDisputeRepository.disputes(visitId: visit.id).first { $0.isActive }
+            var failures: [String] = []
+            do {
+                pendingProposal = try await rescheduleProposalRepository.pendingProposal(visitId: visit.id)
+            } catch {
+                failures.append("reschedule requests")
+            }
+            do {
+                activeDispute = try await paymentDisputeRepository.disputes(visitId: visit.id).first { $0.isActive }
+            } catch {
+                failures.append("dispute status")
+            }
             if let paymentId = visit.paymentId {
-                paymentStatus = try? await paymentRepository.paymentStatus(paymentId: paymentId)
+                do {
+                    paymentStatus = try await paymentRepository.paymentStatus(paymentId: paymentId)
+                } catch {
+                    failures.append("payment status")
+                }
             }
+            detailLoadErrorMessage = failures.isEmpty
+                ? nil
+                : "Couldn't load \(ListFormatter.localizedString(byJoining: failures)). Pull to refresh or try again shortly."
         }
     }
 
@@ -462,11 +523,23 @@ struct VisitDetailView: View {
     /// the same pet, and the consult service's free follow-up variant
     /// before presenting booking — the customer never re-selects any of it.
     private func prepareFollowUp() async {
-        guard let services = try? await getCatalogUseCase.execute(vertical: .vet),
-              let service = services.first(where: { $0.variants.contains(where: \.isFollowUp) }),
-              let variantId = service.variants.first(where: \.isFollowUp)?.id,
-              let circuit = try? await circuitRepository.circuit(id: visit.circuitId) else { return }
-        followUpBooking = FollowUpBooking(circuit: circuit, service: service, variantId: variantId)
+        isPreparingFollowUp = true
+        followUpErrorMessage = nil
+        defer { isPreparingFollowUp = false }
+        do {
+            let services = try await getCatalogUseCase.execute(vertical: .vet)
+            guard let service = services.first(where: { $0.variants.contains(where: \.isFollowUp) }),
+                  let variantId = service.variants.first(where: \.isFollowUp)?.id else {
+                followUpErrorMessage = "Follow-up consults aren't available right now. Message your vet and we'll sort it out."
+                Haptics.error()
+                return
+            }
+            let circuit = try await circuitRepository.circuit(id: visit.circuitId)
+            followUpBooking = FollowUpBooking(circuit: circuit, service: service, variantId: variantId)
+        } catch {
+            Haptics.error()
+            followUpErrorMessage = "Couldn't set up your follow-up. \(error.localizedDescription)"
+        }
     }
 }
 
@@ -485,6 +558,9 @@ private struct ActionRow: View {
     let tint: Color
     /// J3: unread-message badge, e.g. on the "Message your vet" row.
     var badgeCount: Int = 0
+    /// Swaps the trailing chevron for a spinner while the row's action is
+    /// in flight, so a slow action doesn't read as a dead button.
+    var isLoading: Bool = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -504,7 +580,11 @@ private struct ActionRow: View {
                     .background(Theme.danger, in: Capsule())
                     .accessibilityLabel("\(badgeCount) unread messages")
             }
-            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            if isLoading {
+                ProgressView().controlSize(.small)
+            } else {
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            }
         }
         .padding()
         .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))

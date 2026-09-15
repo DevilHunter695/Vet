@@ -28,7 +28,15 @@ struct MyTicketsView: View {
                 ErrorBanner(message: errorMessage)
             }
             if viewModel.tickets.isEmpty && viewModel.errorMessage == nil {
-                Text("No support tickets yet.").foregroundStyle(.secondary)
+                EmptyStateView(
+                    systemImage: "bubble.left.and.bubble.right",
+                    title: "No tickets yet",
+                    message: "Anything gone wrong with a visit, a charge or your account — raise it here and you'll get a reply in the app.",
+                    actionTitle: "Contact support"
+                ) {
+                    showingNewTicket = true
+                }
+                .listRowBackground(Color.clear)
             }
             ForEach(viewModel.tickets) { ticket in
                 NavigationLink {

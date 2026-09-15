@@ -22,9 +22,13 @@ struct LabTestReportsView: View {
                 if isLoading {
                     ProgressView().frame(maxWidth: .infinity)
                 } else if reports.isEmpty {
-                    Text("No lab tests have been ordered for this pet yet.")
-                        .font(.brandBody)
-                        .foregroundStyle(.secondary)
+                    // Reports are uploaded ops-side, so there is nothing for
+                    // the owner to add — point at the action that leads to one.
+                    EmptyStateView(
+                        systemImage: "cross.vial",
+                        title: "No lab reports yet",
+                        message: "When your vet orders bloodwork or a swab, the result lands here — usually within a day or two of the visit."
+                    )
                 } else {
                     ForEach(reports) { report in
                         reportCard(report)

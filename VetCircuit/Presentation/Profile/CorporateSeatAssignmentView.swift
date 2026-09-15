@@ -11,8 +11,19 @@ final class CorporateSeatAssignmentViewModel {
 
     private let useCase = DependencyContainer.shared.manageCorporateSeatsUseCase()
 
+    var isLoading = false
+
     func load(subscriptionId: UUID) async {
-        assignments = (try? await useCase.list(subscriptionId: subscriptionId)) ?? []
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            assignments = try await useCase.list(subscriptionId: subscriptionId)
+        } catch {
+            // Silently swallowing this left the screen claiming zero seats
+            // were assigned when the fetch had simply failed.
+            errorMessage = "Couldn't load seat assignments. \(error.localizedDescription)"
+        }
     }
 
     func assign(subscriptionId: UUID, seatCount: Int) async {
@@ -39,6 +50,7 @@ final class CorporateSeatAssignmentViewModel {
 struct CorporateSeatAssignmentView: View {
     let subscription: Subscription
     @State private var viewModel = CorporateSeatAssignmentViewModel()
+    @State private var pendingUnassign: CorporateSeatAssignment?
 
     var body: some View {
         List {
@@ -48,6 +60,13 @@ struct CorporateSeatAssignmentView: View {
             }
 
             Section("Assign a seat") {
+                // Above the field, not below: an error under the keyboard is
+                // an error nobody reads.
+                if let errorMessage = viewModel.errorMessage {
+                    ErrorBanner(message: errorMessage)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                        .listRowBackground(Color.clear)
+                }
                 HStack {
                     TextField("Phone number", text: $viewModel.phoneInput)
                         .keyboardType(.phonePad)
@@ -57,21 +76,30 @@ struct CorporateSeatAssignmentView: View {
                     }
                     .disabled(viewModel.phoneInput.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
-                if let errorMessage = viewModel.errorMessage {
-                    Text(errorMessage).font(.brandCaption).foregroundStyle(Theme.danger)
-                }
             }
 
             Section("Assigned") {
-                ForEach(viewModel.assignments) { assignment in
-                    HStack {
-                        Text(assignment.assignedPhone)
-                        Spacer()
-                        Button(role: .destructive) {
-                            Haptics.warning()
-                            Task { await viewModel.unassign(assignment) }
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
+                if viewModel.isLoading && viewModel.assignments.isEmpty {
+                    ForEach(0..<3, id: \.self) { _ in
+                        ShimmerView(cornerRadius: 10).frame(height: 28)
+                    }
+                } else {
+                    ForEach(viewModel.assignments) { assignment in
+                        HStack {
+                            Text(assignment.assignedPhone)
+                            Spacer()
+                            // A List row with exactly one Button and no
+                            // buttonStyle makes the *whole row* fire it — so
+                            // tapping the phone number used to revoke a seat.
+                            Button(role: .destructive) {
+                                Haptics.warning()
+                                pendingUnassign = assignment
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.borderless)
                         }
                     }
                 }
@@ -84,6 +112,22 @@ struct CorporateSeatAssignmentView: View {
         .navigationTitle("Seat assignments")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load(subscriptionId: subscription.id) }
+        .confirmationDialog(
+            "Remove this seat?",
+            isPresented: Binding(get: { pendingUnassign != nil }, set: { if !$0 { pendingUnassign = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let pendingUnassign {
+                Button("Remove \(pendingUnassign.assignedPhone)", role: .destructive) {
+                    let assignment = pendingUnassign
+                    self.pendingUnassign = nil
+                    Task { await viewModel.unassign(assignment) }
+                }
+            }
+            Button("Keep seat", role: .cancel) { pendingUnassign = nil }
+        } message: {
+            Text("They'll immediately lose access to the corporate plan's benefits.")
+        }
     }
 }
 

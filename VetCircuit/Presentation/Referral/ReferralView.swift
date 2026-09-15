@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class ReferralViewModel {
     var code: String = ""
+    var isLoading = true
     var invitePhone: String = ""
     var referrals: [Referral] = []
     var isSending = false
@@ -13,6 +14,8 @@ final class ReferralViewModel {
     private let referralRepository = DependencyContainer.shared.referralRepository
 
     func load(userId: UUID) async {
+        isLoading = true
+        defer { isLoading = false }
         do {
             code = try await referralRepository.myReferralCode(userId: userId)
             referrals = try await referralRepository.listReferrals(userId: userId)
@@ -50,16 +53,28 @@ struct ReferralView: View {
                 VStack(spacing: 14) {
                     PawMascot(size: 56, animated: false)
                     Text("Your referral code").font(.brandCaption).foregroundStyle(.secondary)
-                    Text(viewModel.code)
-                        .font(.system(.title2, design: .monospaced, weight: .bold))
-                        .padding(.horizontal, 18).padding(.vertical, 10)
-                        .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+                    // An empty `code` used to render an empty pill and share
+                    // a blank invite. Shimmer until it lands.
+                    if viewModel.code.isEmpty {
+                        ShimmerView(cornerRadius: 12)
+                            .frame(width: 168, height: 44)
+                    } else {
+                        Text(viewModel.code)
+                            .font(.system(.title2, design: .monospaced, weight: .bold))
+                            .padding(.horizontal, 18).padding(.vertical, 10)
+                            .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+                            .textSelection(.enabled)
+                    }
 
                     ShareLink(item: "Join me on VetCircuit and get your first vet visit discounted! Use my code: \(viewModel.code)") {
                         Label("Share invite", systemImage: "square.and.arrow.up")
                             .font(.brandHeadline)
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(PressableStyle())
+                    .disabled(viewModel.code.isEmpty)
+                    .opacity(viewModel.code.isEmpty ? 0.45 : 1)
                     .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity)
@@ -83,15 +98,31 @@ struct ReferralView: View {
                 }
             }
 
-            if !viewModel.referrals.isEmpty {
-                Section("Your invites") {
+            Section("Your invites") {
+                if viewModel.isLoading && viewModel.referrals.isEmpty {
+                    ForEach(0..<2, id: \.self) { _ in
+                        ShimmerView(cornerRadius: 10).frame(height: 40)
+                    }
+                } else if viewModel.referrals.isEmpty {
+                    Text("No invites sent yet. Share your code above and you'll both get a discounted visit.")
+                        .font(.brandCaption).foregroundStyle(.secondary)
+                } else {
                     ForEach(viewModel.referrals) { referral in
-                        HStack {
-                            Text(referral.invitedPhone ?? "—")
-                            Spacer()
-                            Text(referral.status.rawValue.capitalized)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(referral.invitedPhone ?? "Shared by link").font(.brandBody)
+                                // A phone number alone says nothing about
+                                // where the invite got to, or what's owed.
+                                Text("\(referral.status.detail) · invited \(referral.createdAt.formatted(date: .abbreviated, time: .omitted))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            TagChip(
+                                text: referral.status.displayName,
+                                systemImage: referral.status.symbolName,
+                                tint: referral.status.tint
+                            )
                         }
                     }
                 }

@@ -16,6 +16,9 @@ final class PetDetailViewModel {
     var prescriptions: [Prescription] = []
     var errorMessage: String?
     var isSaving = false
+    /// B2: without this the screen asserts "No vaccination records yet" for
+    /// the whole of the first fetch — a confident lie about a pet's health.
+    var isLoading = true
 
     private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
     private let managePetWeightsUseCase = DependencyContainer.shared.managePetWeightsUseCase()
@@ -25,6 +28,8 @@ final class PetDetailViewModel {
     init(pet: Pet) { self.pet = pet }
 
     func load() async {
+        isLoading = true
+        defer { isLoading = false }
         async let weights = managePetWeightsUseCase.history(petId: pet.id)
         async let shots = manageVaccinationsUseCase.history(petId: pet.id)
         async let scripts = managePrescriptionsUseCase.history(petId: pet.id)
@@ -265,7 +270,11 @@ struct PetDetailView: View {
                     }
                 }
 
-                LabeledContent("Species", value: viewModel.pet.species.rawValue.capitalized)
+                HStack {
+                    Text("Species").font(.brandCallout).foregroundStyle(.secondary)
+                    Spacer()
+                    TagChip(text: viewModel.pet.species.displayName, systemImage: viewModel.pet.species.symbolName)
+                }
                 if let breed = viewModel.pet.breed, !breed.isEmpty {
                     LabeledContent("Breed", value: breed)
                 }
@@ -274,7 +283,7 @@ struct PetDetailView: View {
                     get: { viewModel.pet.sex ?? .unknown },
                     set: { viewModel.pet.sex = $0 }
                 )) {
-                    ForEach(Pet.Sex.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                    ForEach(Pet.Sex.allCases, id: \.self) { Text($0.displayName).tag($0) }
                 }
 
                 Toggle("Neutered / spayed", isOn: Binding(
@@ -323,7 +332,9 @@ struct PetDetailView: View {
                         .font(.brandCaption)
                 }
 
-                if viewModel.weightHistory.isEmpty {
+                if viewModel.isLoading && viewModel.weightHistory.isEmpty {
+                    ShimmerView(cornerRadius: 12).frame(height: 140)
+                } else if viewModel.weightHistory.isEmpty {
                     Text("No weight readings yet.").font(.brandCaption).foregroundStyle(.secondary)
                 } else {
                     Chart(viewModel.weightHistory) { entry in
@@ -400,7 +411,12 @@ struct PetDetailView: View {
                 Label("Vaccinations", systemImage: "syringe.fill")
                     .font(.brandHeadline).foregroundStyle(Theme.primary)
 
-                if viewModel.vaccinations.isEmpty {
+                if viewModel.isLoading && viewModel.vaccinations.isEmpty {
+                    // Don't claim there are no records until we know.
+                    ForEach(0..<3, id: \.self) { _ in
+                        ShimmerView(cornerRadius: 10).frame(height: 34)
+                    }
+                } else if viewModel.vaccinations.isEmpty {
                     Text("No vaccination records yet.").font(.brandCaption).foregroundStyle(.secondary)
                 } else {
                     ForEach(viewModel.vaccinations) { vaccination in
@@ -426,9 +442,19 @@ struct PetDetailView: View {
     /// booking screen for this pet rather than making the owner navigate the
     /// catalog themselves.
     private func bookVaccination(for due: Vaccination) async {
-        guard let services = try? await getCatalogUseCase.execute(vertical: .vet, forSpecies: viewModel.pet.species),
-              let service = services.first(where: { $0.category == .vaccination }) else { return }
-        bookVaccinationService = service
+        viewModel.errorMessage = nil
+        do {
+            let services = try await getCatalogUseCase.execute(vertical: .vet, forSpecies: viewModel.pet.species)
+            guard let service = services.first(where: { $0.category == .vaccination }) else {
+                Haptics.error()
+                viewModel.errorMessage = "No vaccination service is available for \(viewModel.pet.species.displayName.lowercased())s in your area yet. Message support and we'll arrange it."
+                return
+            }
+            bookVaccinationService = service
+        } catch {
+            Haptics.error()
+            viewModel.errorMessage = "Couldn't open vaccination booking. \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Document vault (B6)
@@ -541,14 +567,12 @@ private struct VaccinationRow: View {
                     .foregroundStyle(color)
             }
             .accessibilityElement(children: .combine)
-            // K4: vaccination certificate PDF, generated on-device.
-            Button {
-                Haptics.tap()
+            // K4: vaccination certificate PDF, generated on-device. A bare
+            // 20pt glyph was far under the 44pt minimum — PillButton is 44pt
+            // by construction.
+            PillButton(title: "Share", systemImage: "square.and.arrow.up") {
                 certificateURL = PDFShareURL.write(vaccination.certificatePDF(petName: petName), suggestedName: "\(vaccination.vaccineName)-certificate")
-            } label: {
-                Image(systemName: "square.and.arrow.up").foregroundStyle(Theme.primary)
             }
-            .buttonStyle(.plain)
             .accessibilityLabel("Share vaccination certificate")
         }
         .padding(.vertical, 4)
@@ -576,13 +600,9 @@ private struct PrescriptionRow: View {
             .accessibilityElement(children: .combine)
             Spacer()
             // K2: prescription PDF, generated on-device from this structured record.
-            Button {
-                Haptics.tap()
+            PillButton(title: "Share", systemImage: "square.and.arrow.up") {
                 documentURL = PDFShareURL.write(prescription.documentPDF(petName: petName), suggestedName: "\(prescription.medicationName)-prescription")
-            } label: {
-                Image(systemName: "square.and.arrow.up").foregroundStyle(Theme.primary)
             }
-            .buttonStyle(.plain)
             .accessibilityLabel("Share prescription PDF")
         }
         .sheet(item: $documentURL) { item in

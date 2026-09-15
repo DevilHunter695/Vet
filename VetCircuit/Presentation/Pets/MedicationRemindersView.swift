@@ -76,7 +76,15 @@ struct MedicationRemindersView: View {
     var body: some View {
         List {
             if viewModel.reminders.isEmpty {
-                Text("No medication reminders yet.").font(.brandCaption).foregroundStyle(.secondary)
+                EmptyStateView(
+                    systemImage: "bell.badge",
+                    title: "No reminders yet",
+                    message: "Set one and we'll nudge you at each dose time — the hard part of a course of medication is remembering the fourth day.",
+                    actionTitle: "Add a reminder"
+                ) {
+                    showingAddForm = true
+                }
+                .listRowBackground(Color.clear)
             } else {
                 ForEach(viewModel.reminders) { reminder in
                     MedicationReminderRow(reminder: reminder) { isActive in

@@ -36,7 +36,14 @@ struct NotificationCenterView: View {
                 ErrorBanner(message: errorMessage)
             }
             if viewModel.notifications.isEmpty && viewModel.errorMessage == nil {
-                Text("No notifications yet.").foregroundStyle(.secondary)
+                // No action here: there is nothing to create, so the useful
+                // next step is choosing what gets sent at all.
+                EmptyStateView(
+                    systemImage: "bell",
+                    title: "Nothing to catch up on",
+                    message: "Booking confirmations, vet-on-the-way alerts and visit summaries will collect here."
+                )
+                .listRowBackground(Color.clear)
             }
             ForEach(viewModel.notifications) { notification in
                 Button {

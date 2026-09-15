@@ -9,6 +9,7 @@ struct LiabilityWaiverView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var isAccepting = false
+    @State private var errorMessage: String?
     private let manageConsentUseCase = DependencyContainer.shared.manageConsentUseCase()
 
     var body: some View {
@@ -41,18 +42,37 @@ struct LiabilityWaiverView: View {
             .navigationTitle("Consent")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
-                PrimaryButton(title: "I agree, continue", isLoading: isAccepting) {
-                    Task {
-                        isAccepting = true
-                        _ = try? await manageConsentUseCase.acceptLiabilityWaiver(userId: userId)
-                        Haptics.success()
-                        onAccepted()
-                        dismiss()
+                VStack(spacing: 10) {
+                    // I6: swallowing this with `try?` recorded no consent row
+                    // and then waved the user through — the legal shield this
+                    // screen exists to provide simply wasn't there.
+                    if let errorMessage {
+                        ErrorBanner(message: errorMessage)
+                    }
+                    PrimaryButton(title: "I agree, continue", isLoading: isAccepting) {
+                        Task { await accept() }
                     }
                 }
                 .padding()
                 .background(.regularMaterial)
             }
+        }
+    }
+
+    private func accept() async {
+        isAccepting = true
+        errorMessage = nil
+        do {
+            _ = try await manageConsentUseCase.acceptLiabilityWaiver(userId: userId)
+            Haptics.success()
+            isAccepting = false
+            onAccepted()
+            dismiss()
+        } catch {
+            // No consent recorded means no continuing.
+            Haptics.error()
+            isAccepting = false
+            errorMessage = "We couldn't record your consent, so we can't continue yet. \(error.localizedDescription)"
         }
     }
 }

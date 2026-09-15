@@ -42,6 +42,7 @@ final class RecurringBookingsViewModel {
 struct RecurringBookingsView: View {
     @Environment(SessionStore.self) private var session
     @State private var viewModel = RecurringBookingsViewModel()
+    @State private var pendingCancel: RecurringBookingRule?
 
     var body: some View {
         List {
@@ -66,15 +67,20 @@ struct RecurringBookingsView: View {
                     }
                     Text("Next: \(rule.nextOccurrenceAt.formatted(date: .abbreviated, time: .omitted))")
                         .font(.brandCaption).foregroundStyle(.secondary)
-                    HStack(spacing: 16) {
-                        Button(rule.isActive ? "Pause" : "Resume") {
+                    // Were ~17pt tall and 16pt apart, with the irreversible
+                    // one undefended. PillButton is 44pt by construction.
+                    HStack(spacing: 10) {
+                        PillButton(
+                            title: rule.isActive ? "Pause" : "Resume",
+                            systemImage: rule.isActive ? "pause.fill" : "play.fill"
+                        ) {
                             Task { await viewModel.toggle(rule) }
                         }
-                        Button("Cancel", role: .destructive) {
-                            Task { await viewModel.cancel(rule) }
+                        PillButton(title: "Cancel", systemImage: "xmark", tint: Theme.danger) {
+                            pendingCancel = rule
                         }
+                        Spacer(minLength: 0)
                     }
-                    .font(.brandCaption.weight(.semibold))
                     .buttonStyle(.borderless)
                 }
                 .padding(.vertical, 4)
@@ -86,6 +92,22 @@ struct RecurringBookingsView: View {
         .auroraScreenBackground()
         .navigationTitle("Recurring bookings")
         .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
+        .confirmationDialog(
+            "Cancel this recurring booking?",
+            isPresented: Binding(get: { pendingCancel != nil }, set: { if !$0 { pendingCancel = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let pendingCancel {
+                Button("Cancel \(pendingCancel.cadence.displayName.lowercased()) booking", role: .destructive) {
+                    let rule = pendingCancel
+                    self.pendingCancel = nil
+                    Task { await viewModel.cancel(rule) }
+                }
+            }
+            Button("Keep it", role: .cancel) { pendingCancel = nil }
+        } message: {
+            Text("No further visits will be scheduled. Pause instead if you only want to skip a while — that's reversible.")
+        }
     }
 }
 

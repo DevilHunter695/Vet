@@ -140,13 +140,32 @@ private struct TriageResultCard: View {
                     .foregroundStyle(.secondary)
 
                 if result.recommendation != .selfCare {
+                    // This is the only action offered to a worried owner
+                    // we've just told to book — it gets a real, full-width
+                    // 44pt target, not a bare line of text.
                     NavigationLink {
                         CircuitsListView()
                     } label: {
-                        Text("Browse circuits to book")
-                            .font(.brandHeadline)
+                        HStack(spacing: 8) {
+                            Image(systemName: "calendar.badge.plus")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Browse circuits to book").font(.brandHeadline)
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(.caption)
+                        }
+                        .foregroundStyle(Color.white)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                        .background {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(accent)
+                                .allowsHitTesting(false)
+                        }
+                        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
-                    .buttonStyle(PressableStyle())
+                    .buttonStyle(PressableStyle(scale: 0.975))
+                    .accessibilityLabel("Browse circuits to book a visit")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

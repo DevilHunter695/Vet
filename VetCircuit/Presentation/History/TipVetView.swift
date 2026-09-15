@@ -27,16 +27,20 @@ struct TipVetView: View {
 
                 HStack(spacing: 12) {
                     ForEach(TipUseCase.presetAmountsMinorUnits, id: \.self) { amount in
+                        // Two taps in quick succession used to open two
+                        // gateway sessions — i.e. two real charges.
                         Button {
+                            guard !isSubmitting else { return }
                             Haptics.tap()
                             Task { await submit(amountMinorUnits: amount) }
                         } label: {
                             Text(CurrencyFormatter.rupees(amount))
                                 .font(.brandBody.bold())
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.bordered)
+                        .disabled(isSubmitting)
                     }
                 }
 
@@ -45,10 +49,10 @@ struct TipVetView: View {
                         .keyboardType(.numberPad)
                         .textFieldStyle(.roundedBorder)
                     Button("Send") {
-                        guard let rupees = Int(customAmountText), rupees > 0 else { return }
+                        guard !isSubmitting, let rupees = Int(customAmountText), rupees > 0 else { return }
                         Task { await submit(amountMinorUnits: rupees * 100) }
                     }
-                    .disabled(Int(customAmountText) == nil)
+                    .disabled(Int(customAmountText) == nil || isSubmitting)
                 }
 
                 if let errorMessage {
@@ -56,6 +60,8 @@ struct TipVetView: View {
                 }
 
                 if isSubmitting {
+                    Label("Opening secure checkout…", systemImage: "lock.fill")
+                        .font(.brandCaption).foregroundStyle(.secondary)
                     ProgressView()
                 }
 

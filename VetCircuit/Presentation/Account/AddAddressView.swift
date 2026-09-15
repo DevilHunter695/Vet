@@ -30,6 +30,10 @@ struct AddAddressView: View {
                             .font(.title)
                             .foregroundStyle(Theme.danger)
                             .offset(y: -14)
+                            // Decorative only — without this the glyph eats
+                            // pan gestures that start on it and the pin (and
+                            // the saved coordinate) never moves.
+                            .allowsHitTesting(false)
                     }
                     .listRowInsets(EdgeInsets())
                     .onMapCameraChange { context in

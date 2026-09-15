@@ -83,16 +83,20 @@ struct PaymentMethodsView: View {
                             Text("Added \(method.createdAt.formatted(date: .abbreviated, time: .omitted))")
                                 .font(.caption2).foregroundStyle(.tertiary)
                         }
-                        Spacer()
+                        Spacer(minLength: 8)
                         if method.isDefault {
-                            Text("Default").font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 8).padding(.vertical, 3)
-                                .background(Theme.success.opacity(0.15))
-                                .foregroundStyle(Theme.success)
-                                .clipShape(Capsule())
+                            TagChip(text: "Default", systemImage: "star.fill", tint: Theme.success)
+                        } else {
+                            // "Make default" was swipe-only, and the row's
+                            // contentShape had no button behind it — tapping
+                            // a card did nothing at all.
+                            PillButton(title: "Make default", systemImage: "star") {
+                                guard let user = session.currentUser else { return }
+                                Task { await viewModel.setDefault(method, userId: user.id) }
+                            }
+                            .buttonStyle(.borderless)
                         }
                     }
-                    .contentShape(Rectangle())
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(method.displayLabel + (method.isDefault ? ", default" : ""))
                     .swipeActions(edge: .trailing) {
@@ -113,8 +117,21 @@ struct PaymentMethodsView: View {
                         }
                     }
                 }
-                if viewModel.methods.isEmpty && !viewModel.isLoading {
-                    Text("No saved payment methods yet.").foregroundStyle(.secondary)
+                if viewModel.isLoading && viewModel.methods.isEmpty {
+                    ForEach(0..<2, id: \.self) { _ in
+                        ShimmerView(cornerRadius: 12).frame(height: 44)
+                    }
+                } else if viewModel.methods.isEmpty {
+                    EmptyStateView(
+                        systemImage: "creditcard",
+                        title: "No saved cards yet",
+                        message: "Save a card and checkout becomes one tap — we only ever store your issuer's token, never the card number.",
+                        actionTitle: "Add a card"
+                    ) {
+                        guard let user = session.currentUser else { return }
+                        Task { await viewModel.addMockCard(userId: user.id) }
+                    }
+                    .listRowBackground(Color.clear)
                 }
             } footer: {
                 Text("Only a token from your card issuer is stored — VetCircuit never sees or stores your card number or CVV.")
@@ -133,6 +150,8 @@ struct PaymentMethodsView: View {
                     Task { await viewModel.addMockCard(userId: user.id) }
                 } label: {
                     Image(systemName: "plus")
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Add payment method")
             }

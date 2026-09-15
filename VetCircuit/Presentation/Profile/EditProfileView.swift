@@ -64,6 +64,12 @@ struct EditProfileView: View {
 
     var body: some View {
         Form {
+            // Above the fields: an error rendered under them sits off-screen
+            // behind the keyboard exactly when it matters.
+            if let errorMessage = viewModel.errorMessage {
+                ErrorBanner(message: errorMessage)
+                    .listRowBackground(Color.clear)
+            }
             Section {
                 HStack {
                     if let photoURL = viewModel.photoURL {
@@ -118,11 +124,6 @@ struct EditProfileView: View {
                 .pickerStyle(.menu)
             }
 
-            if let errorMessage = viewModel.errorMessage {
-                Section {
-                    Text(errorMessage).foregroundStyle(Theme.danger).font(.brandCaption)
-                }
-            }
         }
         // The aurora is the app's ground everywhere else; a List that keeps
         // its own opaque system background would read as a different app.
