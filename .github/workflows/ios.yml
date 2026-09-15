@@ -100,9 +100,32 @@ jobs:
           # produced. Without it this step re-built both targets from scratch,
           # which was ~8.5 of its 10 minutes and left the suite barely a minute
           # to run — run #89's log stops mid-suite for exactly that reason.
+          # `-only-testing:VetCircuitTests` keeps this step's verdict about the
+          # unit suite alone. `xcodebuild test` builds every test target before
+          # running any, so when the UI target failed to compile it cancelled
+          # the whole action and the 399-test unit suite silently did not run.
+          # A problem in the UI walkthrough must not be able to hide the unit
+          # results again.
           xcodebuild test \
             -project VetCircuit.xcodeproj \
             -scheme VetCircuit \
             -destination "id=${{ steps.destination.outputs.id }}" \
             -derivedDataPath build \
+            -only-testing:VetCircuitTests \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: UI walkthrough
+        # Drives the real app in the simulator — the only check that proves a
+        # screen renders, a control is reachable, and a tap registers first
+        # time. Kept in its own step so its failures are attributable and
+        # cannot cancel the unit suite above.
+        timeout-minutes: 25
+        continue-on-error: true
+        run: |
+          xcodebuild test \
+            -project VetCircuit.xcodeproj \
+            -scheme VetCircuit \
+            -destination "id=${{ steps.destination.outputs.id }}" \
+            -derivedDataPath build \
+            -only-testing:VetCircuitUITests \
             CODE_SIGNING_ALLOWED=NO

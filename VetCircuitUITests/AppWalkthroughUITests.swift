@@ -15,28 +15,36 @@ import XCTest
 /// can't run the app.
 final class AppWalkthroughUITests: XCTestCase {
 
-    private var app: XCUIApplication!
+    // MARK: - Helpers
+    //
+    // Every member that touches XCUITest is `@MainActor`: in Xcode 16 the
+    // whole XCUIElement API is main-actor isolated, and under Swift 6 a
+    // nonisolated test method calling it is 120 compile errors. The isolation
+    // is applied per-member rather than to the class because XCTestCase's
+    // `setUpWithError()` is nonisolated and an override cannot add isolation
+    // — hence launching the app from a helper instead of from setUp.
 
-    override func setUpWithError() throws {
+    @MainActor
+    private func launchApp() -> XCUIApplication {
         continueAfterFailure = false
-        app = XCUIApplication()
+        let app = XCUIApplication()
         app.launchArguments += ["-UITest"]
         app.launch()
+        return app
     }
-
-    // MARK: - Helpers
 
     /// Waits for an element and fails with a readable message naming what was
     /// being looked for — a bare `XCTAssertTrue(exists)` in CI tells you
     /// nothing about which screen broke.
-    @discardableResult
+    @MainActor @discardableResult
     private func require(_ element: XCUIElement, _ what: String, timeout: TimeInterval = 10) -> Bool {
         let found = element.waitForExistence(timeout: timeout)
         XCTAssertTrue(found, "Expected to find \(what) but it never appeared")
         return found
     }
 
-    private func snapshot(_ name: String) {
+    @MainActor
+    private func snapshot(_ app: XCUIApplication, _ name: String) {
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = name
         shot.lifetime = .keepAlways
@@ -47,6 +55,7 @@ final class AppWalkthroughUITests: XCTestCase {
     /// exists. `isHittable` is the property that was false for the controls
     /// users had to tap three or four times: the element existed and was
     /// visible, but its touch region didn't cover what was drawn.
+    @MainActor
     private func tapAndExpect(
         _ control: XCUIElement, _ controlName: String,
         toReveal destination: XCUIElement, _ destinationName: String,
@@ -67,7 +76,9 @@ final class AppWalkthroughUITests: XCTestCase {
 
     // MARK: - The three tabs must exist and be reachable
 
+    @MainActor
     func testTabsAreReachableOnASingleTap() throws {
+        let app = launchApp()
         let tabBar = app.tabBars.firstMatch
         require(tabBar, "the main tab bar")
 
@@ -76,13 +87,15 @@ final class AppWalkthroughUITests: XCTestCase {
             require(tab, "the \(label) tab")
             XCTAssertTrue(tab.isHittable, "The \(label) tab is not hittable")
             tab.tap()
-            snapshot("Tab — \(label)")
+            snapshot(app, "Tab — \(label)")
         }
     }
 
     // MARK: - Book tab (C1, C2, C11, L8)
 
+    @MainActor
     func testBookTabShowsCircuitsWithSlotPriceAndRating() throws {
+        let app = launchApp()
         app.tabBars.firstMatch.buttons["Book"].tap()
 
         // C11 + L8: the emergency path and the "not an emergency" disclaimer
@@ -103,22 +116,26 @@ final class AppWalkthroughUITests: XCTestCase {
         XCTAssertTrue(first.label.localizedCaseInsensitiveContains("next slot"),
                       "Circuit row does not mention its next slot: \(first.label)")
 
-        snapshot("Book — circuit list")
+        snapshot(app, "Book — circuit list")
     }
 
+    @MainActor
     func testTappingACircuitOpensBookingOnTheFirstTap() throws {
+        let app = launchApp()
         app.tabBars.firstMatch.buttons["Book"].tap()
         let rows = app.buttons.containing(NSPredicate(format: "label CONTAINS[c] 'rated'"))
         guard rows.count > 0 else { throw XCTSkip("No circuits in the mock data to open") }
 
         tapAndExpect(rows.element(boundBy: 0), "the first circuit row",
                      toReveal: app.navigationBars["Book visit"], "the booking screen")
-        snapshot("Booking screen")
+        snapshot(app, "Booking screen")
     }
 
     // MARK: - Booking (F1, F2, E3)
 
+    @MainActor
     func testSlotPickerOffersTappableTimesAndTheCTAGatesOnSelection() throws {
+        let app = launchApp()
         app.tabBars.firstMatch.buttons["Book"].tap()
         let rows = app.buttons.containing(NSPredicate(format: "label CONTAINS[c] 'rated'"))
         guard rows.count > 0 else { throw XCTSkip("No circuits in the mock data to open") }
@@ -138,12 +155,14 @@ final class AppWalkthroughUITests: XCTestCase {
             app.staticTexts["This slot is held for you"].waitForExistence(timeout: 5),
             "E7: no slot-hold confirmation after picking a time"
         )
-        snapshot("Booking — slot picked, hold placed")
+        snapshot(app, "Booking — slot picked, hold placed")
     }
 
     // MARK: - Profile tab (A5, B1, N4, H1)
 
+    @MainActor
     func testProfileShowsSummaryFiguresAndReachableSettings() throws {
+        let app = launchApp()
         app.tabBars.firstMatch.buttons["Profile"].tap()
         require(app.navigationBars["Profile"], "the Profile screen")
 
@@ -155,16 +174,18 @@ final class AppWalkthroughUITests: XCTestCase {
                 "Profile is missing its \(tile) summary tile"
             )
         }
-        snapshot("Profile — top")
+        snapshot(app, "Profile — top")
 
         // Every grouped row must be reachable in one tap.
         let editProfile = app.buttons.containing(NSPredicate(format: "label BEGINSWITH[c] 'Edit profile'")).element(boundBy: 0)
         tapAndExpect(editProfile, "the Edit profile row",
                      toReveal: app.navigationBars.firstMatch, "the Edit profile screen")
-        snapshot("Profile — edit profile")
+        snapshot(app, "Profile — edit profile")
     }
 
+    @MainActor
     func testAddressesScreenHasAContentStateNotABlankScreen() throws {
+        let app = launchApp()
         app.tabBars.firstMatch.buttons["Profile"].tap()
         let addresses = app.buttons.containing(NSPredicate(format: "label BEGINSWITH[c] 'Addresses'")).element(boundBy: 0)
         guard addresses.waitForExistence(timeout: 10) else { throw XCTSkip("Addresses row not reachable") }
@@ -178,12 +199,14 @@ final class AppWalkthroughUITests: XCTestCase {
         ).count > 0
         XCTAssertTrue(hasRows || hasEmptyState,
                       "Addresses screen is blank — no rows, no empty state, nothing to tell the user what this is")
-        snapshot("Addresses")
+        snapshot(app, "Addresses")
     }
 
     // MARK: - Visits tab (I1, I2)
 
+    @MainActor
     func testVisitsTabShowsEitherVisitsOrAnExplainedEmptyState() throws {
+        let app = launchApp()
         app.tabBars.firstMatch.buttons["Visits"].tap()
         require(app.navigationBars["Your visits"], "the Visits screen")
 
@@ -191,12 +214,14 @@ final class AppWalkthroughUITests: XCTestCase {
         let hasEmptyState = app.staticTexts["No visits yet"].exists
         XCTAssertTrue(hasVisitRows || hasEmptyState,
                       "Visits tab shows neither visits nor an empty state")
-        snapshot("Visits")
+        snapshot(app, "Visits")
     }
 
     // MARK: - Appearance (O3) — the aurora has to survive both schemes
 
+    @MainActor
     func testBothAppearancesRenderWithoutLosingContent() throws {
+        let app = launchApp()
         app.tabBars.firstMatch.buttons["Profile"].tap()
         require(app.navigationBars["Profile"], "the Profile screen")
 
@@ -208,7 +233,7 @@ final class AppWalkthroughUITests: XCTestCase {
             // that swallows its own text is the classic failure here.
             XCTAssertTrue(app.navigationBars["Profile"].exists,
                           "Profile content vanished after switching to \(mode)")
-            snapshot("Appearance — \(mode)")
+            snapshot(app, "Appearance — \(mode)")
         }
     }
 }
