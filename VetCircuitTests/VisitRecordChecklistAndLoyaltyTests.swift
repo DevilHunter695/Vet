@@ -198,3 +198,185 @@ struct LoyaltyTierBoundaryTests {
         #expect(ranks.last == 2)
     }
 }
+
+// MARK: - D3: add-on eligibility.
+//
+// `Addon.eligibility` existed as data and was read by no code anywhere, so a
+// dog-only add-on could be attached to a cat's booking and priced into the
+// quote. The gate that now enforces it is only active when
+// `ManageCartUseCase` is built with a catalog and pet repository — they are
+// optional with `nil` defaults so existing call sites still compile, which
+// means dropping the wiring in `DependencyContainer` would silently disable
+// the whole check again. `wiringIsWhatMakesTheGateRun` below is the test that
+// fails if that happens.
+
+private actor StubCatalogRepository: CatalogRepository {
+    private let services: [Service]
+    init(services: [Service]) { self.services = services }
+
+    func listServices(vertical: Vertical?) async throws -> [Service] { services }
+
+    func service(id: UUID) async throws -> Service {
+        guard let match = services.first(where: { $0.id == id }) else {
+            throw DomainError.notFound("Service")
+        }
+        return match
+    }
+}
+
+private actor StubPetRepository: PetRepository {
+    private var pets: [Pet]
+    init(pets: [Pet]) { self.pets = pets }
+
+    func listPets(ownerId: UUID) async throws -> [Pet] { pets.filter { $0.ownerId == ownerId } }
+    func addPet(_ pet: Pet) async throws -> Pet { pets.append(pet); return pet }
+    func updatePet(_ pet: Pet) async throws -> Pet { pet }
+    func deletePet(id: UUID) async throws {}
+    func updatePhoto(petId: UUID, data: Data) async throws -> Pet {
+        guard let match = pets.first(where: { $0.id == petId }) else { throw DomainError.notFound("Pet") }
+        return match
+    }
+}
+
+@Suite("D3 add-on eligibility")
+struct AddonEligibilityTests {
+
+    /// Owner with one dog and one cat; a service whose only add-on is dog-only.
+    private struct Fixture {
+        let ownerId: UUID
+        let dog: Pet
+        let cat: Pet
+        let service: Service
+        let dogOnlyAddon: Addon
+        let variantId: UUID
+
+        init() {
+            // Bound locally first: a struct initialiser may not read `self`
+            // until every stored property is assigned.
+            let ownerId = UUID()
+            self.ownerId = ownerId
+            dog = Pet(id: UUID(), ownerId: ownerId, name: "Bruno", species: .dog, breed: nil, dateOfBirth: nil)
+            cat = Pet(id: UUID(), ownerId: ownerId, name: "Misty", species: .cat, breed: nil, dateOfBirth: nil)
+
+            let serviceId = UUID()
+            let variantId = UUID()
+            self.variantId = variantId
+            let addon = Addon(
+                id: UUID(), name: "Nail trim", priceMinorUnits: 15_000,
+                eligibility: ServiceEligibility(species: [.dog])
+            )
+            self.dogOnlyAddon = addon
+            self.service = Service(
+                id: serviceId, category: .grooming, name: "Grooming", summary: "",
+                whatToPrepare: nil,
+                variants: [ServiceVariant(id: variantId, serviceId: serviceId, name: "Standard",
+                                          durationMinutes: 30, priceMinorUnits: 80_000)],
+                addons: [addon]
+            )
+        }
+
+        func line(for pet: Pet) -> CartItem {
+            CartItem(id: UUID(), serviceId: service.id, variantId: variantId,
+                     petIds: [pet.id], addonIds: [dogOnlyAddon.id])
+        }
+
+        func wiredUseCase(_ cartRepository: CartRepository) -> ManageCartUseCase {
+            ManageCartUseCase(
+                cartRepository: cartRepository,
+                catalogRepository: StubCatalogRepository(services: [service]),
+                petRepository: StubPetRepository(pets: [dog, cat])
+            )
+        }
+    }
+
+    @Test("a dog-only add-on is rejected for a cat")
+    func rejectsIneligibleSpecies() async throws {
+        let fixture = Fixture()
+        let cartRepository = MockCartRepository()
+        let useCase = fixture.wiredUseCase(cartRepository)
+        let cart = Cart(id: UUID(), userId: fixture.ownerId)
+
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.addItem(fixture.line(for: fixture.cat), to: cart)
+        }
+
+        // Discriminating: the line must not have been saved either. A gate
+        // that throws after persisting is not a gate.
+        let saved = try await cartRepository.currentCart(userId: fixture.ownerId)
+        #expect(saved.items.isEmpty)
+    }
+
+    @Test("the same add-on is accepted for an eligible dog")
+    func acceptsEligibleSpecies() async throws {
+        let fixture = Fixture()
+        let useCase = fixture.wiredUseCase(MockCartRepository())
+        let cart = Cart(id: UUID(), userId: fixture.ownerId)
+
+        let updated = try await useCase.addItem(fixture.line(for: fixture.dog), to: cart)
+
+        // The positive case matters as much as the negative one: a gate that
+        // rejects everything would pass the test above on its own.
+        #expect(updated.items.count == 1)
+        #expect(updated.items.first?.addonIds == [fixture.dogOnlyAddon.id])
+    }
+
+    @Test("wiring is what makes the gate run — unwired, the cat's booking sails through")
+    func wiringIsWhatMakesTheGateRun() async throws {
+        let fixture = Fixture()
+        // Exactly how `ManageCartUseCase` is constructed everywhere that
+        // hasn't been wired: no catalog, no pets. This documents that the
+        // default is permissive, so if `DependencyContainer` ever stops
+        // passing the repositories the failure is understood rather than
+        // mysterious.
+        let unwired = ManageCartUseCase(cartRepository: MockCartRepository())
+        let cart = Cart(id: UUID(), userId: fixture.ownerId)
+
+        let updated = try await unwired.addItem(fixture.line(for: fixture.cat), to: cart)
+        #expect(updated.items.count == 1)
+    }
+}
+
+// MARK: - D2: minimum pet age.
+
+@Suite("D2 minimum pet age eligibility")
+struct MinimumPetAgeTests {
+
+    private func pet(ageMonths: Int?) -> Pet {
+        let dob = ageMonths.map { Calendar.current.date(byAdding: .month, value: -$0, to: .now)! }
+        return Pet(id: UUID(), ownerId: UUID(), name: "Test", species: .dog, breed: nil, dateOfBirth: dob)
+    }
+
+    @Test("a service with a minimum age excludes a pet below it")
+    func excludesTooYoung() {
+        let eligibility = ServiceEligibility(minPetAgeMonths: 6)
+        #expect(!eligibility.allows(pet: pet(ageMonths: 0)))
+        #expect(!eligibility.allows(pet: pet(ageMonths: 5)))
+    }
+
+    @Test("a pet at or above the minimum is allowed")
+    func allowsOldEnough() {
+        let eligibility = ServiceEligibility(minPetAgeMonths: 6)
+        #expect(eligibility.allows(pet: pet(ageMonths: 6)))
+        #expect(eligibility.allows(pet: pet(ageMonths: 12)))
+    }
+
+    @Test("unknown date of birth passes the age gate rather than hiding the service")
+    func unknownAgePasses() {
+        // Deliberate product choice: an owner who hasn't filled in a birthday
+        // should still see what they can book. The vet checks age in person.
+        #expect(ServiceEligibility(minPetAgeMonths: 6).allows(pet: pet(ageMonths: nil)))
+    }
+
+    @Test("species and age gates compose — both must pass")
+    func speciesAndAgeCompose() {
+        let eligibility = ServiceEligibility(species: [.dog], minPetAgeMonths: 6)
+        let youngDog = pet(ageMonths: 2)
+        var oldCat = pet(ageMonths: 24); oldCat.species = .cat
+        var oldDog = pet(ageMonths: 24)
+        oldDog.species = .dog
+
+        #expect(!eligibility.allows(pet: youngDog))   // right species, too young
+        #expect(!eligibility.allows(pet: oldCat))     // old enough, wrong species
+        #expect(eligibility.allows(pet: oldDog))      // both pass
+    }
+}

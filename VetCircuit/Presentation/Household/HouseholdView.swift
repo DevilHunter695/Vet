@@ -200,9 +200,14 @@ struct HouseholdView: View {
                     Button(viewModel.currentUserIsOwner ? "Delete household" : "Leave household", role: .destructive) {
                         Haptics.warning()
                         guard let user = session.currentUser else { return }
-                        // Invited-but-not-yet-joined members carry a nil
-                        // `userId`, so matching on id alone silently found
-                        // nothing and the button did nothing at all.
+                        // `HouseholdMember.userId` is non-optional, so an
+                        // invited-but-not-yet-joined row is created with a
+                        // fresh placeholder UUID (see the mock's invite path).
+                        // That placeholder never equals the invitee's real
+                        // user id, so once they actually opened the app and
+                        // tapped "Leave household", matching on id alone found
+                        // nothing and the button did nothing at all. The phone
+                        // fallback is what makes their own row findable.
                         if let mine = viewModel.myMembership(userId: user.id, phone: user.phone) {
                             pendingLeave = mine
                         } else {
