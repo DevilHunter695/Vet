@@ -184,10 +184,13 @@ actor MockQuoteRepository: QuoteRepository {
                 variant: variant, addons: addons,
                 additionalPetCount: max(0, item.petIds.count - 1),
                 travelFeeMinorUnits: cart.circuitId != nil ? 0 : 4_500,
+                // `gstRate` precedes `entitlementCreditApplied` in Input's
+                // property order, and Swift requires memberwise arguments in
+                // declaration order.
+                gstRate: 0,
                 // H6: a credit pays for one visit — applied to the first
                 // line item only, never every line in a multi-item cart.
                 entitlementCreditApplied: applyEntitlementCredit && index == 0,
-                gstRate: 0,
                 vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits,
                 quantity: item.quantity
             )
