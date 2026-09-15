@@ -163,8 +163,17 @@ actor MockQuoteRepository: QuoteRepository {
         }
 
         // Pre-discount/pre-wallet subtotal, computed first because coupon
-        // validation (min-spend) and the wallet cap both need it.
-        var preSubtotal = 0
+        // validation (min-spend) and the percentage discount both need it.
+        //
+        // This is deliberately the PRE-TAX base. It used to be
+        // `PricingEngine.quote(input).totalMinorUnits`, which is GST
+        // *inclusive* — so a 20% coupon was taking 20% of the taxed amount
+        // and `PricingEngine` then subtracted that from the untaxed one. The
+        // customer received 23.6% off, not 20%, and the business ate the
+        // difference on every percentage coupon. Passing `gstRate: 0` gets
+        // the taxable base out of the same engine rather than re-deriving it
+        // here, so the two can never drift apart.
+        var preTaxSubtotal = 0
         for (index, item) in cart.items.enumerated() {
             guard let service = catalog.first(where: { $0.id == item.serviceId }),
                   let variant = service.variants.first(where: { $0.id == item.variantId }) else {
@@ -178,16 +187,20 @@ actor MockQuoteRepository: QuoteRepository {
                 // H6: a credit pays for one visit — applied to the first
                 // line item only, never every line in a multi-item cart.
                 entitlementCreditApplied: applyEntitlementCredit && index == 0,
+                gstRate: 0,
                 vetOverridePriceMinorUnits: override(for: item)?.priceOverrideMinorUnits,
                 quantity: item.quantity
             )
-            preSubtotal += PricingEngine.quote(input).totalMinorUnits
+            preTaxSubtotal += PricingEngine.quote(input).totalMinorUnits
         }
 
         var couponDiscount = 0
         if let code = cart.couponCode, !code.isEmpty,
-           let coupon = try await couponRepository.validate(code: code, userId: cart.userId, cartTotalMinorUnits: preSubtotal) {
-            couponDiscount = Self.discountMinorUnits(for: coupon, subtotal: preSubtotal)
+           // Min-spend is measured on the same base the percentage applies
+           // to; a coupon whose threshold and whose discount disagree about
+           // what "the cart is worth" is a bug waiting to be argued about.
+           let coupon = try await couponRepository.validate(code: code, userId: cart.userId, cartTotalMinorUnits: preTaxSubtotal) {
+            couponDiscount = Self.discountMinorUnits(for: coupon, subtotal: preTaxSubtotal)
         }
 
         var walletBalance = 0

@@ -8,7 +8,10 @@ on:
 jobs:
   build-test-and-run:
     runs-on: macos-15
-    timeout-minutes: 25
+    # 25 was too tight once the suite grew: the app build takes ~6 min and the
+    # test target's own build-for-testing another ~10, so the job was finishing
+    # with no headroom.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -79,11 +82,27 @@ jobs:
           path: artifacts/vetcircuit-simulator.png
 
       - name: Unit tests
-        timeout-minutes: 10
+        # Executing the tests takes ~12 seconds; the rest is building the test
+        # target. At 10 minutes xcodebuild was being killed during teardown,
+        # before it printed `** TEST SUCCEEDED **` / `** TEST FAILED **` — and
+        # because this step is `continue-on-error`, the job still reported
+        # success. That is the second way a real failure has gone invisible
+        # here, so the cap now leaves room for the marker to be printed.
+        timeout-minutes: 25
+        # NOTE: `continue-on-error: true` means a genuine test failure STILL
+        # reports this job as successful. A test target that did not compile
+        # at all sat unnoticed behind it for some time. Making this blocking
+        # is a policy decision for the repo owner, so it is left as-is and
+        # flagged here rather than changed unilaterally.
         continue-on-error: true
         run: |
+          # `-derivedDataPath build` reuses what the Build step already
+          # produced. Without it this step re-built both targets from scratch,
+          # which was ~8.5 of its 10 minutes and left the suite barely a minute
+          # to run — run #89's log stops mid-suite for exactly that reason.
           xcodebuild test \
             -project VetCircuit.xcodeproj \
             -scheme VetCircuit \
             -destination "id=${{ steps.destination.outputs.id }}" \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
