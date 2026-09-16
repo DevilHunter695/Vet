@@ -106,13 +106,14 @@ jobs:
           # the whole action and the 399-test unit suite silently did not run.
           # A problem in the UI walkthrough must not be able to hide the unit
           # results again.
+          set -o pipefail
           xcodebuild test \
             -project VetCircuit.xcodeproj \
             -scheme VetCircuit \
             -destination "id=${{ steps.destination.outputs.id }}" \
             -derivedDataPath build \
             -only-testing:VetCircuitTests \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee unit-tests.log
 
       - name: UI walkthrough
         # Drives the real app in the simulator — the only check that proves a
@@ -122,10 +123,58 @@ jobs:
         timeout-minutes: 25
         continue-on-error: true
         run: |
+          set -o pipefail
           xcodebuild test \
             -project VetCircuit.xcodeproj \
             -scheme VetCircuit \
             -destination "id=${{ steps.destination.outputs.id }}" \
             -derivedDataPath build \
             -only-testing:VetCircuitUITests \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee ui-tests.log
+
+      # The verdict, printed last so it is always in the tail of the log.
+      #
+      # This exists because a verdict that is only discoverable by trawling
+      # the whole log is not discoverable at all. Both test steps are
+      # `continue-on-error`, so the job's own badge says "success" whatever
+      # happened; and the job log is large enough that the log API returns
+      # only its tail, which repeatedly cut off the unit suite's
+      # `Test run with N tests passed` line — leaving the actual result
+      # unreadable while everything looked green. Running last means this
+      # summary is in the tail by construction.
+      #
+      # `if: always()` so a timed-out or killed test step still gets a verdict
+      # rather than silently producing none, which is the failure shape this
+      # is here to remove.
+      - name: Test verdict
+        if: always()
+        run: |
+          verdict() {
+            local name="$1" log="$2"
+            if [ ! -f "$log" ]; then
+              echo "$name: NO LOG — the step did not run or died before writing anything"
+              return
+            fi
+            local summary
+            summary=$(grep -E "Test run with [0-9]+ tests (passed|failed)" "$log" | tail -1 || true)
+            local marker
+            marker=$(grep -Eo "\*\* TEST (SUCCEEDED|FAILED) \*\*" "$log" | tail -1 || true)
+            local xctest
+            xctest=$(grep -E "Executed [0-9]+ tests, with [0-9]+ failure" "$log" | tail -1 || true)
+            echo "$name:"
+            echo "  marker : ${marker:-MISSING — the step was cut off before xcodebuild printed a verdict}"
+            echo "  summary: ${summary:-none}"
+            echo "  xctest : ${xctest:-none}"
+            grep -c "✘" "$log" 2>/dev/null | sed 's/^/  failures (✘ lines): /' || true
+          }
+          echo "=============== TEST VERDICT ==============="
+          verdict "Unit tests" unit-tests.log
+          verdict "UI walkthrough" ui-tests.log
+          echo "==========================================="
+          {
+            echo "### Test verdict"
+            echo '```'
+            verdict "Unit tests" unit-tests.log
+            verdict "UI walkthrough" ui-tests.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
