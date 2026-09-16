@@ -14,13 +14,24 @@ final class PackagesViewModel {
     var myRedemptions: [GetMyPackageRedemptionsUseCase.RedeemableEntitlement] = []
     var isLoading = false
     var isBuying = false
+    /// The pet the screen was pushed with, if any — preselected on load.
+    var preselectedPetId: UUID?
     var errorMessage: String?
     var boughtPackageId: UUID?
+    /// D4: buying a package needs at least one pet (`BuyPackageUseCase`
+    /// rejects an empty list). This screen is reachable from the catalog
+    /// toolbar with no pet in hand, in which case the button used to throw
+    /// "Choose at least one pet." into a banner at the very bottom of a long
+    /// scroll — indistinguishable from nothing happening. Load the owner's
+    /// pets here and let them pick right on the screen.
+    var pets: [Pet] = []
+    var selectedPetIds: Set<UUID> = []
 
     private let browsePackagesUseCase = DependencyContainer.shared.browsePackagesUseCase()
     private let buyPackageUseCase = DependencyContainer.shared.buyPackageUseCase()
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
     private let getMyPackageRedemptionsUseCase = DependencyContainer.shared.getMyPackageRedemptionsUseCase()
+    private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
 
     func load(vertical: Vertical, userId: UUID?) async {
         isLoading = true
@@ -33,13 +44,25 @@ final class PackagesViewModel {
             catalog = try await catalogResult
             if let userId {
                 myRedemptions = try await getMyPackageRedemptionsUseCase.execute(userId: userId)
+                pets = try await managePetsUseCase.list(ownerId: userId)
+                if selectedPetIds.isEmpty, let preselected = preselectedPetId ?? pets.first?.id {
+                    selectedPetIds = [preselected]
+                }
             }
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    func buy(_ package: Package, petIds: [UUID], userId: UUID) async {
+    func buy(_ package: Package, userId: UUID) async {
+        let petIds = Array(selectedPetIds)
+        guard !petIds.isEmpty else {
+            Haptics.error()
+            errorMessage = pets.isEmpty
+                ? "Add a pet to your profile first — a package is bought against a specific pet."
+                : "Pick which pet this package is for."
+            return
+        }
         isBuying = true
         errorMessage = nil
         defer { isBuying = false }
@@ -61,6 +84,7 @@ struct PackagesView: View {
 
     @Environment(SessionStore.self) private var session
     @State private var viewModel = PackagesViewModel()
+    @State private var isShowingCart = false
 
     var body: some View {
         Group {
@@ -83,23 +107,53 @@ struct PackagesView: View {
                         }
 
                         Text("Save by bundling the visits your pet will need anyway.")
-                            .font(.brandBody).foregroundStyle(.secondary)
-                        ForEach(Array(viewModel.packages.enumerated()), id: \.element.id) { index, package in
-                            PackageCard(
-                                package: package,
-                                discount: package.discountMinorUnits(catalog: viewModel.catalog),
-                                isBought: viewModel.boughtPackageId == package.id,
-                                isBuying: viewModel.isBuying
-                            ) {
-                                guard let userId = session.currentUser?.id else { return }
-                                let petIds = pet.map { [$0.id] } ?? []
-                                Task { await viewModel.buy(package, petIds: petIds, userId: userId) }
+                            .font(.brandBody).foregroundStyle(Theme.textSecondary)
+
+                        // Which pet the entitlement is created against. Without
+                        // this the buy button just failed silently for anyone
+                        // who opened Packages from the catalog toolbar.
+                        if viewModel.pets.count > 1 {
+                            VStack(alignment: .leading, spacing: 8) {
+                                SectionHeader(title: "Who is this for?", systemImage: "pawprint.fill")
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(viewModel.pets) { pet in
+                                            let isOn = viewModel.selectedPetIds.contains(pet.id)
+                                            PillButton(title: pet.name, systemImage: isOn ? "checkmark" : nil, tint: Theme.primary, filled: isOn) {
+                                                Haptics.selection()
+                                                if isOn {
+                                                    viewModel.selectedPetIds.remove(pet.id)
+                                                } else {
+                                                    viewModel.selectedPetIds.insert(pet.id)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .padding(.horizontal, 2)
+                                }
                             }
-                            .appearAnimation(delay: Theme.staggerDelay(index))
                         }
 
                         if let errorMessage = viewModel.errorMessage {
                             ErrorBanner(message: errorMessage)
+                        }
+
+                        ForEach(Array(viewModel.packages.enumerated()), id: \.element.id) { index, package in
+                            PackageCard(
+                                package: package,
+                                discount: package.discountMinorUnits(catalog: viewModel.catalog),
+                                services: viewModel.catalog,
+                                isBought: viewModel.boughtPackageId == package.id,
+                                isBuying: viewModel.isBuying,
+                                onViewCart: { isShowingCart = true }
+                            ) {
+                                guard let userId = session.currentUser?.id else {
+                                    viewModel.errorMessage = "Sign in to buy a package."
+                                    return
+                                }
+                                Task { await viewModel.buy(package, userId: userId) }
+                            }
+                            .appearAnimation(delay: Theme.staggerDelay(index))
                         }
                     }
                     .padding()
@@ -109,7 +163,12 @@ struct PackagesView: View {
         .auroraScreenBackground()
         .navigationTitle("Packages")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await viewModel.load(vertical: vertical, userId: session.currentUser?.id) }
+        .navigationDestination(isPresented: $isShowingCart) { CartView() }
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { CartToolbarButton() } }
+        .task {
+            viewModel.preselectedPetId = pet?.id
+            await viewModel.load(vertical: vertical, userId: session.currentUser?.id)
+        }
     }
 }
 
@@ -132,7 +191,7 @@ private struct MyPackagesSection: View {
                             .accessibilityHidden(true)
                         Text(entitlement.progressLabel)
                             .font(.brandCaption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -145,16 +204,28 @@ private struct MyPackagesSection: View {
 private struct PackageCard: View {
     let package: Package
     let discount: Int
+    /// Resolved so the card can actually list what is inside the bundle
+    /// instead of only naming it — a customer will not spend ₹3,499 on a
+    /// sentence.
+    let services: [Service]
     let isBought: Bool
     let isBuying: Bool
+    let onViewCart: () -> Void
     let action: () -> Void
+
+    private var lines: [(name: String, quantity: Int)] {
+        package.items.compactMap { item in
+            guard let service = services.first(where: { $0.id == item.serviceId }) else { return nil }
+            return (service.name, item.quantity)
+        }
+    }
 
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(package.name).font(.brandHeadline)
-                    Text(package.packageDescription).font(.brandBody).foregroundStyle(.secondary)
+                    Text(package.packageDescription).font(.brandBody).foregroundStyle(Theme.textSecondary)
                 }
                 .accessibilityElement(children: .combine)
 
@@ -172,8 +243,34 @@ private struct PackageCard: View {
                 }
                 .accessibilityElement(children: .combine)
 
-                PrimaryButton(title: isBought ? "Added to cart" : "Add package to cart", isLoading: isBuying, action: action)
-                    .disabled(isBought)
+                if !lines.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(lines, id: \.name) { line in
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.emeraldLight)
+                                Text("\(line.quantity)× \(line.name)")
+                                    .font(.brandCallout)
+                                    .foregroundStyle(Theme.textSecondary)
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                    .accessibilityElement(children: .combine)
+                }
+
+                if isBought {
+                    // A disabled "Added to cart" button is a dead end: the
+                    // purchase worked but there was nowhere to go next.
+                    VStack(spacing: 8) {
+                        CalloutNote(text: "Added to your cart — pick a slot at checkout.", systemImage: "checkmark.circle.fill")
+                        PrimaryButton(title: "View cart", systemImage: "cart.fill", action: onViewCart)
+                    }
+                } else {
+                    PrimaryButton(title: "Add package to cart", isLoading: isBuying, action: action)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

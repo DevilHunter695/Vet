@@ -117,13 +117,13 @@ struct PrivacyConsentView: View {
             Section("What you've agreed to") {
                 if viewModel.consents.isEmpty {
                     Text("No active consents yet — these appear once you accept the liability waiver or grant location tracking.")
-                        .font(.brandCaption).foregroundStyle(.secondary)
+                        .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 } else {
                     ForEach(viewModel.consents) { consent in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(consentDisplayName(consent.purpose)).font(.brandHeadline)
                             Text("Granted \(consent.grantedAt.formatted(date: .abbreviated, time: .omitted)) · version \(consent.version)")
-                                .font(.brandCaption).foregroundStyle(.secondary)
+                                .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                         }
                         .swipeActions {
                             Button("Withdraw", role: .destructive) {
@@ -156,7 +156,7 @@ struct PrivacyConsentView: View {
                 .disabled(viewModel.isExporting)
 
                 Text("Downloads everything VetCircuit holds about you — profile, addresses, visit history, and consent records — as JSON (machine-readable) or PDF (readable summary).")
-                    .font(.brandCaption).foregroundStyle(.secondary)
+                    .font(.brandCaption).foregroundStyle(Theme.textSecondary)
             }
 
             Section("Danger zone") {
@@ -165,7 +165,7 @@ struct PrivacyConsentView: View {
                         Label("Deletion scheduled", systemImage: "clock.badge.exclamationmark")
                             .font(.brandHeadline).foregroundStyle(Theme.danger)
                         Text("Your account will be permanently deleted on \(pending.scheduledPurgeAt.formatted(date: .long, time: .omitted)). You can still cancel this.")
-                            .font(.brandCaption).foregroundStyle(.secondary)
+                            .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                         Button("Cancel deletion") {
                             Haptics.tap()
                             if let user = session.currentUser { Task { await viewModel.cancelDeletion(userId: user.id) } }

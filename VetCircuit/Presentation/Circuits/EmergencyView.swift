@@ -56,7 +56,7 @@ struct EmergencyView: View {
                     ErrorBanner(message: errorMessage)
                 } else if viewModel.clinics.isEmpty {
                     Text("We couldn't load nearby clinics. If this is life-threatening, call your nearest emergency vet directly.")
-                        .font(.brandBody).foregroundStyle(.secondary)
+                        .font(.brandBody).foregroundStyle(Theme.textSecondary)
                 } else {
                     ForEach(viewModel.clinics) { clinic in
                         EmergencyClinicCard(clinic: clinic)
@@ -79,7 +79,7 @@ struct EmergencyView: View {
                     .foregroundStyle(Theme.danger)
                 Text("We schedule home visits — we can't guarantee an immediate response. If your pet is unconscious, bleeding heavily, struggling to breathe, or in similar danger, call or go to the nearest 24×7 emergency clinic below right away.")
                     .font(.brandBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -102,7 +102,7 @@ private struct EmergencyClinicCard: View {
                             .foregroundStyle(Theme.success)
                     }
                 }
-                Text(clinic.address).font(.brandCaption).foregroundStyle(.secondary)
+                Text(clinic.address).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 HStack(spacing: 12) {
                     if let telURL = clinic.telURL {
                         Link(destination: telURL) {

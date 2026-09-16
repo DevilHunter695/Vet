@@ -9,7 +9,7 @@ struct PrivacyPolicyView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Privacy Policy").font(.brandLargeTitle)
-                Text("Last updated: September 2026").font(.brandCaption).foregroundStyle(.secondary)
+                Text("Last updated: September 2026").font(.brandCaption).foregroundStyle(Theme.textSecondary)
 
                 LegalSection(title: "Who we are") {
                     Text("VetCircuit is a marketplace connecting pet owners with independent, VCI-registered veterinary professionals for home visits. VetCircuit is not itself a veterinary clinic and does not employ the vets who visit you.")
@@ -54,7 +54,7 @@ struct PrivacyPolicyView: View {
                 }
 
                 Text("This policy is a good-faith draft for VetCircuit and is not a substitute for advice from a qualified lawyer.")
-                    .font(.brandCaption).foregroundStyle(.secondary).italic()
+                    .font(.brandCaption).foregroundStyle(Theme.textSecondary).italic()
             }
             .padding()
         }
@@ -71,7 +71,7 @@ struct LegalSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.brandHeadline)
-            content.font(.brandBody).foregroundStyle(.secondary)
+            content.font(.brandBody).foregroundStyle(Theme.textSecondary)
         }
     }
 }

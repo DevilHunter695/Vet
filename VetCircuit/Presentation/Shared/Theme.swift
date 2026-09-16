@@ -95,15 +95,47 @@ enum Theme {
     // MARK: Core hues
 
     /// Deep ocean blue — the primary brand hue and the anchor of the aurora.
-    static let primary = Color(hue: 0.556, saturation: 0.72, brightness: 0.62)
-    static let primaryLight = Color(hue: 0.545, saturation: 0.55, brightness: 0.82)
-    static let primaryDeep = Color(hue: 0.585, saturation: 0.85, brightness: 0.36)
+    ///
+    /// Brightness was raised from 0.62: a mid-brightness blue used as *text*
+    /// (which is most of what `primary` does — prices, links, section icons)
+    /// on a near-black ground lands around 3.5:1, under the 4.5:1 body-text
+    /// floor. At 0.78 it clears it with room to spare and still reads as the
+    /// same hue. Use `primaryDeep` where the colour is a *fill* behind white
+    /// text, where the contrast requirement runs the other way.
+    static let primary = Color(hue: 0.556, saturation: 0.62, brightness: 0.86)
+    static let primaryLight = Color(hue: 0.545, saturation: 0.42, brightness: 0.95)
+    static let primaryDeep = Color(hue: 0.585, saturation: 0.85, brightness: 0.42)
 
     /// Emerald — the second pole of the aurora. Used for "good" states,
-    /// savings, credits, and anything that should read as healthy.
-    static let emerald = Color(hue: 0.425, saturation: 0.68, brightness: 0.62)
-    static let emeraldLight = Color(hue: 0.415, saturation: 0.52, brightness: 0.80)
-    static let emeraldDeep = Color(hue: 0.445, saturation: 0.80, brightness: 0.34)
+    /// savings, credits, and anything that should read as healthy. Lifted for
+    /// the same contrast reason as `primary`.
+    static let emerald = Color(hue: 0.425, saturation: 0.60, brightness: 0.82)
+    static let emeraldLight = Color(hue: 0.415, saturation: 0.42, brightness: 0.93)
+    static let emeraldDeep = Color(hue: 0.445, saturation: 0.80, brightness: 0.38)
+
+    // MARK: Text
+    //
+    // SwiftUI's `.primary`/`.secondary`/`.tertiary` are tuned for a flat
+    // system background. Over the aurora — which carries its own colour and
+    // luminance — `.secondary` (≈60% white in dark mode) drops most caption
+    // text under 4.5:1, and `.tertiary` (≈30%) is close to invisible. These
+    // tokens are the same three roles pinned to values that survive the
+    // background they actually sit on.
+    /// Adaptive so the light appearance (still a supported option in
+    /// Settings) doesn't end up with white text on a near-white wash.
+    static let textPrimary = Color(uiColor: UIColor { trait in
+        trait.userInterfaceStyle == .dark ? UIColor.white : UIColor(white: 0.07, alpha: 1)
+    })
+    static let textSecondary = Color(uiColor: UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor(white: 1, alpha: 0.78)
+            : UIColor(white: 0, alpha: 0.68)
+    })
+    static let textTertiary = Color(uiColor: UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor(white: 1, alpha: 0.58)
+            : UIColor(white: 0, alpha: 0.50)
+    })
 
     /// The floor the aurora falls away to. Not pure black — a hair of blue
     /// keeps it from looking like a dead pixel field next to the hues above.
@@ -120,26 +152,54 @@ enum Theme {
     /// The workhorse fill for primary buttons, badges and avatars: blue into
     /// green across the diagonal, so two elements of different sizes still
     /// look like they were cut from the same cloth.
+    ///
+    /// Note these are *not* `primary`/`emerald`. Those two were brightened so
+    /// they'd clear 4.5:1 as text on a dark ground — which makes them far too
+    /// light to put white text *on top of*. A fill and a foreground have
+    /// opposite contrast requirements, so the button fill keeps its own,
+    /// deeper pair: white on these clears 4.5:1 in both appearances.
+    /// The foreground to use on top of a *bright* brand fill (a filled pill,
+    /// a selected chip). White on `primary`/`emerald` at their new brightness
+    /// is roughly 2:1; the near-black ground colour on them is over 9:1.
+    static let onBrightFill = Color(hue: 0.60, saturation: 0.55, brightness: 0.07)
+
+    static let fillBlue = Color(hue: 0.578, saturation: 0.80, brightness: 0.58)
+    static let fillGreen = Color(hue: 0.440, saturation: 0.76, brightness: 0.50)
+
     static let gradient = LinearGradient(
-        colors: [primary, emerald],
+        colors: [fillBlue, fillGreen],
         startPoint: .topLeading, endPoint: .bottomTrailing
     )
 
     /// A cooler, deeper variant for large hero surfaces, where the lighter
     /// `gradient` would be too loud across a whole header.
     static let heroGradient = LinearGradient(
-        colors: [primaryLight, primary, emeraldDeep],
+        colors: [fillBlue, primaryDeep, emeraldDeep],
         startPoint: .topLeading, endPoint: .bottomTrailing
     )
 
     /// Blue → green → black, top to bottom. The signature full-bleed
     /// background used behind dark-mode screens and hero headers.
+    ///
+    /// Rebalanced hard, and this is the single biggest readability change in
+    /// the app. The previous stops put `primaryDeep` at the very top and a
+    /// near-full-strength `primary` at 22% — i.e. the top third of every
+    /// screen was a bright mid-blue, and every screen's most important text
+    /// (the navigation title, the hero card, the first row of any list) was
+    /// white-on-mid-blue. That is somewhere around 2.5:1: technically visible,
+    /// genuinely hard to read, and the reason the whole app looked washed out.
+    ///
+    /// The fix is the one every dark interface that reads well makes: the
+    /// ground is near-black effectively everywhere, and the blue and green
+    /// survive as a *glow* — deepest at the very top edge, gone by a third of
+    /// the way down. Colour still carries the brand, but it does it behind
+    /// nothing that has to be read.
     static let auroraGradient = LinearGradient(
         stops: [
-            .init(color: primaryDeep, location: 0.0),
-            .init(color: primary.opacity(0.85), location: 0.22),
-            .init(color: emeraldDeep, location: 0.52),
-            .init(color: abyssSoft, location: 0.78),
+            .init(color: Color(hue: 0.585, saturation: 0.70, brightness: 0.20), location: 0.0),
+            .init(color: Color(hue: 0.575, saturation: 0.62, brightness: 0.13), location: 0.14),
+            .init(color: abyssSoft, location: 0.34),
+            .init(color: abyss, location: 0.62),
             .init(color: abyss, location: 1.0)
         ],
         startPoint: .top, endPoint: .bottom
@@ -158,7 +218,7 @@ enum Theme {
     )
 
     static let successGradient = LinearGradient(
-        colors: [emeraldLight, emerald],
+        colors: [fillGreen, emeraldDeep],
         startPoint: .topLeading, endPoint: .bottomTrailing
     )
 
@@ -233,12 +293,16 @@ struct AuroraBackground: View {
         isDark ? Theme.auroraGradient : Theme.auroraGradientLight
     }
 
+    // Kept deliberately faint. These blobs sit *behind live text*, so every
+    // point of opacity here is contrast taken away from whatever is on top of
+    // them. They are there to stop the ground looking like flat black paint,
+    // not to be seen in their own right.
     private var blueOpacity: Double {
-        (isDark ? 0.55 : 0.28) * intensity
+        (isDark ? 0.22 : 0.20) * intensity
     }
 
     private var greenOpacity: Double {
-        (isDark ? 0.45 : 0.24) * intensity
+        (isDark ? 0.18 : 0.16) * intensity
     }
 
     var body: some View {
@@ -269,8 +333,13 @@ struct AuroraBackground: View {
                 // uniformly murky instead of having a floor.
                 if isDark {
                     LinearGradient(
-                        colors: [.clear, Theme.abyss.opacity(0.75), Theme.abyss],
-                        startPoint: .center, endPoint: .bottom
+                        stops: [
+                            .init(color: .clear, location: 0.0),
+                            .init(color: Theme.abyss.opacity(0.70), location: 0.32),
+                            .init(color: Theme.abyss.opacity(0.94), location: 0.6),
+                            .init(color: Theme.abyss, location: 1.0)
+                        ],
+                        startPoint: .top, endPoint: .bottom
                     )
                 }
             }
@@ -336,7 +405,7 @@ extension View {
         self.font(.brandCaption2)
             .textCase(.uppercase)
             .tracking(0.8)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Theme.textTertiary)
     }
 }
 

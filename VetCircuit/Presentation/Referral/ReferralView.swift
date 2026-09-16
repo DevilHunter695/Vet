@@ -52,7 +52,7 @@ struct ReferralView: View {
             Section {
                 VStack(spacing: 14) {
                     PawMascot(size: 56, animated: false)
-                    Text("Your referral code").font(.brandCaption).foregroundStyle(.secondary)
+                    Text("Your referral code").font(.brandCaption).foregroundStyle(Theme.textSecondary)
                     // An empty `code` used to render an empty pill and share
                     // a blank invite. Shimmer until it lands.
                     if viewModel.code.isEmpty {
@@ -105,7 +105,7 @@ struct ReferralView: View {
                     }
                 } else if viewModel.referrals.isEmpty {
                     Text("No invites sent yet. Share your code above and you'll both get a discounted visit.")
-                        .font(.brandCaption).foregroundStyle(.secondary)
+                        .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 } else {
                     ForEach(viewModel.referrals) { referral in
                         HStack(alignment: .firstTextBaseline) {
@@ -115,7 +115,7 @@ struct ReferralView: View {
                                 // where the invite got to, or what's owed.
                                 Text("\(referral.status.detail) · invited \(referral.createdAt.formatted(date: .abbreviated, time: .omitted))")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                             Spacer(minLength: 8)
                             TagChip(

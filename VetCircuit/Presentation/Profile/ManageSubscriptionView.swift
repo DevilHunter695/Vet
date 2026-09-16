@@ -122,7 +122,7 @@ struct ManageSubscriptionView: View {
                 Section("Current plan") {
                     LabeledContent("Plan", value: subscription.planType.displayName)
                     HStack {
-                        Text("Status").font(.brandCallout).foregroundStyle(.secondary)
+                        Text("Status").font(.brandCallout).foregroundStyle(Theme.textSecondary)
                         Spacer()
                         // Was `rawValue.capitalized` — "Pastdue".
                         TagChip(
@@ -187,7 +187,7 @@ struct ManageSubscriptionView: View {
                         if upgradeTargets(from: subscription.planType).isEmpty && downgradeTargets(from: subscription.planType).isEmpty {
                             Text("No plan changes available for a corporate/RWA plan here — see the corporate plan screen.")
                                 .font(.brandCaption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                     }
 

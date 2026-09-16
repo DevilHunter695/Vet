@@ -43,6 +43,16 @@ struct VisitDetailView: View {
     @State private var isRetryingPayment = false
     @State private var retryErrorMessage: String?
 
+    /// Cancelling from here used to be impossible — the only cancel affordance
+    /// in the app lived on the Visits list. `effectiveStatus` lets this screen
+    /// reflect the cancellation immediately without needing the parent list to
+    /// reload first.
+    @State private var cancelledStatus: Visit.VisitStatus?
+    @State private var pendingCancellation: CancellationPolicy.Outcome?
+    @State private var isCancelling = false
+    @State private var cancelErrorMessage: String?
+
+    private let cancelVisitUseCase = DependencyContainer.shared.cancelVisitUseCase()
     private let startCallUseCase = DependencyContainer.shared.startCallUseCase()
     private let chatRepository = DependencyContainer.shared.chatRepository
     private let paymentRepository = DependencyContainer.shared.paymentRepository
@@ -63,6 +73,39 @@ struct VisitDetailView: View {
             && Date().timeIntervalSince(visit.scheduledAt) / 60 >= NoShowPolicy.vetGraceWindowMinutes
     }
 
+    private var effectiveStatus: Visit.VisitStatus { cancelledStatus ?? visit.status }
+
+    private var canCancelVisit: Bool {
+        Visit.canTransition(from: effectiveStatus, to: .cancelledByUser)
+    }
+
+    private func previewCancellation() async {
+        do {
+            pendingCancellation = try await cancelVisitUseCase.preview(visitId: visit.id, scheduledAt: visit.scheduledAt)
+        } catch {
+            cancelErrorMessage = error.localizedDescription
+        }
+    }
+
+    /// Takes the outcome the dialog is presenting rather than re-reading
+    /// `pendingCancellation`: SwiftUI clears the presentation binding before
+    /// it runs the button's action, so state read back here is already nil.
+    private func confirmCancellation(_ outcome: CancellationPolicy.Outcome) async {
+        isCancelling = true
+        defer { isCancelling = false }
+        do {
+            try await cancelVisitUseCase.execute(
+                visitId: visit.id, currentStatus: effectiveStatus,
+                scheduledAt: visit.scheduledAt, paymentId: visit.paymentId
+            )
+            Haptics.success()
+            withAnimation(Theme.springSoft) { cancelledStatus = .cancelledByUser }
+        } catch {
+            Haptics.error()
+            cancelErrorMessage = error.localizedDescription
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -78,7 +121,7 @@ struct VisitDetailView: View {
                             }
                             Text(visit.scheduledAt.formatted(date: .long, time: .shortened))
                                 .font(.brandBody)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.textSecondary)
                             // I2: entry point to the full timestamped timeline.
                             Label("View full timeline", systemImage: "list.bullet.clipboard")
                                 .font(.brandCaption)
@@ -90,6 +133,30 @@ struct VisitDetailView: View {
                 .buttonStyle(PressableStyle())
                 .accessibilityElement(children: .combine)
                 .appearAnimation()
+
+                if canCancelVisit {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Plans changed?")
+                            .font(.brandHeadline)
+                        Text("Cancelling more than \(Int(CancellationPolicy.freeWindowHours))h before the slot is free. We'll show you exactly what comes back before anything is confirmed.")
+                            .font(.brandCaption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        SecondaryButton(title: "Cancel this visit", systemImage: "xmark.circle", role: .destructive) {
+                            Haptics.warning()
+                            Task { await previewCancellation() }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .glassCard()
+                } else if cancelledStatus == .cancelledByUser {
+                    CalloutNote(text: "This visit is cancelled. Any refund due will land in your wallet shortly.", systemImage: "checkmark.circle.fill")
+                }
+
+                if let cancelErrorMessage {
+                    ErrorBanner(message: cancelErrorMessage)
+                }
 
                 // G9: a gateway dispute (chargeback) was opened against this
                 // visit's payment — surfaced so the customer isn't left
@@ -108,7 +175,7 @@ struct VisitDetailView: View {
                             Label("Payment failed", systemImage: "exclamationmark.circle.fill")
                                 .font(.brandHeadline).foregroundStyle(Theme.danger)
                             Text("Your payment for this visit didn't go through.")
-                                .font(.brandCaption).foregroundStyle(.secondary)
+                                .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                             if let retryErrorMessage {
                                 Text(retryErrorMessage).font(.brandCaption).foregroundStyle(Theme.danger)
                             }
@@ -128,7 +195,7 @@ struct VisitDetailView: View {
                             Label("Your vet proposed a new time", systemImage: "calendar.badge.exclamationmark")
                                 .font(.brandHeadline).foregroundStyle(Theme.warning)
                             Text("Accepting moves this visit to the new slot right away. Declining keeps your original time and adds a goodwill credit to your account.")
-                                .font(.brandCaption).foregroundStyle(.secondary)
+                                .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                             if let proposalActionMessage {
                                 Text(proposalActionMessage).font(.brandCaption).foregroundStyle(Theme.danger)
                             }
@@ -158,7 +225,7 @@ struct VisitDetailView: View {
                         .buttonStyle(PressableStyle())
                         .disabled(isReportingNoShow)
                         if let noShowMessage {
-                            Text(noShowMessage).font(.brandCaption).foregroundStyle(.secondary)
+                            Text(noShowMessage).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                         }
                     }
                     .appearAnimation(delay: 0.04)
@@ -199,7 +266,7 @@ struct VisitDetailView: View {
                                 .font(.system(size: 40, weight: .bold, design: .rounded))
                                 .kerning(8)
                             Text("This confirms the visit actually started — a quick anti-fraud check.")
-                                .font(.brandCaption).foregroundStyle(.secondary)
+                                .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                                 .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity)
@@ -229,19 +296,19 @@ struct VisitDetailView: View {
                                 .foregroundStyle(Theme.primary)
                             if let diagnosis = visit.diagnosisNotes, !diagnosis.isEmpty {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Diagnosis").font(.brandCaption).foregroundStyle(.secondary)
+                                    Text("Diagnosis").font(.brandCaption).foregroundStyle(Theme.textSecondary)
                                     Text(diagnosis).font(.brandBody)
                                 }
                             }
                             if !visit.proceduresPerformed.isEmpty {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Procedures performed").font(.brandCaption).foregroundStyle(.secondary)
+                                    Text("Procedures performed").font(.brandCaption).foregroundStyle(Theme.textSecondary)
                                     ForEach(visit.proceduresPerformed, id: \.self) { Text("• \($0)").font(.brandBody) }
                                 }
                             }
                             if !visit.medicationsGiven.isEmpty {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Medications given").font(.brandCaption).foregroundStyle(.secondary)
+                                    Text("Medications given").font(.brandCaption).foregroundStyle(Theme.textSecondary)
                                     ForEach(visit.medicationsGiven, id: \.self) { Text("• \($0)").font(.brandBody) }
                                 }
                             }
@@ -325,7 +392,7 @@ struct VisitDetailView: View {
                 if let activeCallSession {
                     Label("Connecting you on \(activeCallSession.proxyNumber) — your real number stays private.", systemImage: "lock.shield")
                         .font(.brandCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .transition(.opacity)
                 }
 
@@ -408,6 +475,24 @@ struct VisitDetailView: View {
             .padding()
         }
         .auroraScreenBackground()
+        .confirmationDialog(
+            "Cancel this visit?",
+            isPresented: Binding(get: { pendingCancellation != nil }, set: { if !$0 { pendingCancellation = nil } }),
+            presenting: pendingCancellation
+        ) { outcome in
+            Button("Cancel visit", role: .destructive) {
+                Task { await confirmCancellation(outcome) }
+            }
+            Button("Keep visit", role: .cancel) {}
+        } message: { outcome in
+            if outcome.isPastVisitTime {
+                Text("This visit's time has passed — no refund applies.")
+            } else if outcome.refundPercent == 100 {
+                Text("Cancelling now refunds \(CurrencyFormatter.rupees(outcome.refundMinorUnits)) in full.")
+            } else {
+                Text("Cancelling now refunds \(CurrencyFormatter.rupees(outcome.refundMinorUnits)) of \(CurrencyFormatter.rupees(outcome.paidMinorUnits)).")
+            }
+        }
         .navigationTitle("Visit details")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingReview) {
@@ -583,7 +668,7 @@ private struct ActionRow: View {
             if isLoading {
                 ProgressView().controlSize(.small)
             } else {
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.textTertiary)
             }
         }
         .padding()
@@ -620,7 +705,7 @@ struct PaymentDisputeStatusView: View {
                     .foregroundStyle(dispute.isActive ? Theme.warning : .secondary)
                 Text(message)
                     .font(.brandCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

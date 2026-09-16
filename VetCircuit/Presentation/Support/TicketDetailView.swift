@@ -65,9 +65,9 @@ struct TicketDetailView: View {
             Section("Ticket") {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(viewModel.ticket.subject).font(.brandHeadline)
-                    Text(viewModel.ticket.body).font(.brandBody).foregroundStyle(.secondary)
+                    Text(viewModel.ticket.body).font(.brandBody).foregroundStyle(Theme.textSecondary)
                     Text(viewModel.ticket.createdAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption2).foregroundStyle(.tertiary)
+                        .font(.caption2).foregroundStyle(Theme.textTertiary)
                 }
                 .padding(.vertical, 4)
             }
@@ -89,7 +89,7 @@ struct TicketDetailView: View {
                     if viewModel.isLoading {
                         ProgressView()
                     } else if viewModel.auditTrail.isEmpty {
-                        Text("No refunds or credits issued for this ticket yet.").foregroundStyle(.secondary)
+                        Text("No refunds or credits issued for this ticket yet.").foregroundStyle(Theme.textSecondary)
                     } else {
                         ForEach(viewModel.auditTrail) { audit in
                             VStack(alignment: .leading, spacing: 3) {
@@ -98,9 +98,9 @@ struct TicketDetailView: View {
                                     Spacer()
                                     Text(CurrencyFormatter.rupees(audit.amountMinorUnits)).font(.brandBody)
                                 }
-                                Text(audit.reason).font(.brandCaption).foregroundStyle(.secondary)
+                                Text(audit.reason).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                                 Text(audit.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption2).foregroundStyle(.tertiary)
+                                    .font(.caption2).foregroundStyle(Theme.textTertiary)
                             }
                             .padding(.vertical, 2)
                         }
@@ -109,7 +109,7 @@ struct TicketDetailView: View {
             } else {
                 Section {
                     Text("This ticket isn't tied to a visit, so no refund or credit can be issued from it.")
-                        .font(.brandCaption).foregroundStyle(.secondary)
+                        .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 }
             }
         }

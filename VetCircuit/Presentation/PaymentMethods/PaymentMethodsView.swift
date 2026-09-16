@@ -81,7 +81,7 @@ struct PaymentMethodsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(method.displayLabel).font(.brandBody)
                             Text("Added \(method.createdAt.formatted(date: .abbreviated, time: .omitted))")
-                                .font(.caption2).foregroundStyle(.tertiary)
+                                .font(.caption2).foregroundStyle(Theme.textTertiary)
                         }
                         Spacer(minLength: 8)
                         if method.isDefault {
@@ -177,7 +177,7 @@ struct SavedPaymentMethodPickerRow: View {
             }
             if viewModel.methods.isEmpty {
                 Text("No saved cards — you'll enter payment details at checkout.")
-                    .font(.brandCaption).foregroundStyle(.secondary)
+                    .font(.brandCaption).foregroundStyle(Theme.textSecondary)
             } else {
                 ForEach(viewModel.methods) { method in
                     Button {

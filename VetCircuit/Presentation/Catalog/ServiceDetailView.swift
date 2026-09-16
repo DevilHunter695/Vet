@@ -95,7 +95,7 @@ struct ServiceDetailView: View {
                     Label(service.category.displayName, systemImage: service.category.systemImage)
                         .font(.brandCaption).foregroundStyle(Theme.primary)
                     Text(service.name).font(.brandLargeTitle)
-                    Text(service.summary).font(.brandBody).foregroundStyle(.secondary)
+                    Text(service.summary).font(.brandBody).foregroundStyle(Theme.textSecondary)
                 }
                 .appearAnimation()
 
@@ -126,7 +126,7 @@ struct ServiceDetailView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Pets on this visit").font(.brandHeadline)
                         Text("The 2nd pet onward is charged the reduced multi-pet rate.")
-                            .font(.brandCaption).foregroundStyle(.secondary)
+                            .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                         ForEach(pets) { candidate in
                             CheckboxRow(
                                 title: candidate.name,
@@ -204,8 +204,7 @@ struct ServiceDetailView: View {
         .task { await loadPets() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { CartView() } label: { Image(systemName: "cart") }
-                    .accessibilityLabel("Cart")
+                CartToolbarButton()
             }
         }
     }
@@ -221,7 +220,7 @@ private struct VariantRow: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(variant.name).font(.brandHeadline).foregroundStyle(.primary)
-                    Text("\(variant.durationMinutes) min").font(.brandCaption).foregroundStyle(.secondary)
+                    Text("\(variant.durationMinutes) min").font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 }
                 Spacer()
                 Text(variant.priceMinorUnits == 0 ? "Free" : CurrencyFormatter.rupees(variant.priceMinorUnits))
@@ -256,12 +255,12 @@ private struct CheckboxRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.brandBody).foregroundStyle(.primary)
                     if let subtitle {
-                        Text(subtitle).font(.brandCaption).foregroundStyle(.secondary)
+                        Text(subtitle).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                     }
                 }
                 Spacer()
                 if let trailing {
-                    Text(trailing).font(.brandBody).foregroundStyle(.secondary)
+                    Text(trailing).font(.brandBody).foregroundStyle(Theme.textSecondary)
                 }
             }
             .padding()
@@ -285,7 +284,7 @@ private struct FAQRow: View {
         DisclosureGroup(isExpanded: $isExpanded) {
             Text(faq.answer)
                 .font(.brandBody)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
                 .padding(.top, 4)
         } label: {
             Text(faq.question).font(.brandBody)

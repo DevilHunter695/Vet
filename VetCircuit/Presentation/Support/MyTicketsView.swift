@@ -48,9 +48,9 @@ struct MyTicketsView: View {
                             Spacer()
                             StatusChip(status: ticket.status)
                         }
-                        Text(ticket.body).font(.brandCaption).foregroundStyle(.secondary).lineLimit(2)
+                        Text(ticket.body).font(.brandCaption).foregroundStyle(Theme.textSecondary).lineLimit(2)
                         Text(ticket.createdAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption2).foregroundStyle(.tertiary)
+                            .font(.caption2).foregroundStyle(Theme.textTertiary)
                     }
                     .padding(.vertical, 4)
                 }

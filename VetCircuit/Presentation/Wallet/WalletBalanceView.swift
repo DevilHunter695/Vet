@@ -37,7 +37,7 @@ struct WalletBalanceView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Card {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Wallet balance").font(.brandCaption).foregroundStyle(.secondary)
+                        Text("Wallet balance").font(.brandCaption).foregroundStyle(Theme.textSecondary)
                         Text(CurrencyFormatter.rupees(viewModel.balanceMinorUnits ?? 0))
                             .font(.system(size: 34, weight: .bold, design: .rounded))
                             .foregroundStyle(Theme.primary)
@@ -80,7 +80,7 @@ private struct WalletEntryRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(entry.reason).font(.brandBody)
                 Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.brandCaption).foregroundStyle(.secondary)
+                    .font(.brandCaption).foregroundStyle(Theme.textSecondary)
             }
             Spacer()
             Text((isCredit ? "+" : "-") + CurrencyFormatter.rupees(abs(entry.amountMinorUnits)))

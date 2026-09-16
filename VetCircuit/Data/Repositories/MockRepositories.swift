@@ -266,8 +266,22 @@ actor MockWalletRepository: WalletRepository {
 
     private func seededEntries(userId: UUID) -> [WalletLedgerEntry] {
         if let existing = entriesByUser[userId] { return existing }
-        let seed = [WalletLedgerEntry(id: UUID(), userId: userId, amountMinorUnits: seedAmount,
-                                       reason: "Welcome credit", relatedVisitId: nil, relatedRefundId: nil, createdAt: .now)]
+        // A ledger, not a single balance row: a wallet screen with one line in
+        // it tells the customer nothing about where their money went.
+        let seed = [
+            WalletLedgerEntry(id: UUID(), userId: userId, amountMinorUnits: seedAmount,
+                              reason: "Welcome credit", relatedVisitId: nil, relatedRefundId: nil,
+                              createdAt: Calendar.current.date(byAdding: .month, value: -14, to: .now) ?? .now),
+            WalletLedgerEntry(id: UUID(), userId: userId, amountMinorUnits: 40_000,
+                              reason: "Refund — grooming visit cancelled", relatedVisitId: nil, relatedRefundId: nil,
+                              createdAt: Calendar.current.date(byAdding: .day, value: -15, to: .now) ?? .now),
+            WalletLedgerEntry(id: UUID(), userId: userId, amountMinorUnits: -25_000,
+                              reason: "Applied to Bruno's consultation", relatedVisitId: nil, relatedRefundId: nil,
+                              createdAt: Calendar.current.date(byAdding: .day, value: -9, to: .now) ?? .now),
+            WalletLedgerEntry(id: UUID(), userId: userId, amountMinorUnits: 15_000,
+                              reason: "Referral bonus — Kavya joined", relatedVisitId: nil, relatedRefundId: nil,
+                              createdAt: Calendar.current.date(byAdding: .day, value: -4, to: .now) ?? .now),
+        ]
         entriesByUser[userId] = seed
         return seed
     }
@@ -1039,10 +1053,12 @@ actor MockPetRepository: PetRepository {
 }
 
 actor MockPetWeightRepository: PetWeightRepository {
-    private var entries: [PetWeightEntry] = []
+    private var entries: [PetWeightEntry] = MockData.petWeights
 
+    /// Oldest first: every caller either charts this or reads the last value,
+    /// and an unsorted array made both wrong.
     func history(petId: UUID) async throws -> [PetWeightEntry] {
-        entries.filter { $0.petId == petId }
+        entries.filter { $0.petId == petId }.sorted { $0.recordedAt < $1.recordedAt }
     }
 
     func addEntry(_ entry: PetWeightEntry) async throws -> PetWeightEntry {
@@ -1053,12 +1069,7 @@ actor MockPetWeightRepository: PetWeightRepository {
 
 actor MockVaccinationRepository: VaccinationRepository {
     // Seeded so PetDetailView has something to render before anyone logs one.
-    private var vaccinations: [Vaccination] = [
-        Vaccination(id: UUID(), petId: MockData.user.pets.first?.id ?? UUID(), vaccineName: "Rabies",
-                    givenAt: Calendar.current.date(byAdding: .month, value: -11, to: .now),
-                    nextDueAt: Calendar.current.date(byAdding: .month, value: 1, to: .now) ?? .now,
-                    batchNumber: "RB-2291"),
-    ]
+    private var vaccinations: [Vaccination] = MockData.vaccinations
 
     func history(petId: UUID) async throws -> [Vaccination] {
         vaccinations.filter { $0.petId == petId }
@@ -1120,7 +1131,7 @@ actor MockVetOnboardingRepository: VetOnboardingRepository {
 }
 
 actor MockPetDocumentRepository: PetDocumentRepository {
-    private var documents: [PetDocument] = []
+    private var documents: [PetDocument] = MockData.petDocuments
 
     func list(petId: UUID) async throws -> [PetDocument] {
         documents.filter { $0.petId == petId }
@@ -1143,7 +1154,7 @@ actor MockPetDocumentRepository: PetDocumentRepository {
 }
 
 actor MockPrescriptionRepository: PrescriptionRepository {
-    private var prescriptions: [Prescription] = []
+    private var prescriptions: [Prescription] = MockData.prescriptions
 
     /// Without a seeding hook this mock was permanently empty, so
     /// `ManagePrescriptionsUseCase.history` had no reachable data path and
@@ -1274,8 +1285,11 @@ actor MockLoyaltyRepository: LoyaltyRepository {
         self.walletRepository = walletRepository
     }
 
+    /// Seeded from a plausible history (nine completed visits earning points)
+    /// rather than zero, so the tier badge, the progress-to-next-tier bar and
+    /// the redemption entry on the cart all have something real to render.
     func account(userId: UUID) async throws -> LoyaltyAccount {
-        accounts[userId] ?? LoyaltyAccount(userId: userId, points: 0, tier: .bronze)
+        accounts[userId] ?? LoyaltyAccount(userId: userId, points: 1_240, tier: .silver)
     }
 
     func awardPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount {
@@ -1321,21 +1335,75 @@ actor MockReferralRepository: ReferralRepository {
 // MARK: - Shared fixture data
 
 enum MockData {
+    static let userId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
+    // Stable ids. These used to be freshly-generated `UUID()`s, which made it
+    // impossible to seed anything *against* a pet — a weight history, a
+    // prescription, a past visit — because nothing else in the file could name
+    // the pet it belonged to. Pinning them is what lets the whole demo dataset
+    // below hang together.
+    static let brunoId = UUID(uuidString: "00000000-0000-0000-0000-0000000000b1")!
+    static let misoId = UUID(uuidString: "00000000-0000-0000-0000-0000000000b2")!
+    static let kiwiId = UUID(uuidString: "00000000-0000-0000-0000-0000000000b3")!
+
+    private static func monthsAgo(_ months: Int) -> Date {
+        Calendar.current.date(byAdding: .month, value: -months, to: .now) ?? .now
+    }
+
+    private static func daysAgo(_ days: Int) -> Date {
+        Calendar.current.date(byAdding: .day, value: -days, to: .now) ?? .now
+    }
+
+    private static func hoursFromNow(_ hours: Int) -> Date {
+        Calendar.current.date(byAdding: .hour, value: hours, to: .now) ?? .now
+    }
+
+    static let pets: [Pet] = [
+        Pet(id: brunoId, ownerId: userId, name: "Bruno", species: .dog, breed: "Labrador Retriever",
+            dateOfBirth: monthsAgo(38), photoURL: nil, sex: .male, isNeutered: true, weightKg: 31.4,
+            microchipNumber: "900215000123456", allergies: "Chicken protein — mild skin flare-ups",
+            chronicConditions: "Early hip dysplasia, monitored"),
+        Pet(id: misoId, ownerId: userId, name: "Miso", species: .cat, breed: "Indian Shorthair",
+            dateOfBirth: monthsAgo(19), photoURL: nil, sex: .female, isNeutered: true, weightKg: 4.2,
+            microchipNumber: nil, allergies: nil, chronicConditions: nil),
+        Pet(id: kiwiId, ownerId: userId, name: "Kiwi", species: .bird, breed: "Budgerigar",
+            dateOfBirth: monthsAgo(9), photoURL: nil, sex: .unknown, isNeutered: nil, weightKg: 0.04,
+            microchipNumber: nil, allergies: nil, chronicConditions: nil),
+    ]
+
     static let user = User(
-        id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
-        phone: "+919999999999", name: "Aanya Sharma", email: nil, createdAt: .now,
-        pets: [Pet(id: UUID(), ownerId: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
-                   name: "Bruno", species: .dog, breed: "Labrador", dateOfBirth: nil)]
+        id: userId,
+        phone: "+919845012345", name: "Aanya Sharma", email: "aanya.sharma@example.in", createdAt: monthsAgo(14),
+        pets: pets
     )
 
     static let vet = vets[0]
 
-    static let address = Address(
-        id: UUID(), ownerId: user.id, label: "Home",
-        line1: "14, 5th Cross, Koramangala 5th Block", line2: nil,
-        landmark: "Near Forum Mall", accessNotes: "Ring the bell, dog-friendly building",
-        latitude: 12.9352, longitude: 77.6146, clusterArea: "Koramangala 5th Block", isDefault: true
-    )
+    static let address = addresses[0]
+
+    /// Three saved addresses, one of them outside the served clusters, so the
+    /// address screen has a real "we don't cover this yet" row to render
+    /// instead of only ever showing the happy path.
+    static let addresses: [Address] = [
+        Address(
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000a1")!, ownerId: userId, label: "Home",
+            line1: "14, 5th Cross, Koramangala 5th Block", line2: "Apt 302, Lakeview Residency",
+            landmark: "Near Forum Mall", accessNotes: "Ring the bell twice — Bruno barks at the first one",
+            latitude: 12.9352, longitude: 77.6146, clusterArea: "Koramangala 5th Block", isDefault: true
+        ),
+        Address(
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000a2")!, ownerId: userId, label: "Office",
+            line1: "Prestige Tech Park, Sarjapur Outer Ring Road", line2: "Tower C, 7th floor",
+            landmark: "Opposite Bellandur signal", accessNotes: "Visitor pass needed at the main gate",
+            latitude: 12.9260, longitude: 77.6762, clusterArea: "Bellandur", isDefault: false
+        ),
+        Address(
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000a3")!, ownerId: userId, label: "Mum's place",
+            line1: "42, Bannerghatta Main Road", line2: nil,
+            landmark: "Beside Meenakshi Temple", accessNotes: nil,
+            latitude: 12.8006, longitude: 77.5770, clusterArea: nil, isDefault: false
+        ),
+    ]
 
     /// A varied roster of vets so the list, ratings, and verification badge
     /// all have something realistic to show while testing.
@@ -1397,7 +1465,88 @@ enum MockData {
         )
     }
 
-    static let visits: [Visit] = []
+    /// A real history. This was an empty array, which meant every screen that
+    /// reads from it — the Visits tab, the timeline, the record, invoices, lab
+    /// reports, the home "next visit" card, the widget — had nothing at all to
+    /// show, and the app read as a prototype no matter how well each of those
+    /// screens was built. These fourteen visits deliberately cover the whole
+    /// eight-state machine, including the awkward states (a live one, a
+    /// cancelled one, a vet no-show) that are the ones most worth being able
+    /// to look at.
+    static let visits: [Visit] = {
+        // `services` is declared below; referencing it here is fine because
+        // both are lazily-initialised statics.
+        let consult = services[0]
+        let vaccination = services[1]
+        let grooming = services[2]
+        let diagnostics = services[3]
+        let dental = services[5]
+
+        func visit(
+            _ offsetDays: Int, _ status: Visit.VisitStatus, pet: UUID, vetIndex: Int,
+            service: Service, variantIndex: Int = 0, hour: Int = 11,
+            diagnosis: String? = nil, procedures: [String] = [], medications: [String] = []
+        ) -> Visit {
+            let base = Calendar.current.date(byAdding: .day, value: offsetDays, to: .now) ?? .now
+            let scheduled = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: base) ?? base
+            let circuit = circuits[vetIndex % circuits.count]
+            return Visit(
+                id: UUID(), userId: userId, petId: pet, vetId: circuit.vetId, circuitId: circuit.id,
+                status: status, scheduledAt: scheduled,
+                completedAt: status == .completed ? scheduled.addingTimeInterval(45 * 60) : nil,
+                notes: nil, paymentId: status == .completed || status.isUpcoming ? UUID() : nil,
+                serviceId: service.id, variantId: service.variants.indices.contains(variantIndex) ? service.variants[variantIndex].id : service.variants.first?.id,
+                packageRedemptionId: nil,
+                diagnosisNotes: diagnosis, proceduresPerformed: procedures, medicationsGiven: medications
+            )
+        }
+
+        return [
+            // Live / imminent — the states the Visits tab leads with.
+            visit(0, .enRoute, pet: brunoId, vetIndex: 0, service: consult, hour: Calendar.current.component(.hour, from: .now)),
+            visit(2, .confirmed, pet: misoId, vetIndex: 1, service: vaccination, hour: 10),
+            visit(6, .requested, pet: brunoId, vetIndex: 3, service: grooming, variantIndex: 1, hour: 16),
+            visit(12, .confirmed, pet: kiwiId, vetIndex: 5, service: consult, hour: 9),
+
+            // Completed, with the structured record the record screen renders.
+            visit(-9, .completed, pet: brunoId, vetIndex: 0, service: consult, hour: 11,
+                  diagnosis: "Mild seasonal dermatitis on the flank. No secondary infection; skin turgor and hydration normal.",
+                  procedures: ["Full physical exam", "Skin scrape (negative for mites)"],
+                  medications: ["Apoquel 16mg — 1 tablet twice daily for 7 days"]),
+            visit(-24, .completed, pet: misoId, vetIndex: 1, service: vaccination, hour: 15,
+                  diagnosis: "Healthy. Weight steady since the last visit.",
+                  procedures: ["FVRCP booster administered", "Weight and temperature check"],
+                  medications: []),
+            visit(-41, .completed, pet: brunoId, vetIndex: 6, service: dental, variantIndex: 1, hour: 12,
+                  diagnosis: "Grade 2 tartar on the upper premolars, gums healthy. Recommend a repeat clean in ~9 months.",
+                  procedures: ["Scale and polish, sedation-free", "Oral exam"],
+                  medications: []),
+            visit(-63, .completed, pet: brunoId, vetIndex: 2, service: diagnostics, hour: 9,
+                  diagnosis: "Complete blood panel within normal limits across all values.",
+                  procedures: ["Blood sample collected at home"],
+                  medications: []),
+            visit(-88, .completed, pet: misoId, vetIndex: 1, service: consult, hour: 17,
+                  diagnosis: "Presented with reduced appetite for 2 days; exam unremarkable, likely dietary. Advised bland diet and a follow-up if it persists past 48h.",
+                  procedures: ["Full physical exam", "Abdominal palpation"],
+                  medications: ["Probiotic paste — 2ml daily for 5 days"]),
+            visit(-119, .completed, pet: brunoId, vetIndex: 3, service: grooming, hour: 14,
+                  diagnosis: nil,
+                  procedures: ["Bath and brush-out", "Nail trim", "Ear clean"],
+                  medications: []),
+            visit(-150, .completed, pet: kiwiId, vetIndex: 5, service: consult, hour: 10,
+                  diagnosis: "Routine new-bird wellness check. Plumage, beak and vent all normal.",
+                  procedures: ["Visual exam", "Weight check"],
+                  medications: []),
+            visit(-186, .completed, pet: brunoId, vetIndex: 0, service: vaccination, variantIndex: 1, hour: 11,
+                  diagnosis: "Annual booster given, no adverse reaction observed in the 15-minute wait.",
+                  procedures: ["Rabies booster administered", "Wellness check"],
+                  medications: []),
+
+            // The unhappy paths, so they're actually inspectable.
+            visit(-15, .cancelledByUser, pet: misoId, vetIndex: 4, service: grooming, hour: 13),
+            visit(-33, .cancelledByVet, pet: brunoId, vetIndex: 2, service: consult, hour: 18),
+        ]
+    }()
 
     /// K6: a demo visit id a seeded `LabTestReport` attaches to — `visits` is
     /// empty in the mock, so there's no real booked visit to key off; a
@@ -1574,6 +1723,104 @@ enum MockData {
         return result
     }()
 
+    /// B3: eighteen months of weigh-ins so the weight chart has a real trend
+    /// to draw rather than a single dot.
+    static let petWeights: [PetWeightEntry] = {
+        var entries: [PetWeightEntry] = []
+        // Bruno: a slow, believable climb with a dip after the dermatitis visit.
+        let brunoWeights: [Double] = [26.8, 27.5, 28.2, 28.9, 29.4, 30.1, 30.6, 31.0, 30.4, 31.4]
+        for (index, kg) in brunoWeights.enumerated() {
+            entries.append(PetWeightEntry(
+                id: UUID(), petId: brunoId, weightKg: kg,
+                recordedAt: daysAgo((brunoWeights.count - 1 - index) * 21),
+                temperatureCelsius: 38.4, heartRateBpm: 92
+            ))
+        }
+        let misoWeights: [Double] = [3.4, 3.7, 3.9, 4.1, 4.0, 4.2]
+        for (index, kg) in misoWeights.enumerated() {
+            entries.append(PetWeightEntry(
+                id: UUID(), petId: misoId, weightKg: kg,
+                recordedAt: daysAgo((misoWeights.count - 1 - index) * 30),
+                temperatureCelsius: 38.9, heartRateBpm: 148
+            ))
+        }
+        return entries
+    }()
+
+    /// B5: a prescription history, newest first once the repository sorts it.
+    static let prescriptions: [Prescription] = [
+        Prescription(id: UUID(), visitId: visits.first(where: { $0.status == .completed })?.id ?? UUID(),
+                     petId: brunoId, medicationName: "Apoquel 16mg", dosage: "1 tablet twice daily",
+                     instructions: "Give with food for 7 days, then stop. Call us if the itching comes back within a fortnight.",
+                     prescribedByVetId: vets[0].id, issuedAt: daysAgo(9)),
+        Prescription(id: UUID(), visitId: UUID(), petId: brunoId, medicationName: "Joint supplement (glucosamine)",
+                     dosage: "1 chew daily", instructions: "Ongoing, for the hip. No end date.",
+                     prescribedByVetId: vets[6].id, issuedAt: daysAgo(41)),
+        Prescription(id: UUID(), visitId: UUID(), petId: misoId, medicationName: "Probiotic paste",
+                     dosage: "2ml daily", instructions: "Five days. Mix into wet food if she won't take it directly.",
+                     prescribedByVetId: vets[1].id, issuedAt: daysAgo(88)),
+    ]
+
+    /// B6: the document vault, pre-populated the way a real two-year-old
+    /// account's would be.
+    static let petDocuments: [PetDocument] = [
+        PetDocument(id: UUID(), petId: brunoId, uploaderId: userId, title: "Vaccination card (2024)",
+                    fileURL: URL(string: "mock-storage://documents/\(brunoId)/vaccination-card-2024.pdf")!,
+                    uploadedAt: daysAgo(186)),
+        PetDocument(id: UUID(), petId: brunoId, uploaderId: userId, title: "Hip X-ray — right side",
+                    fileURL: URL(string: "mock-storage://documents/\(brunoId)/hip-xray.jpg")!,
+                    uploadedAt: daysAgo(41)),
+        PetDocument(id: UUID(), petId: brunoId, uploaderId: userId, title: "Blood panel results",
+                    fileURL: URL(string: "mock-storage://documents/\(brunoId)/cbc-panel.pdf")!,
+                    uploadedAt: daysAgo(63)),
+        PetDocument(id: UUID(), petId: misoId, uploaderId: userId, title: "Adoption & microchip papers",
+                    fileURL: URL(string: "mock-storage://documents/\(misoId)/adoption.pdf")!,
+                    uploadedAt: daysAgo(400)),
+    ]
+
+    /// B4: vaccinations across all three pets, including one that is overdue
+    /// and one due shortly — the two states the reminder UI exists for.
+    static let vaccinations: [Vaccination] = [
+        Vaccination(id: UUID(), petId: brunoId, vaccineName: "Rabies", givenAt: monthsAgo(11),
+                    nextDueAt: Calendar.current.date(byAdding: .month, value: 1, to: .now) ?? .now,
+                    batchNumber: "RB-2291"),
+        Vaccination(id: UUID(), petId: brunoId, vaccineName: "DHPPi (distemper, hepatitis, parvo, parainfluenza)",
+                    givenAt: monthsAgo(13), nextDueAt: daysAgo(18), batchNumber: "DH-8841"),
+        Vaccination(id: UUID(), petId: brunoId, vaccineName: "Leptospirosis", givenAt: monthsAgo(6),
+                    nextDueAt: Calendar.current.date(byAdding: .month, value: 6, to: .now) ?? .now,
+                    batchNumber: "LP-1043"),
+        Vaccination(id: UUID(), petId: misoId, vaccineName: "FVRCP booster", givenAt: daysAgo(24),
+                    nextDueAt: Calendar.current.date(byAdding: .month, value: 11, to: .now) ?? .now,
+                    batchNumber: "FV-5527"),
+        Vaccination(id: UUID(), petId: misoId, vaccineName: "Rabies", givenAt: monthsAgo(10),
+                    nextDueAt: Calendar.current.date(byAdding: .month, value: 2, to: .now) ?? .now,
+                    batchNumber: "RB-2288"),
+    ]
+
+    /// J7: a notification centre with something in it, including two unread.
+    static func notifications(userId: UUID) -> [AppNotification] {
+        [
+            AppNotification(id: UUID(), userId: userId, category: .bookingUpdate, title: "Dr. Rohan is on the way",
+                            body: "Your vet left for Koramangala 5th Block and should reach you in about 20 minutes.",
+                            sentAt: .now.addingTimeInterval(-60 * 18), createdAt: .now.addingTimeInterval(-60 * 18), readAt: nil),
+            AppNotification(id: UUID(), userId: userId, category: .vaccinationDue, title: "Bruno's DHPPi booster is overdue",
+                            body: "It was due 18 days ago. Book a slot and we'll get him back on schedule.",
+                            sentAt: .now.addingTimeInterval(-3600 * 5), createdAt: .now.addingTimeInterval(-3600 * 5), readAt: nil),
+            AppNotification(id: UUID(), userId: userId, category: .bookingUpdate, title: "Visit confirmed",
+                            body: "Miso's vaccination with Dr. Priya Nair is confirmed for Thursday, 10:00 AM.",
+                            sentAt: .now.addingTimeInterval(-3600 * 26), createdAt: .now.addingTimeInterval(-3600 * 26),
+                            readAt: .now.addingTimeInterval(-3600 * 25)),
+            AppNotification(id: UUID(), userId: userId, category: .bookingUpdate, title: "Your invoice is ready",
+                            body: "The GST invoice for Bruno's consultation on the 9th is in the visit's detail page.",
+                            sentAt: .now.addingTimeInterval(-3600 * 24 * 9), createdAt: .now.addingTimeInterval(-3600 * 24 * 9),
+                            readAt: .now.addingTimeInterval(-3600 * 24 * 8)),
+            AppNotification(id: UUID(), userId: userId, category: .vaccinationDue, title: "Kiwi's first wellness check",
+                            body: "Budgies do best with a check-up every six months. It's been five.",
+                            sentAt: .now.addingTimeInterval(-3600 * 24 * 21), createdAt: .now.addingTimeInterval(-3600 * 24 * 21),
+                            readAt: .now.addingTimeInterval(-3600 * 24 * 20)),
+        ]
+    }
+
     /// C11: a handful of real, well-known Bangalore 24x7 emergency clinics —
     /// illustrative examples for the mock, not a claim of a live partnership.
     static let emergencyClinics: [EmergencyClinic] = [
@@ -1663,12 +1910,7 @@ actor MockAppNotificationRepository: AppNotificationRepository {
     private func seedIfNeeded(userId: UUID) {
         guard !seeded else { return }
         seeded = true
-        stored = [
-            AppNotification(id: UUID(), userId: userId, category: .bookingUpdate, title: "Visit confirmed",
-                             body: "Your vet visit is confirmed for this week.", sentAt: .now.addingTimeInterval(-3600 * 26), createdAt: .now.addingTimeInterval(-3600 * 26), readAt: .now.addingTimeInterval(-3600 * 25)),
-            AppNotification(id: UUID(), userId: userId, category: .vaccinationDue, title: "Vaccination due soon",
-                             body: "Bruno's next vaccination is due in 7 days — book a slot to stay on schedule.", sentAt: .now.addingTimeInterval(-3600 * 3), createdAt: .now.addingTimeInterval(-3600 * 3), readAt: nil),
-        ]
+        stored = MockData.notifications(userId: userId)
     }
 
     func notifications(userId: UUID) async throws -> [AppNotification] {

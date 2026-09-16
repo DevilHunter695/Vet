@@ -22,7 +22,7 @@ struct TipVetView: View {
                     .font(.brandHeadline)
                 Text("100% goes directly to the vet who visited you.")
                     .font(.brandCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
 
                 HStack(spacing: 12) {
@@ -61,7 +61,7 @@ struct TipVetView: View {
 
                 if isSubmitting {
                     Label("Opening secure checkout…", systemImage: "lock.fill")
-                        .font(.brandCaption).foregroundStyle(.secondary)
+                        .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                     ProgressView()
                 }
 

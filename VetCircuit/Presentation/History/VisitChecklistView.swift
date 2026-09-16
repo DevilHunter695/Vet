@@ -25,7 +25,7 @@ struct VisitChecklistView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.label).font(.brandBody)
                             if let note = item.note, !note.isEmpty {
-                                Text(note).font(.brandCaption).foregroundStyle(.secondary)
+                                Text(note).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                             }
                         }
                     }

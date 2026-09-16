@@ -46,7 +46,7 @@ struct TriageView: View {
                     }
                     Text("This isn't a diagnosis — it helps us point you to the right next step. VetCircuit isn't an emergency service.")
                         .font(.brandBody)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 .appearAnimation()
 
@@ -137,7 +137,7 @@ private struct TriageResultCard: View {
                 }
                 Text(result.message)
                     .font(.brandBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
 
                 if result.recommendation != .selfCare {
                     // This is the only action offered to a worried owner

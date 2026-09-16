@@ -136,9 +136,9 @@ private struct AddressRow: View {
                                 .clipShape(Capsule())
                         }
                     }
-                    Text(address.line1).font(.brandBody).foregroundStyle(.secondary)
+                    Text(address.line1).font(.brandBody).foregroundStyle(Theme.textSecondary)
                     if let landmark = address.landmark {
-                        Text(landmark).font(.brandCaption).foregroundStyle(.tertiary)
+                        Text(landmark).font(.brandCaption).foregroundStyle(Theme.textTertiary)
                     }
                 }
             }

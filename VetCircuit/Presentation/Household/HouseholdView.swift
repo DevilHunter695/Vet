@@ -132,7 +132,7 @@ struct HouseholdView: View {
                                      : (member.role == .owner
                                         ? "Owns this household and its pets"
                                         : "Can see and book for shared pets"))
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .font(.caption).foregroundStyle(Theme.textSecondary)
                             }
                             Spacer()
                             TagChip(
@@ -155,7 +155,7 @@ struct HouseholdView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(pet.name).font(.brandBody)
                                     if let breed = pet.breed, !breed.isEmpty {
-                                        Text(breed).font(.caption).foregroundStyle(.secondary)
+                                        Text(breed).font(.caption).foregroundStyle(Theme.textSecondary)
                                     }
                                 }
                                 Spacer()
@@ -174,7 +174,7 @@ struct HouseholdView: View {
                                     // household — whose pet is the point.
                                     Text(viewModel.petName(for: visit)).font(.brandBody)
                                     Text(visit.scheduledAt.formatted(date: .abbreviated, time: .shortened))
-                                        .font(.caption).foregroundStyle(.secondary)
+                                        .font(.caption).foregroundStyle(Theme.textSecondary)
                                 }
                                 Spacer(minLength: 8)
                                 // Was `rawValue.capitalized` — "Enroute".
@@ -220,7 +220,7 @@ struct HouseholdView: View {
             } else {
                 Section("Start a household") {
                     Text("Invite a spouse or family member to see and book for the same pets.")
-                        .font(.brandCaption).foregroundStyle(.secondary)
+                        .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                     HStack {
                         TextField("Household name (e.g. \"The Sharmas\")", text: $newHouseholdName)
                         Button("Create") {

@@ -147,9 +147,9 @@ struct PetDetailView: View {
                     Card {
                         VStack(alignment: .leading, spacing: 6) {
                             Label(reason.displayName, systemImage: "heart.text.square")
-                                .font(.brandHeadline).foregroundStyle(.secondary)
+                                .font(.brandHeadline).foregroundStyle(Theme.textSecondary)
                             Text("This pet's record is kept, but it won't show up when booking a visit or for vaccination reminders.")
-                                .font(.brandCaption).foregroundStyle(.secondary)
+                                .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                             Button("Bring this pet back") { Task { await viewModel.unarchive() } }
                                 .font(.brandCaption)
                         }
@@ -250,7 +250,7 @@ struct PetDetailView: View {
                     } else {
                         Circle().fill(Color(.tertiarySystemFill))
                             .frame(width: 64, height: 64)
-                            .overlay(Image(systemName: "pawprint.fill").foregroundStyle(.secondary))
+                            .overlay(Image(systemName: "pawprint.fill").foregroundStyle(Theme.textSecondary))
                     }
                     // The label is built up front rather than read inside
                     // PhotosPicker's closure: that closure is checked as
@@ -271,7 +271,7 @@ struct PetDetailView: View {
                 }
 
                 HStack {
-                    Text("Species").font(.brandCallout).foregroundStyle(.secondary)
+                    Text("Species").font(.brandCallout).foregroundStyle(Theme.textSecondary)
                     Spacer()
                     TagChip(text: viewModel.pet.species.displayName, systemImage: viewModel.pet.species.symbolName)
                 }
@@ -335,7 +335,7 @@ struct PetDetailView: View {
                 if viewModel.isLoading && viewModel.weightHistory.isEmpty {
                     ShimmerView(cornerRadius: 12).frame(height: 140)
                 } else if viewModel.weightHistory.isEmpty {
-                    Text("No weight readings yet.").font(.brandCaption).foregroundStyle(.secondary)
+                    Text("No weight readings yet.").font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 } else {
                     Chart(viewModel.weightHistory) { entry in
                         LineMark(x: .value("Date", entry.recordedAt), y: .value("kg", entry.weightKg))
@@ -346,7 +346,7 @@ struct PetDetailView: View {
 
                     if let latest = viewModel.weightHistory.last {
                         Text("Latest: \(latest.weightKg, specifier: "%.1f") kg on \(latest.recordedAt.formatted(date: .abbreviated, time: .omitted))")
-                            .font(.brandCaption).foregroundStyle(.secondary)
+                            .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                         // B3: vitals beyond weight — shown only when present.
                         if latest.temperatureCelsius != nil || latest.heartRateBpm != nil {
                             HStack(spacing: 12) {
@@ -357,7 +357,7 @@ struct PetDetailView: View {
                                     Label("\(hr) bpm", systemImage: "heart.fill")
                                 }
                             }
-                            .font(.brandCaption).foregroundStyle(.secondary)
+                            .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                         }
                     }
                 }
@@ -417,7 +417,7 @@ struct PetDetailView: View {
                         ShimmerView(cornerRadius: 10).frame(height: 34)
                     }
                 } else if viewModel.vaccinations.isEmpty {
-                    Text("No vaccination records yet.").font(.brandCaption).foregroundStyle(.secondary)
+                    Text("No vaccination records yet.").font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 } else {
                     ForEach(viewModel.vaccinations) { vaccination in
                         VaccinationRow(vaccination: vaccination, petName: viewModel.pet.name)
@@ -468,7 +468,7 @@ struct PetDetailView: View {
                     Label("Document vault", systemImage: "doc.text.fill")
                         .font(.brandHeadline).foregroundStyle(Theme.primary)
                     Spacer()
-                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right").foregroundStyle(Theme.textSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -490,7 +490,7 @@ struct PetDetailView: View {
                     Label("Lab test reports", systemImage: "cross.vial.fill")
                         .font(.brandHeadline).foregroundStyle(Theme.primary)
                     Spacer()
-                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right").foregroundStyle(Theme.textSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -555,13 +555,13 @@ private struct VaccinationRow: View {
                 Text(vaccination.vaccineName).font(.brandBody)
                 if let given = vaccination.givenAt {
                     Text("Given \(given.formatted(date: .abbreviated, time: .omitted))")
-                        .font(.brandCaption).foregroundStyle(.secondary)
+                        .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 }
             }
             .accessibilityElement(children: .combine)
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
-                Text("Next due").font(.brandCaption).foregroundStyle(.secondary)
+                Text("Next due").font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 Text(vaccination.nextDueAt.formatted(date: .abbreviated, time: .omitted))
                     .font(.brandCaption.weight(.semibold))
                     .foregroundStyle(color)
@@ -592,10 +592,10 @@ private struct PrescriptionRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(prescription.medicationName) — \(prescription.dosage)").font(.brandBody)
                 if let instructions = prescription.instructions {
-                    Text(instructions).font(.brandCaption).foregroundStyle(.secondary)
+                    Text(instructions).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 }
                 Text(prescription.issuedAt.formatted(date: .abbreviated, time: .omitted))
-                    .font(.brandCaption).foregroundStyle(.tertiary)
+                    .font(.brandCaption).foregroundStyle(Theme.textTertiary)
             }
             .accessibilityElement(children: .combine)
             Spacer()

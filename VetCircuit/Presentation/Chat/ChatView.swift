@@ -116,7 +116,7 @@ struct ChatView: View {
                                 ChatBubble(message: message, isMine: isMine)
                                 // J3: read receipt — shown only on the sender's own bubbles.
                                 if isMine && message.readAt != nil {
-                                    Text("Read").font(.caption2).foregroundStyle(.secondary).padding(.trailing, 4)
+                                    Text("Read").font(.caption2).foregroundStyle(Theme.textSecondary).padding(.trailing, 4)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
@@ -125,7 +125,7 @@ struct ChatView: View {
                         }
                         if viewModel.otherPartyIsTyping {
                             HStack {
-                                Text("Typing…").font(.brandCaption).foregroundStyle(.secondary).italic()
+                                Text("Typing…").font(.brandCaption).foregroundStyle(Theme.textSecondary).italic()
                                 Spacer()
                             }
                         }

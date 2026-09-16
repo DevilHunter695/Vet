@@ -53,7 +53,7 @@ struct HelpCenterView: View {
                 }
                 .accessibilityHint("Available 9 AM to 9 PM IST")
                 Text("Available 9 AM – 9 PM IST. Outside these hours, use chat or email below.")
-                    .font(.caption2).foregroundStyle(.tertiary)
+                    .font(.caption2).foregroundStyle(Theme.textTertiary)
                 NavigationLink("Contact support") {
                     ContactSupportView()
                 }
@@ -67,14 +67,14 @@ struct HelpCenterView: View {
                         DisclosureGroup(article.question) {
                             Text(article.answer)
                                 .font(.brandBody)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.textSecondary)
                                 .padding(.top, 4)
                         }
                     }
                 }
             }
             if viewModel.grouped.isEmpty && viewModel.errorMessage == nil {
-                Text("No matching articles.").foregroundStyle(.secondary)
+                Text("No matching articles.").foregroundStyle(Theme.textSecondary)
             }
         }
         .searchable(text: $viewModel.searchText, prompt: "Search help articles")

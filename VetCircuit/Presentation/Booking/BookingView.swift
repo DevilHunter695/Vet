@@ -360,7 +360,7 @@ struct BookingView: View {
                                     // is the last screen before money changes hands.
                                     VerifiedBadge(status: vet.verificationStatus)
                                 }
-                                Text(viewModel.circuit.clusterArea).foregroundStyle(.secondary)
+                                Text(viewModel.circuit.clusterArea).foregroundStyle(Theme.textSecondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -371,7 +371,7 @@ struct BookingView: View {
                     Card {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Veterinarian").font(.title3.bold())
-                            Text(viewModel.circuit.clusterArea).foregroundStyle(.secondary)
+                            Text(viewModel.circuit.clusterArea).foregroundStyle(Theme.textSecondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -415,7 +415,7 @@ struct BookingView: View {
                                 .pickerStyle(.segmented)
                                 Text("We'll set up a \(viewModel.recurringCadence.displayName.lowercased()) reminder — booking the next visit each cycle still needs confirming.")
                                     .font(.brandCaption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                         }
                     }
@@ -461,7 +461,7 @@ struct BookingView: View {
                                 .font(.brandCaption)
                             Text("No one else can take it for the next \(seconds / 60):\(String(format: "%02d", seconds % 60))")
                                 .font(.brandCaption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                         Spacer(minLength: 0)
                         Text("\(seconds / 60):\(String(format: "%02d", seconds % 60))")
@@ -622,7 +622,7 @@ struct BookingView: View {
                     }
                     Text("Price is locked for 10 minutes and re-checked against the server when you confirm — it can't change between here and payment.")
                         .font(.brandCaption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(16)
@@ -637,7 +637,7 @@ struct BookingView: View {
         VStack(spacing: 10) {
             if let quote = viewModel.previewQuote {
                 HStack {
-                    Text("Total").font(.brandCaption).foregroundStyle(.secondary)
+                    Text("Total").font(.brandCaption).foregroundStyle(Theme.textSecondary)
                     Spacer()
                     Text(CurrencyFormatter.rupees(quote.breakdown.totalMinorUnits))
                         .font(.brandMono(.headline, weight: .bold))
@@ -656,7 +656,7 @@ struct BookingView: View {
             if viewModel.selectedSlot == nil {
                 Text("Pick a time slot to continue")
                     .font(.brandCaption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
             }
         }
         .padding(.horizontal, 16)
@@ -786,7 +786,7 @@ private struct SelectableRow: View {
                     if let subtitle {
                         Text(subtitle)
                             .font(.brandCaption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                     }
                 }
@@ -846,7 +846,7 @@ struct BookingConfirmedView: View {
                     Text("Booking requested").font(.brandLargeTitle).brandDisplayText()
                     Text("We'll notify you the moment a vet confirms your slot — usually within a few minutes.")
                         .font(.brandCallout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }

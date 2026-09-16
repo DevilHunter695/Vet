@@ -26,7 +26,7 @@ struct LiabilityWaiverView: View {
                     • You can withdraw this consent at any time in Profile → Privacy & consent, which pauses future bookings until it's re-accepted.
                     """)
                     .font(.brandBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
 
                     // O6: the full legal text lives in-app, not only in this
                     // summary — required for App Store review and DPDP.

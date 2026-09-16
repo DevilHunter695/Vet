@@ -39,7 +39,7 @@ struct PlanCatalogView: View {
                         .brandDisplayText()
                     Text("Members get included visits, priority slots on every circuit, and member pricing on everything else. Cancel any time — there's no lock-in.")
                         .font(.brandCallout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -103,7 +103,7 @@ private struct PlanCatalogCard: View {
                         .brandDisplayText()
                     Text(entry.billingPeriodLabel)
                         .font(.brandCaption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
             }
 
@@ -152,13 +152,13 @@ private struct ActionRow2: View {
                 if let subtitle {
                     Text(subtitle)
                         .font(.brandCaption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
                 }
             }
             Spacer(minLength: 8)
-            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Theme.textTertiary)
         }
         .padding(16)
         .glassCard(cornerRadius: 16)

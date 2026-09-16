@@ -125,8 +125,14 @@ final class VisitHistoryViewModel {
         }
     }
 
-    func confirmCancellation() async {
-        guard let pending = pendingCancellation else { return }
+    /// SwiftUI tears `confirmationDialog`'s `isPresented` binding down
+    /// *before* it runs the tapped button's action, so a `confirmCancellation()`
+    /// that read `pendingCancellation` back off the view model always found it
+    /// nil by then and returned without cancelling anything — the "the cancel
+    /// button doesn't cancel" bug. The dialog hands the value it is presenting
+    /// to both closures, so take it as a parameter instead of re-reading state
+    /// that is already gone.
+    func confirmCancellation(_ pending: (visit: Visit, outcome: CancellationPolicy.Outcome)) async {
         pendingCancellation = nil
         do {
             try await cancelVisitUseCase.execute(
@@ -198,10 +204,10 @@ struct VisitHistoryView: View {
                 "Cancel this visit?",
                 isPresented: Binding(get: { viewModel.pendingCancellation != nil }, set: { if !$0 { viewModel.pendingCancellation = nil } }),
                 presenting: viewModel.pendingCancellation
-            ) { _ in
+            ) { pending in
                 Button("Cancel visit", role: .destructive) {
                     Haptics.warning()
-                    Task { await viewModel.confirmCancellation() }
+                    Task { await viewModel.confirmCancellation(pending) }
                 }
                 Button("Keep visit", role: .cancel) {}
             } message: { pending in
@@ -361,7 +367,7 @@ private struct ActiveVisitCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Text(visit.scheduledAt.formatted(date: .abbreviated, time: .shortened))
                         .font(.brandCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 4)
                 StatusBadge(status: visit.status)
@@ -496,7 +502,7 @@ private struct VisitRow: View {
                             .compactMap { $0 }.joined(separator: " · ")
                     )
                     .font(.brandCaption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
                 }
 

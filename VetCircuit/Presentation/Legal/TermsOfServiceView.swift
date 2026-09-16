@@ -8,7 +8,7 @@ struct TermsOfServiceView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Terms of Service").font(.brandLargeTitle)
-                Text("Last updated: September 2026").font(.brandCaption).foregroundStyle(.secondary)
+                Text("Last updated: September 2026").font(.brandCaption).foregroundStyle(Theme.textSecondary)
 
                 LegalSection(title: "The marketplace model") {
                     Text("VetCircuit operates a platform connecting pet owners with independent, VCI-registered veterinary professionals ('vets') who perform home visits on a scheduled circuit basis. VetCircuit is not a party to the veterinary care itself, does not employ the vets, and does not practice veterinary medicine. The vet is solely responsible for the professional care given during a visit.")
@@ -53,7 +53,7 @@ struct TermsOfServiceView: View {
                 }
 
                 Text("These terms are a good-faith draft for VetCircuit and are not a substitute for advice from a qualified lawyer.")
-                    .font(.brandCaption).foregroundStyle(.secondary).italic()
+                    .font(.brandCaption).foregroundStyle(Theme.textSecondary).italic()
             }
             .padding()
         }

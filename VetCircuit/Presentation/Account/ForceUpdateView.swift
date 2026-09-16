@@ -27,7 +27,7 @@ struct ForceUpdateView: View {
 
                 Text(message)
                     .font(.brandBody)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
 

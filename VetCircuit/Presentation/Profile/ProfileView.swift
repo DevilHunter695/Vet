@@ -222,7 +222,7 @@ struct ProfileView: View {
 
                         Text("VetCircuit \(appVersionText)")
                             .font(.brandCaption2)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Theme.textTertiary)
                             .frame(maxWidth: .infinity)
                             .padding(.top, 4)
                     }
@@ -303,7 +303,7 @@ struct ProfileView: View {
                                 .font(.brandTitle3)
                             Text("Renews \(subscription.renewalDate.formatted(date: .abbreviated, time: .omitted))")
                                 .font(.brandCaption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.textSecondary)
                         }
                         Spacer()
                         TagChip(
@@ -346,11 +346,11 @@ struct ProfileView: View {
                             Text("Join VetCircuit Care").font(.brandHeadline)
                             Text("Free visits, priority slots and member pricing from ₹499/month.")
                                 .font(.brandCaption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer(minLength: 4)
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.textSecondary)
                     }
                     .padding(16)
                     .featuredGlassCard(tint: Theme.emerald)
@@ -434,7 +434,7 @@ struct ProfileView: View {
                     .onChange(of: appearanceRaw) { _, _ in Haptics.selection() }
                     Text("The blue-green aurora is tuned for both — dark leans into it, light keeps it as a wash.")
                         .font(.brandCaption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
 
                 Divider().opacity(0.4)
@@ -443,7 +443,7 @@ struct ProfileView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Require Face ID to open").font(.brandCallout)
                         Text("Locks the app whenever it goes to the background.")
-                            .font(.brandCaption2).foregroundStyle(.secondary)
+                            .font(.brandCaption2).foregroundStyle(Theme.textSecondary)
                     }
                 }
                 .tint(Theme.primary)
@@ -509,7 +509,7 @@ private struct LoyaltyProgressCard: View {
                     .brandDisplayText()
                 Text("points")
                     .font(.brandCallout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                 Spacer()
                 TierBadge(tier: account.tier, color: color)
             }
@@ -524,7 +524,7 @@ private struct LoyaltyProgressCard: View {
                     : "You're at the top tier. Points still convert to wallet credit at checkout."
             )
             .font(.brandCaption2)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Theme.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
@@ -623,7 +623,7 @@ private struct ProfileHeroCard: View {
                 if let phone = user.phone {
                     Text(phone)
                         .font(.brandCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 if let tier {
                     TagChip(text: "\(tier.rawValue.capitalized) member", systemImage: "star.fill", tint: tierColor)
@@ -681,7 +681,7 @@ private struct NextVisitCard: View {
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
             }
             .padding(16)
@@ -738,14 +738,14 @@ private struct ProfileLinkRow<Destination: View>: View {
                     if let subtitle {
                         Text(subtitle)
                             .font(.brandCaption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.textTertiary)
             }
             .padding(.horizontal, 16)
             .frame(minHeight: 56)
@@ -809,7 +809,7 @@ private struct PetCard: View {
                     .lineLimit(1)
                 Text([pet.breed, ageText].compactMap { $0 }.joined(separator: " · "))
                     .font(.brandCaption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
             }
 

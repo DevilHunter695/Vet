@@ -180,7 +180,7 @@ struct CircuitsListView: View {
                             // emergency path itself.
                             Text("VetCircuit isn't an emergency service. For a life-threatening situation, use the emergency button above or call a clinic directly.")
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.textSecondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
                             LazyVStack(spacing: 14) {
@@ -378,7 +378,7 @@ struct CircuitsListView: View {
                         ForEach(services) { service in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(service.name).font(.brandBody)
-                                Text(service.summary).font(.brandCaption).foregroundStyle(.secondary)
+                                Text(service.summary).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                             }
                             .padding(12)
                             .glassCard()
@@ -530,10 +530,10 @@ private struct RebookCard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Rebook your last visit").font(.brandHeadline).foregroundStyle(.primary)
                     Text(suggestion.circuit.vet?.name ?? suggestion.circuit.clusterArea)
-                        .font(.brandCaption).foregroundStyle(.secondary)
+                        .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 }
                 Spacer()
-                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.textTertiary)
             }
             .padding(14)
             .glassCard()
@@ -558,7 +558,7 @@ private struct RecentlyViewedSection: View {
                         Button { onSelect(circuit) } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(circuit.vet?.name ?? "Veterinarian").font(.brandBody).lineLimit(1)
-                                Text(circuit.clusterArea).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                Text(circuit.clusterArea).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                             }
                             .padding(12)
                             .frame(width: 160, alignment: .leading)
@@ -648,10 +648,10 @@ struct CircuitRow: View {
                     HStack(spacing: 6) {
                         Image(systemName: "mappin.and.ellipse")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                         Text(circuit.clusterArea)
                             .font(.brandCaption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                     }
 
@@ -664,12 +664,12 @@ struct CircuitRow: View {
                                 .font(.brandMono(.caption))
                             Text("(\(vet.reviewCount))")
                                 .font(.brandCaption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.textSecondary)
                             if let years = vet.yearsOfExperience {
-                                Text("·").foregroundStyle(.tertiary)
+                                Text("·").foregroundStyle(Theme.textTertiary)
                                 Text("\(years) yrs")
                                     .font(.brandCaption2)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                         }
                     }
@@ -686,7 +686,7 @@ struct CircuitRow: View {
                     }
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Theme.textTertiary)
                 }
             }
 

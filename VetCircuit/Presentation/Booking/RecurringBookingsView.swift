@@ -51,7 +51,7 @@ struct RecurringBookingsView: View {
             }
             if viewModel.rules.isEmpty && viewModel.errorMessage == nil {
                 Text("No recurring bookings yet — toggle \"Make this recurring\" when booking a deworming or physio visit.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
             }
             ForEach(viewModel.rules) { rule in
                 VStack(alignment: .leading, spacing: 6) {
@@ -66,7 +66,7 @@ struct RecurringBookingsView: View {
                             .clipShape(Capsule())
                     }
                     Text("Next: \(rule.nextOccurrenceAt.formatted(date: .abbreviated, time: .omitted))")
-                        .font(.brandCaption).foregroundStyle(.secondary)
+                        .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                     // Were ~17pt tall and 16pt apart, with the irreversible
                     // one undefended. PillButton is 44pt by construction.
                     HStack(spacing: 10) {

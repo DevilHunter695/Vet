@@ -45,7 +45,7 @@ struct IncidentReportView: View {
                 Section {
                     Label("This goes to our safety team, not the general support queue.", systemImage: "shield.lefthalf.filled")
                         .font(.brandCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 Section("What happened") {
                     Picker("Type", selection: $viewModel.type) {

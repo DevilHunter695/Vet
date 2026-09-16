@@ -136,15 +136,15 @@ private struct MedicationReminderRow: View {
                     .labelsHidden()
             }
             if !reminder.dosage.isEmpty {
-                Text(reminder.dosage).font(.brandCaption).foregroundStyle(.secondary)
+                Text(reminder.dosage).font(.brandCaption).foregroundStyle(Theme.textSecondary)
             }
             Text(reminder.times.map(\.displayText).joined(separator: ", "))
-                .font(.brandCaption).foregroundStyle(.secondary)
+                .font(.brandCaption).foregroundStyle(Theme.textSecondary)
             if let endDate = reminder.endDate {
                 Text("Through \(endDate.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.brandCaption).foregroundStyle(.tertiary)
+                    .font(.brandCaption).foregroundStyle(Theme.textTertiary)
             } else {
-                Text("Ongoing").font(.brandCaption).foregroundStyle(.tertiary)
+                Text("Ongoing").font(.brandCaption).foregroundStyle(Theme.textTertiary)
             }
         }
         .padding(.vertical, 4)

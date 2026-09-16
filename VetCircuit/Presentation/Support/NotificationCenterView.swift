@@ -57,9 +57,9 @@ struct NotificationCenterView: View {
                             .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(notification.title).font(.brandHeadline).foregroundStyle(.primary)
-                            Text(notification.body).font(.brandCaption).foregroundStyle(.secondary)
+                            Text(notification.body).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                             Text((notification.sentAt ?? notification.createdAt).formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption2).foregroundStyle(.tertiary)
+                                .font(.caption2).foregroundStyle(Theme.textTertiary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

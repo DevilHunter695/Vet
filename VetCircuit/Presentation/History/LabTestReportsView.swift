@@ -64,7 +64,7 @@ struct LabTestReportsView: View {
                 if let availableAt = report.availableAt {
                     Text("Available \(availableAt.formatted(date: .abbreviated, time: .shortened))")
                         .font(.brandCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 if let summary = report.resultSummary {
                     Text(summary).font(.brandBody)
@@ -73,7 +73,7 @@ struct LabTestReportsView: View {
                 case .pending:
                     Text("Still processing — you'll be able to view and share it here once it's ready.")
                         .font(.brandCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 case .ready:
                     if let fileURL = report.reportFileURL {
                         Button {

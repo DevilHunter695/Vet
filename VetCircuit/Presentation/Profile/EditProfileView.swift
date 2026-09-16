@@ -83,7 +83,7 @@ struct EditProfileView: View {
                     } else {
                         Circle().fill(Color(.tertiarySystemFill))
                             .frame(width: 64, height: 64)
-                            .overlay(Image(systemName: "person.fill").foregroundStyle(.secondary))
+                            .overlay(Image(systemName: "person.fill").foregroundStyle(Theme.textSecondary))
                     }
                     // Same reason as PetDetailView: PhotosPicker's label
                     // closure is Sendable-checked, so the main-actor view

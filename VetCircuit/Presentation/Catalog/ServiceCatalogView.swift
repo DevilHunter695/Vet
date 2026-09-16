@@ -84,10 +84,18 @@ struct ServiceCatalogView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                CartToolbarButton()
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 // D4: packages/bundles, one tap from the à la carte catalog.
                 NavigationLink { PackagesView(vertical: vertical, pet: pet) } label: {
                     Label("Packages", systemImage: "shippingbox")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.primaryLight)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(PressableStyle(scale: 0.94))
             }
         }
         .task { await viewModel.load(vertical: vertical, species: pet?.species) }
@@ -115,7 +123,7 @@ private struct ServiceRow: View {
                         .foregroundStyle(.primary)
                     Text(service.summary)
                         .font(.brandCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -129,7 +137,7 @@ private struct ServiceRow: View {
                     }
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Theme.textTertiary)
                 }
             }
 

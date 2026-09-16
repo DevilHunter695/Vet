@@ -120,10 +120,10 @@ struct VetDetailView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "star.fill").font(.caption2).foregroundStyle(Theme.goldTier)
                     Text(String(format: "%.1f", vet.rating) + " (\(vet.reviewCount) reviews)")
-                        .font(.brandCaption).foregroundStyle(.secondary)
+                        .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 }
                 if let clusterArea {
-                    Text(clusterArea).font(.brandCaption).foregroundStyle(.secondary)
+                    Text(clusterArea).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 }
             }
         }
@@ -161,7 +161,7 @@ struct VetDetailView: View {
                     Text(slot.startTime.formatted(date: .abbreviated, time: .shortened)).font(.brandBody)
                     Spacer()
                     Text("\(slot.remainingCapacity) spot\(slot.remainingCapacity == 1 ? "" : "s") left")
-                        .font(.brandCaption).foregroundStyle(.secondary)
+                        .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 }
                 .padding(12)
                 .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
@@ -188,7 +188,7 @@ struct VetDetailView: View {
                             }
                         }
                         .frame(height: 8)
-                        Text("\(count)").font(.caption2).foregroundStyle(.secondary).frame(width: 24, alignment: .trailing)
+                        Text("\(count)").font(.caption2).foregroundStyle(Theme.textSecondary).frame(width: 24, alignment: .trailing)
                     }
                 }
             }
@@ -212,7 +212,7 @@ struct VetDetailView: View {
                         Text(comment).font(.brandBody)
                     }
                     Text(review.createdAt.formatted(date: .abbreviated, time: .omitted))
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.caption2).foregroundStyle(Theme.textSecondary)
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -232,7 +232,7 @@ private struct FactRow: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon).foregroundStyle(Theme.primary).frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.caption).foregroundStyle(.secondary)
+                Text(title).font(.caption).foregroundStyle(Theme.textSecondary)
                 Text(value).font(.brandBody)
             }
         }

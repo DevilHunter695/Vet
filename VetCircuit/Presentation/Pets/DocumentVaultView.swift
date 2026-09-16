@@ -80,7 +80,7 @@ struct DocumentVaultView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(document.title).font(.brandBody)
                         Text(document.uploadedAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.brandCaption).foregroundStyle(.secondary)
+                            .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                     }
                     .swipeActions {
                         Button(role: .destructive) {

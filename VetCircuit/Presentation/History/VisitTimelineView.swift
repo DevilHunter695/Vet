@@ -55,7 +55,7 @@ private struct TimelineRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(event.status.displayText).font(.brandHeadline)
                 Text(event.occurredAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.brandCaption).foregroundStyle(.secondary)
+                    .font(.brandCaption).foregroundStyle(Theme.textSecondary)
             }
             .padding(.bottom, 12)
         }

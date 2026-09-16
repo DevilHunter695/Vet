@@ -18,7 +18,7 @@ struct CorporatePlanView: View {
                             .foregroundStyle(Theme.primary)
                         Text("One plan covering every household in your apartment complex or office campus, billed centrally.")
                             .font(.brandBody)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -32,7 +32,7 @@ struct CorporatePlanView: View {
                     .onChange(of: seatCount) { _, _ in Haptics.rigid() }
                     Text("Minimum 5 seats.")
                         .font(.brandCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
 
                 Card {

@@ -40,7 +40,7 @@ struct AddAddressView: View {
                         coordinate = context.region.center
                     }
                     Text("Move the map so the pin sits on your gate.")
-                        .font(.brandCaption).foregroundStyle(.secondary)
+                        .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 }
 
                 Section("Details") {

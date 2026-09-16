@@ -140,13 +140,13 @@ struct LiveTrackingView: View {
                                     .contentTransition(.numericText())
                                 Text("Updated \(lastUpdatedText)")
                                     .font(.brandCaption2)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.textSecondary)
                             } else {
                                 Text("Waiting for your vet's location…")
                                     .font(.brandCallout)
                                 Text("The map updates as soon as they start moving.")
                                     .font(.brandCaption2)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                         }
                         Spacer(minLength: 0)

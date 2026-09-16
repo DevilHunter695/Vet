@@ -56,7 +56,7 @@ struct CorporateSeatAssignmentView: View {
         List {
             Section {
                 Text("\(viewModel.assignments.count) of \(subscription.seatCount) seats assigned")
-                    .font(.brandCaption).foregroundStyle(.secondary)
+                    .font(.brandCaption).foregroundStyle(Theme.textSecondary)
             }
 
             Section("Assign a seat") {

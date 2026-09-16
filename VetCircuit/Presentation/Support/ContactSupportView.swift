@@ -52,7 +52,7 @@ struct ContactSupportView: View {
                     Section {
                         Label("This ticket is attached to your visit.", systemImage: "link")
                             .font(.brandCaption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                     }
                 }
                 Section("Subject") {

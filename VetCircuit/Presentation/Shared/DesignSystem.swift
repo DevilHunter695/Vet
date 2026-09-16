@@ -145,7 +145,7 @@ struct PillButton: View {
             }
             .padding(.horizontal, 16)
             .frame(minHeight: 44)
-            .foregroundStyle(filled ? .white : tint)
+            .foregroundStyle(filled ? AnyShapeStyle(Theme.onBrightFill) : AnyShapeStyle(tint))
             .background {
                 Capsule()
                     .fill(filled ? AnyShapeStyle(tint) : AnyShapeStyle(tint.opacity(0.12)))
@@ -186,8 +186,8 @@ private struct GlassCardModifier: ViewModifier {
     private var isDark: Bool { colorScheme == .dark }
 
     private var borderGradient: LinearGradient {
-        let top = isDark ? Color.white.opacity(0.20) : Color.white.opacity(0.85)
-        let bottom = isDark ? Color.white.opacity(0.04) : Color.white.opacity(0.20)
+        let top = isDark ? Color.white.opacity(0.26) : Color.white.opacity(0.85)
+        let bottom = isDark ? Color.white.opacity(0.08) : Color.white.opacity(0.20)
         return LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom)
     }
 
@@ -202,7 +202,7 @@ private struct GlassCardModifier: ViewModifier {
                     // the card an edge to be read against.
                     if isDark {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(Color.white.opacity(0.05))
+                            .fill(Color.white.opacity(0.09))
                     }
                     if let tint {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -265,7 +265,7 @@ struct SectionHeader: View {
                 if let subtitle {
                     Text(subtitle)
                         .font(.brandCaption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
             }
             Spacer(minLength: 8)
@@ -315,7 +315,7 @@ struct StatTile: View {
                 .minimumScaleFactor(0.7)
             Text(label)
                 .font(.brandCaption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -341,12 +341,12 @@ struct InfoRow: View {
             if let systemImage {
                 Image(systemName: systemImage)
                     .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .frame(width: 18, alignment: .leading)
             }
             Text(label)
                 .font(.brandCallout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
             Spacer(minLength: 12)
             Text(value)
                 .font(isMonospaced ? .brandMono(.callout) : .system(.callout, design: .rounded, weight: .semibold))
@@ -396,7 +396,7 @@ struct CalloutNote: View {
                 .foregroundStyle(tint)
             Text(text)
                 .font(.brandCaption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -476,7 +476,7 @@ struct ChatBubble: View {
                         case .success(let image):
                             image.resizable().scaledToFill()
                         case .failure:
-                            Image(systemName: "photo.badge.exclamationmark").font(.title).foregroundStyle(.secondary)
+                            Image(systemName: "photo.badge.exclamationmark").font(.title).foregroundStyle(Theme.textSecondary)
                         default:
                             ShimmerView(cornerRadius: 18)
                         }
@@ -530,7 +530,7 @@ struct EmptyStateView: View {
                 .multilineTextAlignment(.center)
             Text(message)
                 .font(.brandCallout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             if let actionTitle, let action {

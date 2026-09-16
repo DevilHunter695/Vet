@@ -328,8 +328,10 @@ struct CartView: View {
             if viewModel.isLoading && viewModel.cart == nil {
                 ProgressView()
             } else if let cart = viewModel.cart, cart.items.isEmpty {
-                EmptyStateView(systemImage: "cart", title: "Your cart is empty",
-                               message: "Add a service from the catalog to get a price.")
+                EmptyStateView(
+                    systemImage: "cart", title: "Your cart is empty",
+                    message: "Add a service from the catalog and you'll see a full, itemised price here before you pay anything."
+                )
             } else if let cart = viewModel.cart {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -391,7 +393,7 @@ struct CartView: View {
                                         .disabled(Int(viewModel.redeemPointsInput) == nil)
                                 }
                                 if let redeemMessage = viewModel.redeemMessage {
-                                    Text(redeemMessage).font(.brandCaption).foregroundStyle(.secondary)
+                                    Text(redeemMessage).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                                 }
                             }
                             .padding()
@@ -439,6 +441,21 @@ struct CartView: View {
                 .scrollContentBackground(.hidden)
                 .animation(Theme.crossFade, value: viewModel.quote)
                 .safeAreaInset(edge: .bottom) { checkoutBar }
+            } else {
+                // The cart used to render literally nothing whenever `cart`
+                // was still nil and `isLoading` had already flipped back to
+                // false — a failed load, or no signed-in user, both landed
+                // here. A blank screen is never an acceptable state; say what
+                // happened and give a way out.
+                EmptyStateView(
+                    systemImage: "cart",
+                    title: viewModel.errorMessage == nil ? "Your cart is empty" : "Couldn't open your cart",
+                    message: viewModel.errorMessage ?? "Add a service from the catalog and the price shows up here, itemised.",
+                    actionTitle: "Try again"
+                ) {
+                    guard let user = session.currentUser else { return }
+                    Task { await viewModel.load(userId: user.id) }
+                }
             }
         }
         .auroraScreenBackground()
@@ -464,7 +481,7 @@ struct CartView: View {
         if let cart = viewModel.cart, !cart.items.isEmpty {
             VStack(spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("Total").font(.brandCallout).foregroundStyle(.secondary)
+                    Text("Total").font(.brandCallout).foregroundStyle(Theme.textSecondary)
                     Spacer()
                     if viewModel.isQuoting {
                         ProgressView().controlSize(.small)
@@ -474,7 +491,7 @@ struct CartView: View {
                             .brandDisplayText()
                             .contentTransition(.numericText())
                     } else {
-                        Text("—").font(.brandMono(.title3, weight: .bold)).foregroundStyle(.secondary)
+                        Text("—").font(.brandMono(.title3, weight: .bold)).foregroundStyle(Theme.textSecondary)
                     }
                 }
 
@@ -516,7 +533,7 @@ private struct CartItemRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
                 Text(name).font(.brandHeadline)
-                Text(variantName).font(.brandCaption).foregroundStyle(.secondary)
+                Text(variantName).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 Stepper("Qty: \(quantity)", value: $quantity, in: 1...20)
                     .font(.brandCaption)
                     .fixedSize()
@@ -524,7 +541,7 @@ private struct CartItemRow: View {
                     .accessibilityValue("\(quantity)")
             }
             Spacer()
-            Text(price).font(.brandBody).foregroundStyle(.secondary)
+            Text(price).font(.brandBody).foregroundStyle(Theme.textSecondary)
                 .accessibilityLabel("Price \(price)")
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.neutral)
@@ -546,7 +563,7 @@ struct PriceBreakdownView: View {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(breakdown.lineItems) { item in
                     HStack {
-                        Text(item.label).font(.brandBody).foregroundStyle(.secondary)
+                        Text(item.label).font(.brandBody).foregroundStyle(Theme.textSecondary)
                         Spacer()
                         Text(item.amountMinorUnits < 0 ? "-\(CurrencyFormatter.rupees(-item.amountMinorUnits))" : CurrencyFormatter.rupees(item.amountMinorUnits))
                             .font(.brandBody)
@@ -584,7 +601,7 @@ private struct CouponEntryRow: View {
                     .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             if let message {
-                Text(message).font(.brandCaption).foregroundStyle(.secondary)
+                Text(message).font(.brandCaption).foregroundStyle(Theme.textSecondary)
             }
         }
         .padding()
