@@ -503,14 +503,20 @@ actor MockPackageRepository: PackageRepository {
 }
 
 actor MockVisitRepository: VisitRepository {
-    private var visits: [Visit] = MockData.visits
+    /// Empty by default, deliberately — same reasoning as
+    /// `MockWalletRepository.includesDemoHistory`. A test asserting "this
+    /// path never books a visit" should be able to check that the repository
+    /// is empty, not have to know how many demo rows the app happens to ship
+    /// this week. The running app opts into the seed.
+    private var visits: [Visit]
     /// D4: threaded in so a redeeming booking can atomically bump the
     /// matching `PackageRedemption.usedCount` — set by `DependencyContainer`
     /// to the same `MockPackageRepository` instance the rest of the app uses.
     private let packageRepository: MockPackageRepository?
 
-    init(packageRepository: MockPackageRepository? = nil) {
+    init(packageRepository: MockPackageRepository? = nil, seed: [Visit] = []) {
         self.packageRepository = packageRepository
+        self.visits = seed
     }
     /// Simulates the DB's `idempotency_keys` table (Appendix D): the same
     /// key always returns the same visit rather than creating a duplicate.

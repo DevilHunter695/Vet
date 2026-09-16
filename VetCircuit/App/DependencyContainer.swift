@@ -94,7 +94,7 @@ final class DependencyContainer {
         // pattern `mockWalletRepository`/`loyaltyRepository` use below.
         let mockPackageRepository = MockPackageRepository()
         self.packageRepository = mockPackageRepository
-        self.visitRepository = MockVisitRepository(packageRepository: mockPackageRepository)
+        self.visitRepository = MockVisitRepository(packageRepository: mockPackageRepository, seed: MockData.visits)
         self.subscriptionRepository = MockSubscriptionRepository()
         self.paymentRepository = MockPaymentRepository()
         self.chatRepository = MockChatRepository()
