@@ -31,7 +31,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | A8 | Multiple addresses + geofence | 🟢 | Driven; `ManageAddressesUseCase` suite covers the served/unserved split. Demo data now includes an address deliberately outside coverage |
 | A9 | Household invite | 🟢 | Screen driven; `ManageHouseholdUseCase` suite |
 | A10 | Face ID app lock | 🟠 | Toggle renders on Profile. `LAContext` cannot be exercised in CI |
-| A11 | Blocked/deactivated handling | 🟠 | Code path exists, no test at either level |
+| A11 | Blocked/deactivated handling | 🟡 | `A11 blocked/deactivated account gate` suite, including a test that fails loudly if a new status is added without deciding whether it locks the user out |
 
 ## Pets & Records
 
@@ -58,7 +58,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | C6 | Service detail screen | 🟢 | `testCatalogOpensAServiceWithVariantsAndAddons` |
 | C7 | Coverage map | 🟠 | Screen exists. MapKit rendering is not assertable in CI |
 | C8 | Search | 🟡 | `SearchUseCase` suite |
-| C9 | Recently viewed / rebook | 🟠 | `RecentlyViewedStore` exists, untested |
+| C9 | Recently viewed / rebook | 🟡 | `C9 recently viewed` suite — ordering, de-duplication on revisit, the cap, and dropping ids whose circuit has left the platform |
 | C10 | Waitlist for uncovered areas | 🟡 | `JoinWaitlistUseCase` suite |
 | C11 | Emergency path | 🟢 | Asserted present without scrolling, and the screen opens |
 
@@ -106,7 +106,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | G1 | Hosted checkout, no raw card data | ⚪ | Architecturally correct — the app only ever holds a URL. **Unverifiable without a gateway** |
 | G2 | Webhook-only confirmation | ⚪ | Same. The webhook handler is server-side and does not exist here |
 | G3 | Payment retry | 🟡 | `PaymentRetryPolicy` + `RetryPaymentUseCase` suites |
-| G4 | Refunds | 🟠 | Repository exists; refund issuance untested at either level |
+| G4 | Refunds | 🟡 | `G4 refunds` suite — issuance, per-visit scoping, and that an ops-initiated refund stays attributable while a policy-driven one does not |
 | G5 | GST invoice PDF | 🟡 | `G5 GST invoice` suite covers itemisation and inclusive totals; `InvoicePDFRenderer` renders and the screen previews it via PDFKit |
 | G6 | Wallet ledger | 🟢 | Driven, asserting it shows a *ledger* and not just a balance; `GetWalletBalanceUseCase` suite |
 
@@ -192,7 +192,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | O3 | Appearance | 🟢 | `testBothAppearancesRenderWithoutLosingContent` |
 | O5 | Consent dashboard | 🟢 | Driven; `ManageConsentUseCase` suite |
 | O7 | Force-upgrade gate | 🟡 | `CheckAppConfigUseCase` + `RemoteAppConfig version comparison` suites |
-| O8 | Maintenance mode | 🟠 | Config flag exists, no test |
+| O8 | Maintenance mode | 🟡 | `CheckAppConfigUseCase` suite (which I had missed) plus `O8 maintenance mode`, including that maintenance takes precedence over a force-upgrade — sending someone to the App Store during an outage updates an app that still won't work |
 
 ---
 
@@ -201,22 +201,35 @@ no touch region under what was painted. `exists` was true for all of them.
 | Status | Count |
 |---|---|
 | 🟢 Driven through the running app | 34 |
-| 🟡 Domain logic unit-tested, screen reachable | 53 |
-| 🟠 Built, nothing tests it | 8 |
+| 🟡 Domain logic unit-tested, screen reachable | 57 |
+| 🟠 Built, nothing tests it | 4 |
 | ⚪ Mock-bound, unverifiable without a real backend | 3 |
 | — Excluded at your request | 1 |
 
-**87 of 99 have real evidence behind them. 8 have none — they may work, but
-nobody has checked. 3 cannot be tested in this environment at any level, and
-saying otherwise would be a lie.**
+**91 of 99 have real evidence behind them. 4 have none. 3 cannot be tested in
+this environment at any level, and saying otherwise would be a lie.**
 
-The 🟠 eight, named so they are not lost: A10 Face ID lock, A11 blocked-account
-handling, C7 coverage map, C9 recently viewed, G4 refund issuance, I4 live map
-rendering, N5 rating prompt, O8 maintenance mode.
+The 🟠 four, and why each is genuinely stuck rather than merely neglected:
+
+- **A10 Face ID lock** — `LAContext` has no biometric hardware to talk to in a
+  simulator, and no way to simulate a successful or failed match.
+- **C7 coverage map** and **I4 live map rendering** — MapKit draws into a
+  surface XCUITest cannot introspect. The *logic* behind I4 is covered by the
+  `TrackVetUseCase` suite; it is the rendering that is unassertable.
+- **N5 rating prompt** — `SKStoreReviewController` deliberately does nothing
+  in a test environment, by Apple's design.
+
+Each needs a person holding a device. None can be closed from here.
 
 The ⚪ three: G1 hosted checkout, G2 webhook-only confirmation, I3 Live Activity.
 All three need something this environment cannot provide — a payment gateway, a
 server receiving webhooks, and ActivityKit on a real device.
+
+One more correction while I am counting honestly: O8 was listed as untested
+because I grepped for the tag "O8" and found none in the test target. It had a
+`CheckAppConfigUseCase` suite the whole time. The 🟠 column was built by
+tag-grepping, which is the same weak evidence this document exists to replace;
+the four that remain have been checked by hand.
 
 ## The honest caveats
 

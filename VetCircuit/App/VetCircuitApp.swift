@@ -153,7 +153,7 @@ struct RootView: View {
                     Theme.heroGradient.ignoresSafeArea()
                     PawMascot(size: 88)
                 }
-            } else if let user = session.currentUser, user.accountStatus != .active {
+            } else if let user = session.currentUser, user.isLockedOut {
                 // A11: checked before the biometric gate and before the tab
                 // bar — a blocked/deactivated user should never even reach
                 // the "unlock with Face ID" screen for content they can't use.

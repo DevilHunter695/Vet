@@ -22,6 +22,21 @@ struct User: Identifiable, Codable, Equatable, Hashable {
     enum AccountStatus: String, Codable, CaseIterable {
         case active, blocked, deactivated
     }
+
+    /// A11: whether this user must be held at the full-screen account gate
+    /// instead of being let into the app.
+    ///
+    /// The app root previously spelled this inline as `accountStatus !=
+    /// .active`. Two reasons to name it: a new status added to the enum
+    /// later defaults to locking the user out rather than silently letting
+    /// them through (fail closed, which is the right direction for an access
+    /// gate), and the decision becomes something a test can hold.
+    var isLockedOut: Bool {
+        switch accountStatus {
+        case .active: return false
+        case .blocked, .deactivated: return true
+        }
+    }
 }
 
 struct Pet: Identifiable, Codable, Equatable, Hashable {
