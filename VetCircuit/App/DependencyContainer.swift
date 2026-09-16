@@ -119,9 +119,19 @@ final class DependencyContainer {
     /// unimportant. Chat and live tracking are the two that would be noticed
     /// first by a customer.
     static let mockOnlyRepositories = [
-        "ChatRepository", "LiveTrackingRepository", "NoShowDetectionRepository",
-        "PaymentRepository", "PostVisitSummaryRepository", "PushTokenRepository",
-        "ReferralRepository", "RenewalReminderDedupeRepository", "TriageRepository",
+        "LiveTrackingRepository", "NoShowDetectionRepository", "PaymentRepository",
+        "PostVisitSummaryRepository", "RenewalReminderDedupeRepository", "TriageRepository",
+    ]
+
+    /// Conformers that exist and work, but not completely. Kept separate from
+    /// the list above because "there is no implementation" and "the
+    /// implementation has a hole in it" fail differently, and collapsing them
+    /// into one number is how a gap stops being visible.
+    static let partialSupabaseRepositories = [
+        "ChatRepository — messages persist and read receipts work, but there is no "
+        + "Realtime channel yet, so a thread refreshes on load rather than pushing; "
+        + "photo attachments need a storage bucket and an attachment_url column and "
+        + "currently refuse rather than post an empty message",
     ]
 
     private init() {
@@ -149,13 +159,13 @@ final class DependencyContainer {
             ?? MockVisitRepository(packageRepository: mockPackageRepository, seed: MockData.visits)
         self.subscriptionRepository = client.map(SupabaseSubscriptionRepository.init) ?? MockSubscriptionRepository()
         self.paymentRepository = MockPaymentRepository()
-        self.chatRepository = MockChatRepository()
+        self.chatRepository = client.map(SupabaseChatRepository.init) ?? MockChatRepository()
         self.reviewRepository = client.map(SupabaseReviewRepository.init) ?? MockReviewRepository()
         self.petRepository = client.map(SupabasePetRepository.init) ?? MockPetRepository()
-        self.pushTokenRepository = MockPushTokenRepository()
+        self.pushTokenRepository = client.map(SupabasePushTokenRepository.init) ?? MockPushTokenRepository()
         self.liveTrackingRepository = MockLiveTrackingRepository()
         self.callRepository = client.map(SupabaseCallRepository.init) ?? MockCallRepository()
-        self.referralRepository = MockReferralRepository()
+        self.referralRepository = client.map(SupabaseReferralRepository.init) ?? MockReferralRepository()
         self.triageRepository = MockTriageRepository()
         self.catalogRepository = client.map(SupabaseCatalogRepository.init) ?? MockCatalogRepository()
         self.addressRepository = client.map(SupabaseAddressRepository.init) ?? MockAddressRepository()

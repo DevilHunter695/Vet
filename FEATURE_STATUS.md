@@ -136,8 +136,8 @@ no touch region under what was painted. `exists` was true for all of them.
 
 | ID | Feature | Status | Evidence |
 |---|---|---|---|
-| J1 | Per-visit chat | 🟡 | `SendChatMessageUseCase` suite |
-| J2 | Chat photo attachments | 🟡 | `SendChatMessageUseCase photo attachments` suite. Real upload is ⚪ |
+| J1 | Per-visit chat | 🟡 | `SendChatMessageUseCase` suite; `SupabaseChatRepository` persists messages and read receipts, with a named Realtime gap |
+| J2 | Chat photo attachments | 🟡 | `SendChatMessageUseCase photo attachments` suite. Against Postgres this refuses rather than posting an empty message — it needs a storage bucket and an `attachment_url` column |
 | J3 | Read receipts / unread badge | 🟡 | `ChatUnreadPolicy` suite |
 | J5 | Auto-close chat + escalation | 🟡 | `ChatPolicy` suite |
 | J7 | Notification centre + preferences | 🟢 | Both screens driven; `ManageNotificationPreferencesUseCase` suite. Centre now seeded with five notifications, two unread |
@@ -233,10 +233,14 @@ the four that remain have been checked by hand.
 
 ## The honest caveats
 
-1. **Everything runs on mock repositories.** `DependencyContainer` wires ~40
-   `Mock*Repository`. The Supabase implementations exist, compile, and have
-   never executed against a database. Deploying for real means swapping that
-   wiring and discovering what breaks — which is not a small amount.
+1. **Everything runs on mock repositories, and the swap is now a config
+   change.** Supply `SUPABASE_URL` and `SUPABASE_ANON_KEY` and 51 repositories
+   resolve to Postgres. Six still have no conformer at all —
+   `LiveTrackingRepository`, `TriageRepository`, `PaymentRepository` and three
+   deliberately device-local ones — and chat's conformer is real for messages
+   and read receipts but has no Realtime channel yet, so a thread refreshes on
+   load rather than pushing, and photo attachments refuse rather than post an
+   empty message. None of this has ever executed against a database.
 2. **A correction.** An earlier version of this file said no PDF was rendered
    anywhere. That was wrong. B7, G5, K2, K4 and A7 all render through
    `UIGraphicsPDFRenderer` — a system framework, no service or account needed

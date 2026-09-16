@@ -215,11 +215,15 @@ struct BackendSelectionTests {
     /// Supabase conformer is written for one of them, this fails and the list
     /// gets corrected rather than quietly going stale.
     @MainActor
-    @Test("the mock-only repositories are still the nine that have no Supabase conformer")
+    @Test("the mock-only repositories are still the six that have no Supabase conformer")
     func mockOnlyListIsCurrent() {
-        #expect(DependencyContainer.mockOnlyRepositories.count == 9)
-        #expect(DependencyContainer.mockOnlyRepositories.contains("ChatRepository"))
+        #expect(DependencyContainer.mockOnlyRepositories.count == 6)
         #expect(DependencyContainer.mockOnlyRepositories.contains("PaymentRepository"))
+        // Chat moved off this list when it got a conformer; it must not be
+        // silently dropped from the record altogether, because that conformer
+        // still has a named hole in it.
+        #expect(!DependencyContainer.mockOnlyRepositories.contains("ChatRepository"))
+        #expect(DependencyContainer.partialSupabaseRepositories.contains { $0.hasPrefix("ChatRepository") })
     }
 }
 

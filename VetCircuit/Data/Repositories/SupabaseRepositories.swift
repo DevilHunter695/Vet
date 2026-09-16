@@ -3079,3 +3079,212 @@ private struct SupabaseLabTestReportRow: Decodable {
 }
 
 #endif
+
+// MARK: - Three of the nine repositories that had no Supabase conformer
+//
+// `DependencyContainer.mockOnlyRepositories` listed nine protocols that stayed
+// on mocks even in a credentialed build. Three of them — chat, device tokens
+// and referrals — already have real tables in 0001_init.sql, so the only thing
+// missing was the conformer. Chat is the one a customer notices first: a
+// "credentialed" build where messages to your vet went into a local array and
+// vanished would be worse than no chat at all.
+//
+// The six that remain genuinely have nowhere to write: there is no table for
+// triage, live tracking, no-show detection, post-visit summaries or renewal
+// reminder dedupe (the last three are deliberately device-local), and payments
+// are a gateway integration rather than a table.
+
+/// J1/J2/J3: per-visit chat.
+///
+/// `history`, `send` and `markRead` are real. The two `subscribe` methods are
+/// not: live delivery needs Supabase Realtime channel wiring that nothing in
+/// this file has established a pattern for yet, and guessing at that API is
+/// how a build breaks. They return the same inert token the mock does, which
+/// means a credentialed build gets a chat that is durable and correct but
+/// refreshes on load rather than pushing — a real limitation, named here and
+/// in FEATURE_STATUS.md rather than discovered by a customer waiting for a
+/// reply that never appears.
+final class SupabaseChatRepository: ChatRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    private struct Row: Decodable {
+        let id: UUID
+        let visitId: UUID
+        let senderId: UUID
+        let body: String
+        let sentAt: Date
+        let readAt: Date?
+        enum CodingKeys: String, CodingKey {
+            case id, visitId = "visit_id", senderId = "sender_id", body
+            case sentAt = "sent_at", readAt = "read_at"
+        }
+        func toDomain() -> ChatMessage {
+            // `attachmentURL` has no column in 0001_init.sql — see `sendPhoto`.
+            ChatMessage(id: id, visitId: visitId, senderId: senderId, body: body,
+                        sentAt: sentAt, readAt: readAt, attachmentURL: nil)
+        }
+    }
+
+    private struct Insert: Encodable {
+        let visitId: UUID
+        let body: String
+        enum CodingKeys: String, CodingKey { case visitId = "visit_id", body }
+    }
+
+    private struct ReadUpdate: Encodable {
+        let readAt: Date
+        enum CodingKeys: String, CodingKey { case readAt = "read_at" }
+    }
+
+    func history(visitId: UUID) async throws -> [ChatMessage] {
+        let rows: [Row] = try await client
+            .from("chat_messages").select().eq("visit_id", value: visitId)
+            .order("sent_at", ascending: true)
+            .execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    func send(visitId: UUID, body: String) async throws -> ChatMessage {
+        // `sender_id` is deliberately not sent: it defaults to auth.uid()
+        // server-side, so a client cannot post as somebody else.
+        let rows: [Row] = try await client
+            .from("chat_messages").insert(Insert(visitId: visitId, body: body))
+            .select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Chat message") }
+        return row.toDomain()
+    }
+
+    /// J2: not implemented rather than half-implemented. It needs both a
+    /// storage upload and an `attachment_url` column that 0001_init.sql does
+    /// not have, and a photo message silently posted as empty text would look
+    /// to the sender like it had been delivered.
+    func sendPhoto(visitId: UUID, imageData: Data) async throws -> ChatMessage {
+        throw DomainError.validation("Photo messages aren't available yet on this account.")
+    }
+
+    nonisolated func subscribe(visitId: UUID, onMessage: @escaping @Sendable (ChatMessage) -> Void) -> AnyObject {
+        NSObject() // TODO(Realtime): channel subscription on chat_messages.
+    }
+
+    func markRead(visitId: UUID, readerId: UUID) async throws {
+        try await client
+            .from("chat_messages").update(ReadUpdate(readAt: Date()))
+            .eq("visit_id", value: visitId)
+            .neq("sender_id", value: readerId)
+            .is("read_at", value: nil)
+            .execute()
+    }
+
+    nonisolated func sendTypingIndicator(visitId: UUID, senderId: UUID) async {
+        // Ephemeral by design — nothing to persist, and no Realtime channel
+        // to broadcast on yet.
+    }
+
+    nonisolated func subscribeToTyping(visitId: UUID, onTyping: @escaping @Sendable (UUID) -> Void) -> AnyObject {
+        NSObject() // TODO(Realtime): presence/broadcast channel.
+    }
+}
+
+/// J8: APNs device tokens. `device_tokens` has a `unique (user_id, token)`
+/// constraint, so registering is an upsert — re-launching the app must not
+/// fail on a token the user already has.
+final class SupabasePushTokenRepository: PushTokenRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    private struct Insert: Encodable {
+        let userId: UUID
+        let token: String
+        let platform: String
+        enum CodingKeys: String, CodingKey { case userId = "user_id", token, platform }
+    }
+
+    private struct IdRow: Decodable { let id: UUID }
+
+    func registerDeviceToken(_ token: String, userId: UUID) async throws {
+        try await client
+            .from("device_tokens")
+            .upsert(Insert(userId: userId, token: token, platform: "ios"),
+                    onConflict: "user_id,token")
+            .execute()
+    }
+
+    func hasDeviceToken(userId: UUID) async throws -> Bool {
+        let rows: [IdRow] = try await client
+            .from("device_tokens").select("id").eq("user_id", value: userId)
+            .limit(1).execute().value
+        return !rows.isEmpty
+    }
+}
+
+/// N1: referral codes and invites.
+final class SupabaseReferralRepository: ReferralRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    private struct Row: Decodable {
+        let id: UUID
+        let referrerId: UUID
+        let code: String
+        let invitedPhone: String?
+        let status: String
+        let rewardApplied: Bool
+        let createdAt: Date
+        enum CodingKeys: String, CodingKey {
+            case id, referrerId = "referrer_id", code, invitedPhone = "invited_phone"
+            case status, rewardApplied = "reward_applied", createdAt = "created_at"
+        }
+        func toDomain() -> Referral {
+            Referral(id: id, referrerId: referrerId, code: code, invitedPhone: invitedPhone,
+                     status: Referral.Status(rawValue: status) ?? .pending,
+                     rewardApplied: rewardApplied, createdAt: createdAt)
+        }
+    }
+
+    private struct Insert: Encodable {
+        let referrerId: UUID
+        let code: String
+        let invitedPhone: String?
+        enum CodingKeys: String, CodingKey {
+            case referrerId = "referrer_id", code, invitedPhone = "invited_phone"
+        }
+    }
+
+    /// A user's code is whatever their existing referral rows carry, so it is
+    /// stable across invites. Deriving it from the user id rather than
+    /// inventing a new one per call is what makes "share your code" mean
+    /// anything.
+    func myReferralCode(userId: UUID) async throws -> String {
+        let rows: [Row] = try await client
+            .from("referrals").select().eq("referrer_id", value: userId)
+            .limit(1).execute().value
+        if let existing = rows.first?.code { return existing }
+        return Self.derivedCode(for: userId)
+    }
+
+    func sendInvite(userId: UUID, phone: String) async throws -> Referral {
+        let code = try await myReferralCode(userId: userId)
+        let rows: [Row] = try await client
+            .from("referrals")
+            .insert(Insert(referrerId: userId, code: code, invitedPhone: phone))
+            .select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Referral") }
+        return row.toDomain()
+    }
+
+    func listReferrals(userId: UUID) async throws -> [Referral] {
+        let rows: [Row] = try await client
+            .from("referrals").select().eq("referrer_id", value: userId)
+            .order("created_at", ascending: false)
+            .execute().value
+        return rows.map { $0.toDomain() }
+    }
+
+    /// Deterministic from the user id, and uppercase-alphanumeric so it can be
+    /// read aloud or typed without ambiguity.
+    static func derivedCode(for userId: UUID) -> String {
+        let raw = userId.uuidString.replacingOccurrences(of: "-", with: "").uppercased()
+        return "VC" + String(raw.prefix(6))
+    }
+}
