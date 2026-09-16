@@ -119,8 +119,3 @@ struct ManageNotificationPreferencesUseCaseTests {
     }
 }
 
-private extension MockAppConfigRepository {
-    func setConfig(_ newValue: RemoteAppConfig) async {
-        config = newValue
-    }
-}

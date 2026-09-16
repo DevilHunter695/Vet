@@ -1881,6 +1881,14 @@ actor MockAppConfigRepository: AppConfigRepository {
     var config = RemoteAppConfig(minSupportedVersion: "1.0", isMaintenanceMode: false, maintenanceMessage: nil)
 
     func fetchConfig() async throws -> RemoteAppConfig { config }
+
+    /// `config` is actor-isolated, so it cannot be assigned from outside.
+    /// This lived as a `private extension` in one test file, which meant the
+    /// next test file that needed it got "inaccessible due to 'fileprivate'
+    /// protection level" rather than reusing it. It belongs on the mock.
+    func setConfig(_ newValue: RemoteAppConfig) {
+        config = newValue
+    }
 }
 
 // MARK: - Help centre, support & notification centre (plan §M, §J7)

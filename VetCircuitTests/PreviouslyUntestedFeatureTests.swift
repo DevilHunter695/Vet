@@ -163,7 +163,8 @@ struct MaintenanceModeTests {
             maintenanceMessage: "We're upgrading the booking system — back by 6pm IST."
         ))
         guard case .maintenance(let message) = result else {
-            return Issue.record("Maintenance mode did not close the app: \(result)")
+            Issue.record("Maintenance mode did not close the app: \(result)")
+            return
         }
         #expect(message == "We're upgrading the booking system — back by 6pm IST.")
     }
@@ -178,7 +179,8 @@ struct MaintenanceModeTests {
             currentVersion: "1.0"
         )
         guard case .maintenance = result else {
-            return Issue.record("A force-upgrade was shown during an outage: \(result)")
+            Issue.record("A force-upgrade was shown during an outage: \(result)")
+            return
         }
     }
 
@@ -188,7 +190,8 @@ struct MaintenanceModeTests {
             minSupportedVersion: "1.0", isMaintenanceMode: false, maintenanceMessage: nil
         ))
         guard case .ok = result else {
-            return Issue.record("The app was gated when it should have opened: \(result)")
+            Issue.record("The app was gated when it should have opened: \(result)")
+            return
         }
     }
 }
