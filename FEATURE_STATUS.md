@@ -27,7 +27,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | A1 | Sign in with Apple | — | **Excluded at your request.** |
 | A5 | Edit profile | 🟢 | `testAccountAndMoneyScreensAreAllReachable` opens it from Profile in one tap |
 | A6 | Delete account + data | 🟡 | `ManageAccountDeletionUseCase` suite; 30-day window logic tested |
-| A7 | Export my data | 🟡 | `ExportDataUseCase` suite. The JSON is real; the PDF is ⚪ — no renderer wired |
+| A7 | Export my data | 🟡 | `ExportDataUseCase` suite; JSON and PDF both real, PDF output asserted by `PDF rendering` suite |
 | A8 | Multiple addresses + geofence | 🟢 | Driven; `ManageAddressesUseCase` suite covers the served/unserved split. Demo data now includes an address deliberately outside coverage |
 | A9 | Household invite | 🟢 | Screen driven; `ManageHouseholdUseCase` suite |
 | A10 | Face ID app lock | 🟠 | Toggle renders on Profile. `LAContext` cannot be exercised in CI |
@@ -43,7 +43,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | B4 | Vaccination record + due reminders | 🟢 | Section asserted; `ManageVaccinationsUseCase` + `VaccinationPolicy` suites. One seeded vaccination is deliberately overdue |
 | B5 | Prescription history | 🟢 | Section asserted; `ManagePrescriptionsUseCase` suite |
 | B6 | Document vault | 🟡 | `ManagePetDocumentsUseCase` suite; four documents seeded. Storage is ⚪ (`mock-storage://` URLs) |
-| B7 | Shareable health summary PDF | 🟡 | `GeneratePetHealthSummaryUseCase` suite covers the content. PDF rendering itself is ⚪ |
+| B7 | Shareable health summary PDF | 🟡 | `GeneratePetHealthSummaryUseCase` suite covers content; `PDF rendering` suite asserts the bytes really are a PDF, including for a pet with no history |
 | B8 | Deceased/rehomed handling | 🟡 | `ManagePetsUseCase archiving (B8)` suite — soft-delete only, history preserved |
 
 ## Discovery
@@ -107,7 +107,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | G2 | Webhook-only confirmation | ⚪ | Same. The webhook handler is server-side and does not exist here |
 | G3 | Payment retry | 🟡 | `PaymentRetryPolicy` + `RetryPaymentUseCase` suites |
 | G4 | Refunds | 🟠 | Repository exists; refund issuance untested at either level |
-| G5 | GST invoice PDF | 🟡 | `G5 GST invoice` suite covers itemisation and inclusive totals. PDF rendering is ⚪ |
+| G5 | GST invoice PDF | 🟡 | `G5 GST invoice` suite covers itemisation and inclusive totals; `InvoicePDFRenderer` renders and the screen previews it via PDFKit |
 | G6 | Wallet ledger | 🟢 | Driven, asserting it shows a *ledger* and not just a balance; `GetWalletBalanceUseCase` suite |
 
 ## Subscriptions
@@ -147,9 +147,9 @@ no touch region under what was painted. `exists` was true for all of them.
 | ID | Feature | Status | Evidence |
 |---|---|---|---|
 | K1 | Structured visit record | 🟡 | `Visit.hasStructuredRecord (K1)` suite. Eleven seeded visits now carry real diagnosis/procedure/medication records |
-| K2 | Prescription PDF | ⚪ | Content tested; rendering not wired |
+| K2 | Prescription PDF | 🟡 | `PDF rendering` suite asserts the document renders and writes a shareable `.pdf` file |
 | K3 | Medication reminders | 🟡 | `ManageMedicationRemindersUseCase` + `MedicationReminder` suites |
-| K4 | Vaccination certificate PDF | ⚪ | Same as K2 |
+| K4 | Vaccination certificate PDF | 🟡 | `PDF rendering` suite, including a vaccination with no given-date |
 | K5 | 1-tap follow-up booking | 🟡 | `FollowUpBookingPolicy (K5)` suite |
 | K6 | Lab test ordering | 🟡 | `GetLabTestReportsUseCase` suite; two reports seeded |
 | K7 | Rate & review | 🟡 | `SubmitReviewUseCase` + moderation integration suites |
@@ -201,21 +201,22 @@ no touch region under what was painted. `exists` was true for all of them.
 | Status | Count |
 |---|---|
 | 🟢 Driven through the running app | 34 |
-| 🟡 Domain logic unit-tested, screen reachable | 51 |
+| 🟡 Domain logic unit-tested, screen reachable | 53 |
 | 🟠 Built, nothing tests it | 8 |
-| ⚪ Mock-bound, unverifiable without a real backend | 5 |
+| ⚪ Mock-bound, unverifiable without a real backend | 3 |
 | — Excluded at your request | 1 |
 
-**85 of 99 have real evidence behind them. 8 have none — they may work, but
-nobody has checked. 5 cannot be tested in this environment at any level, and
+**87 of 99 have real evidence behind them. 8 have none — they may work, but
+nobody has checked. 3 cannot be tested in this environment at any level, and
 saying otherwise would be a lie.**
 
 The 🟠 eight, named so they are not lost: A10 Face ID lock, A11 blocked-account
 handling, C7 coverage map, C9 recently viewed, G4 refund issuance, I4 live map
 rendering, N5 rating prompt, O8 maintenance mode.
 
-The ⚪ five: G1 hosted checkout, G2 webhook-only confirmation, I3 Live Activity,
-K2 prescription PDF, K4 vaccination certificate PDF.
+The ⚪ three: G1 hosted checkout, G2 webhook-only confirmation, I3 Live Activity.
+All three need something this environment cannot provide — a payment gateway, a
+server receiving webhooks, and ActivityKit on a real device.
 
 ## The honest caveats
 
@@ -223,8 +224,15 @@ K2 prescription PDF, K4 vaccination certificate PDF.
    `Mock*Repository`. The Supabase implementations exist, compile, and have
    never executed against a database. Deploying for real means swapping that
    wiring and discovering what breaks — which is not a small amount.
-2. **No PDF is actually rendered anywhere.** B7, G5, K2 and K4 all have tested
-   content and no renderer.
+2. **A correction.** An earlier version of this file said no PDF was rendered
+   anywhere. That was wrong. B7, G5, K2, K4 and A7 all render through
+   `UIGraphicsPDFRenderer` — a system framework, no service or account needed
+   — and all are wired to share sheets. I had grepped for one type name, found
+   no call sites, and concluded a feature was missing rather than checking:
+   the same "read the source and draw a conclusion" mistake that produced the
+   twelve inert features in the first place. There is now a `PDF rendering`
+   suite that asserts the output actually begins with `%PDF-`, because that is
+   the difference between a renderer that works and one that believes it does.
 3. **D6 has a named structural gap.** `VisitRepository.createVisit` books one
    pet per visit, so a cart with several pets books the first one.
 4. **The screenshots exist but I have not seen them.** CI attaches one per
