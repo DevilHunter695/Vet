@@ -39,14 +39,20 @@ final class FeatureWalkthroughUITests: XCTestCase {
     /// with no touch region and for one merely below the fold; only the first
     /// is a bug, so anything further down a screen is scrolled to first.
     @MainActor @discardableResult
-    private func scrollToVisible(_ element: XCUIElement, in app: XCUIApplication, maxSwipes: Int = 8) -> Bool {
-        guard element.waitForExistence(timeout: 10) else { return false }
+    private func scrollToVisible(_ element: XCUIElement, in app: XCUIApplication, maxSwipes: Int = 12) -> Bool {
+        // Check-then-scroll is the wrong order here. SwiftUI's lazy containers
+        // never build a row that is off screen, so `waitForExistence` on a
+        // row further down Profile fails on a screen where that row is
+        // perfectly reachable — which is exactly how "Help centre" and
+        // "Notification preferences" were reported as missing when they were
+        // simply below the fold. Scroll first, re-check each step.
         var swipes = 0
-        while !element.isHittable && swipes < maxSwipes {
+        while swipes <= maxSwipes {
+            if element.exists && element.isHittable { return true }
             app.swipeUp()
             swipes += 1
         }
-        return element.isHittable
+        return element.exists && element.isHittable
     }
 
     @MainActor
