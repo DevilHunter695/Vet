@@ -1,0 +1,233 @@
+# Feature status — what is actually verified, and how
+
+99 features were marked done. This file says, for each one, what evidence
+exists that it works. It is deliberately not a tick-list: the whole reason
+this document exists is that a tick-list is what produced twelve features
+that were structurally present and functionally inert while CI reported green.
+
+## The four levels of evidence
+
+| | Level | What it means |
+|---|---|---|
+| 🟢 | **Driven** | An XCUITest launches the real app and walks a customer through it. The screen renders, the control is *hittable*, and tapping it once produces the next screen. |
+| 🟡 | **Logic tested** | The domain logic has unit tests (406 of them, all passing) and the screen exists and is reachable, but no test drives the whole path end-to-end. |
+| 🟠 | **Built, unproven** | The code exists and is wired into `DependencyContainer`, but nothing tests it at either level. It may work. Nobody has checked. |
+| ⚪ | **Mock-bound** | Implemented against a mock repository. Cannot be verified here at all — it needs a real payment gateway, push service, file storage or Apple entitlement. The Supabase implementations exist but have never been run. |
+
+`isHittable` is the assertion that matters at the 🟢 level. The controls that
+had to be tapped three or four times existed and were visible; they simply had
+no touch region under what was painted. `exists` was true for all of them.
+
+---
+
+## Account & Profile
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| A1 | Sign in with Apple | — | **Excluded at your request.** |
+| A5 | Edit profile | 🟢 | `testAccountAndMoneyScreensAreAllReachable` opens it from Profile in one tap |
+| A6 | Delete account + data | 🟡 | `ManageAccountDeletionUseCase` suite; 30-day window logic tested |
+| A7 | Export my data | 🟡 | `ExportDataUseCase` suite. The JSON is real; the PDF is ⚪ — no renderer wired |
+| A8 | Multiple addresses + geofence | 🟢 | Driven; `ManageAddressesUseCase` suite covers the served/unserved split. Demo data now includes an address deliberately outside coverage |
+| A9 | Household invite | 🟢 | Screen driven; `ManageHouseholdUseCase` suite |
+| A10 | Face ID app lock | 🟠 | Toggle renders on Profile. `LAContext` cannot be exercised in CI |
+| A11 | Blocked/deactivated handling | 🟠 | Code path exists, no test at either level |
+
+## Pets & Records
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| B1 | Multiple pets, add/edit/archive | 🟢 | Pet card driven from Profile; `ManagePetsUseCase` + archiving suites. Demo account now has three pets |
+| B2 | Pet detail screen | 🟢 | `testOpeningAPetRevealsItsRecordScreens` |
+| B3 | Weight & vitals chart | 🟢 | Section asserted present; `ManagePetWeightsUseCase` history + vitals suites. 18 months of weigh-ins seeded so the chart has a trend |
+| B4 | Vaccination record + due reminders | 🟢 | Section asserted; `ManageVaccinationsUseCase` + `VaccinationPolicy` suites. One seeded vaccination is deliberately overdue |
+| B5 | Prescription history | 🟢 | Section asserted; `ManagePrescriptionsUseCase` suite |
+| B6 | Document vault | 🟡 | `ManagePetDocumentsUseCase` suite; four documents seeded. Storage is ⚪ (`mock-storage://` URLs) |
+| B7 | Shareable health summary PDF | 🟡 | `GeneratePetHealthSummaryUseCase` suite covers the content. PDF rendering itself is ⚪ |
+| B8 | Deceased/rehomed handling | 🟡 | `ManagePetsUseCase archiving (B8)` suite — soft-delete only, history preserved |
+
+## Discovery
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| C1 | Address-first discovery | 🟢 | Book tab drives it |
+| C2 | Circuit list (slot/price/rating) | 🟢 | `testBookTabShowsCircuitsWithSlotPriceAndRating` asserts the row carries all three |
+| C3 | Filters | 🟢 | Driven; `CircuitFilter` suite |
+| C4 | Sort options | 🟡 | `CircuitSortOption` suite |
+| C5 | Vet detail screen | 🟡 | `GetVetProfileUseCase` suite; reviews seeded per vet |
+| C6 | Service detail screen | 🟢 | `testCatalogOpensAServiceWithVariantsAndAddons` |
+| C7 | Coverage map | 🟠 | Screen exists. MapKit rendering is not assertable in CI |
+| C8 | Search | 🟡 | `SearchUseCase` suite |
+| C9 | Recently viewed / rebook | 🟠 | `RecentlyViewedStore` exists, untested |
+| C10 | Waitlist for uncovered areas | 🟡 | `JoinWaitlistUseCase` suite |
+| C11 | Emergency path | 🟢 | Asserted present without scrolling, and the screen opens |
+
+## Catalog
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| D1 | Catalog by category | 🟢 | Driven; `GetCatalogUseCase` suite |
+| D2 | Service variants | 🟢 | Driven, **plus a regression lock**: no service may advertise "from ₹0" again. `D2 minimum pet age eligibility` suite |
+| D3 | Add-ons | 🟡 | `D3 add-on eligibility` + `ManageCartUseCase — D3/D6` suites |
+| D4 | Packages with redemption tracking | 🟢 | Driven, asserting each card lists its contents; `BuyPackageUseCase` + `PackageRedemptionPolicy` suites |
+| D5 | Per-vet pricing overrides | 🟡 | `PricingEngine vet override (D5)` + `MockQuoteRepository override resolution (D5)` suites |
+| D6 | Multi-pet in one visit | 🟡 | Cart side tested. **Known gap:** `createVisit` still books one pet per visit — the cart books the first item's first pet |
+
+## Cart & Checkout
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| E1 | Cart | 🟢 | Driven, **plus two regression locks**: the cart button must be hittable, and the cart must never open blank |
+| E2 | Cart persistence | 🟡 | `ManageCartUseCase` suite |
+| E3 | Transparent price breakdown | 🟡 | `PricingEngine` suites (coupon/wallet/entitlement interplay) |
+| E4 | Coupons | 🟡 | `ApplyCouponUseCase` + `N2 coupon campaign discounts` suites. **Note:** `usageLimit`/`perUserLimit` are not enforced client-side and must not be — that belongs in `validate_coupon()` server-side |
+| E5 | Wallet/loyalty redemption | 🟡 | `LoyaltyRedemptionPolicy` + `PricingEngine coupon + wallet interplay` suites |
+| E6 | Server-signed quote gating | 🟡 | `BookingCheckoutUseCase` suite — including two tests that an expired quote books nothing |
+| E7 | Slot hold during checkout | 🟢 | Driven in the slot-picker test; `HoldSlotUseCase` suite |
+| E8 | Pay-after-visit choice | 🟡 | `PaymentRetryPolicy + pay-after-visit` + `MarkPayAfterVisitCollectedUseCase` suites |
+| E9 | Saved payment methods | 🟢 | Screen driven; `ManageSavedPaymentMethodsUseCase (E9)` suite |
+| E11 | Tip the vet | 🟡 | `TipUseCase` suite |
+
+## Scheduling
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| F1 | Slot picker | 🟢 | `testSlotPickerOffersTappableTimesAndTheCTAGatesOnSelection` |
+| F2 | Capacity per slot | 🟢 | Driven (slots carry remaining capacity); `BookVisitUseCase` suite covers oversell |
+| F3 | Reschedule | 🟡 | `RescheduleVisitUseCase` + `RespondToRescheduleProposalUseCase (F6)` suites |
+| F4 | Cancel with policy | 🟢 | **The bug you reported.** Driven, asserting the refund consequence is stated before confirming; `CancelVisitUseCase` + `CancellationPolicy` + `NoShowPolicy (F7)` suites |
+| F8 | Buffer/travel-time aware slots | 🟡 | `SlotBufferPolicy` suite |
+| F9 | Vet blackout/leave | 🟡 | `ManageVetBlackoutsUseCase` + `GetCircuitsUseCase blackout filtering` suites |
+
+## Payments
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| G1 | Hosted checkout, no raw card data | ⚪ | Architecturally correct — the app only ever holds a URL. **Unverifiable without a gateway** |
+| G2 | Webhook-only confirmation | ⚪ | Same. The webhook handler is server-side and does not exist here |
+| G3 | Payment retry | 🟡 | `PaymentRetryPolicy` + `RetryPaymentUseCase` suites |
+| G4 | Refunds | 🟠 | Repository exists; refund issuance untested at either level |
+| G5 | GST invoice PDF | 🟡 | `G5 GST invoice` suite covers itemisation and inclusive totals. PDF rendering is ⚪ |
+| G6 | Wallet ledger | 🟢 | Driven, asserting it shows a *ledger* and not just a balance; `GetWalletBalanceUseCase` suite |
+
+## Subscriptions
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| H1 | Plan catalog | 🟡 | `PlanCatalogEntry` suite |
+| H3 | Manage (upgrade/downgrade/pause/cancel) | 🟡 | `ManageSubscriptionUseCase` + `SubscriptionManagementPolicy` suites |
+| H4 | Renewal reminders | 🟡 | `RenewalReminderPolicy` + `RenewalReminderUseCase` + `DunningPolicy` suites |
+| H6 | Subscription credit entitlements | 🟡 | `EntitlementPolicy` + `PricingEngine entitlement credit` suites |
+| H7 | Corporate/RWA seats | 🟡 | `ManageCorporateSeatsUseCase` suite |
+
+## Live Visit
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| I1 | "Happening now" card | 🟢 | Driven, **plus a lock that the Visits tab is not empty** now the seed exists. One seeded visit is `enRoute` |
+| I2 | Status timeline | 🟢 | Driven from visit detail; `MockVisitRepository status history` + `Visit.legalTransitions` suites |
+| I3 | Live Activity / Dynamic Island | ⚪ | ActivityKit cannot run in this CI |
+| I4 | Live map + ETA | 🟠 | `TrackVetUseCase` suite covers ETA. Map rendering not assertable |
+| I5 | Start-of-visit OTP | 🟡 | `StartVisitUseCase` suite |
+| I6 | Digital consent waiver | 🟡 | `ManageConsentUseCase` suite |
+| I7 | Visit checklist | 🟡 | `GetVisitChecklistUseCase (I7)` suite |
+
+## Communication
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| J1 | Per-visit chat | 🟡 | `SendChatMessageUseCase` suite |
+| J2 | Chat photo attachments | 🟡 | `SendChatMessageUseCase photo attachments` suite. Real upload is ⚪ |
+| J3 | Read receipts / unread badge | 🟡 | `ChatUnreadPolicy` suite |
+| J5 | Auto-close chat + escalation | 🟡 | `ChatPolicy` suite |
+| J7 | Notification centre + preferences | 🟢 | Both screens driven; `ManageNotificationPreferencesUseCase` suite. Centre now seeded with five notifications, two unread |
+
+## Post-Visit
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| K1 | Structured visit record | 🟡 | `Visit.hasStructuredRecord (K1)` suite. Eleven seeded visits now carry real diagnosis/procedure/medication records |
+| K2 | Prescription PDF | ⚪ | Content tested; rendering not wired |
+| K3 | Medication reminders | 🟡 | `ManageMedicationRemindersUseCase` + `MedicationReminder` suites |
+| K4 | Vaccination certificate PDF | ⚪ | Same as K2 |
+| K5 | 1-tap follow-up booking | 🟡 | `FollowUpBookingPolicy (K5)` suite |
+| K6 | Lab test ordering | 🟡 | `GetLabTestReportsUseCase` suite; two reports seeded |
+| K7 | Rate & review | 🟡 | `SubmitReviewUseCase` + moderation integration suites |
+| K8 | Report a problem → dispute | 🟡 | `K8 payment disputes` suite |
+
+## Trust & Safety
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| L3 | Verified badge | 🟢 | Asserted in the circuit row label; `GetCircuitsUseCase verification filtering` suite |
+| L4 | SOS + share-visit link | 🟡 | `FileIncidentReportUseCase / SOSUseCase` suite |
+| L6 | Review moderation | 🟡 | `ReviewModerationPolicy` suite |
+| L8 | "Not an emergency" disclaimer | 🟢 | Asserted present in the booking flow *and* on the emergency screen |
+
+## Support
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| M1 | Help centre | 🟢 | Driven. Eleven real articles seeded |
+| M2 | Contact support w/ ticket | 🟢 | Both "Contact support" and "My tickets" driven; `ContactSupportUseCase` suite |
+| M4 | Refund/credit from ticket | 🟡 | `IssueSupportRefundUseCase (M4)` suite |
+| M5 | Call support (hours gated) | 🟡 | `BusinessHoursPolicy and ContactSupportByCallUseCase (M5)` suite |
+
+## Growth
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| N1 | Referral + fraud guard | 🟢 | Screen driven; `SendReferralUseCase` + fraud-guard suites |
+| N2 | Coupon campaigns | 🟡 | `N2 coupon campaign discounts` suite |
+| N3 | Lifecycle pushes | 🟡 | `DrainLifecycleNotificationQueueUseCase` + `NotificationDeliveryPolicy` suites. Actual delivery is ⚪ |
+| N4 | Loyalty points/tiers | 🟡 | `LoyaltyAccount.Tier.forPoints (N4)` suite. Demo account seeded at silver |
+| N5 | In-app rating prompt | 🟠 | `SKStoreReviewController` cannot be exercised in CI |
+| N7 | Deep links | 🟡 | `DeepLinkParser` + `Router.handle` suites, including nested-screen routing |
+
+## Settings
+
+| ID | Feature | Status | Evidence |
+|---|---|---|---|
+| O1 | Notification preferences | 🟢 | Driven; `ManageNotificationPreferencesUseCase` suite |
+| O3 | Appearance | 🟢 | `testBothAppearancesRenderWithoutLosingContent` |
+| O5 | Consent dashboard | 🟢 | Driven; `ManageConsentUseCase` suite |
+| O7 | Force-upgrade gate | 🟡 | `CheckAppConfigUseCase` + `RemoteAppConfig version comparison` suites |
+| O8 | Maintenance mode | 🟠 | Config flag exists, no test |
+
+---
+
+## Tally
+
+| Status | Count |
+|---|---|
+| 🟢 Driven through the running app | 34 |
+| 🟡 Domain logic unit-tested, screen reachable | 51 |
+| 🟠 Built, nothing tests it | 8 |
+| ⚪ Mock-bound, unverifiable without a real backend | 5 |
+| — Excluded at your request | 1 |
+
+**85 of 99 have real evidence behind them. 8 have none — they may work, but
+nobody has checked. 5 cannot be tested in this environment at any level, and
+saying otherwise would be a lie.**
+
+The 🟠 eight, named so they are not lost: A10 Face ID lock, A11 blocked-account
+handling, C7 coverage map, C9 recently viewed, G4 refund issuance, I4 live map
+rendering, N5 rating prompt, O8 maintenance mode.
+
+The ⚪ five: G1 hosted checkout, G2 webhook-only confirmation, I3 Live Activity,
+K2 prescription PDF, K4 vaccination certificate PDF.
+
+## The honest caveats
+
+1. **Everything runs on mock repositories.** `DependencyContainer` wires ~40
+   `Mock*Repository`. The Supabase implementations exist, compile, and have
+   never executed against a database. Deploying for real means swapping that
+   wiring and discovering what breaks — which is not a small amount.
+2. **No PDF is actually rendered anywhere.** B7, G5, K2 and K4 all have tested
+   content and no renderer.
+3. **D6 has a named structural gap.** `VisitRepository.createVisit` books one
+   pet per visit, so a cart with several pets books the first one.
+4. **The screenshots exist but I have not seen them.** CI attaches one per
+   walkthrough stop; this environment's egress blocks the artifact host. Every
+   claim here about layout rests on the tests and on contrast arithmetic, not
+   on having looked at the app.
