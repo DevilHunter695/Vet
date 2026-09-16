@@ -234,7 +234,12 @@ enum Theme {
     /// "Good" state — deliberately the same emerald as the aurora's second
     /// pole, so success reads as part of the brand rather than a stock green.
     static let success = emerald
-    static let inProgress = Color(hue: 0.72, saturation: 0.50, brightness: 0.78)
+    /// Raised from brightness 0.78, which measured 4.33:1 against the app's
+    /// ground — under the 4.5:1 body-text floor. It reads as a status *label*
+    /// ("Vet en route"), so it is body text and has to clear it. The hue is
+    /// unchanged so it stays distinguishable from the blue and green either
+    /// side of it; `ContrastTests` is what caught this and what keeps it fixed.
+    static let inProgress = Color(hue: 0.72, saturation: 0.50, brightness: 0.85)
     static let neutral = Color(.systemGray)
 
     // Loyalty tier colors — a distinct family from status colors above
