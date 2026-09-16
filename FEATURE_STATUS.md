@@ -71,7 +71,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | D3 | Add-ons | 🟡 | `D3 add-on eligibility` + `ManageCartUseCase — D3/D6` suites |
 | D4 | Packages with redemption tracking | 🟢 | Driven, asserting each card lists its contents; `BuyPackageUseCase` + `PackageRedemptionPolicy` suites |
 | D5 | Per-vet pricing overrides | 🟡 | `PricingEngine vet override (D5)` + `MockQuoteRepository override resolution (D5)` suites |
-| D6 | Multi-pet in one visit | 🟡 | `D6 multi-pet in one visit` suite — the booking now records every pet on the line, de-duplicating repeats so nobody is charged twice. **Remaining:** `book_visit()` has no `p_additional_pet_ids` parameter yet, so against a real database the companions are dropped until that migration is written |
+| D6 | Multi-pet in one visit | 🟡 | `D6 multi-pet in one visit` suite covers the app side; `0063_visit_additional_pets.sql` adds the column, the `book_visit()` parameter and a trigger rejecting a duplicated or someone-else's pet. The SQL has never been executed — see the caveats |
 
 ## Cart & Checkout
 
@@ -246,12 +246,14 @@ the four that remain have been checked by hand.
    twelve inert features in the first place. There is now a `PDF rendering`
    suite that asserts the output actually begins with `%PDF-`, because that is
    the difference between a renderer that works and one that believes it does.
-3. **D6 is closed on the app side, open on the database side.** A booking now
-   carries every pet on the cart line, and the mock records them. The Postgres
-   `book_visit()` function has no parameter for them yet, so a credentialed
-   build would record the primary pet and silently drop the companions. The
-   client passes `p_additional_pet_ids` already — the migration is what is
-   missing, and it is one column plus one parameter.
+3. **D6 is written end to end, and proven only on the app side.** A booking
+   carries every pet on the cart line, the mock records them, and
+   `0063_visit_additional_pets.sql` adds the column, the `book_visit()`
+   parameter and a trigger that rejects a pet listed twice or a pet belonging
+   to someone else — the array cannot carry a foreign key, so that ownership
+   check is the only thing standing between it and a hole through `pets`' RLS.
+   No migration in this repository has ever been run, this one included. It is
+   reviewed code, not verified behaviour.
 4. **The screenshots exist but I have not seen them.** CI attaches one per
    walkthrough stop; this environment's egress blocks the artifact host. Every
    claim here about layout rests on the tests and on contrast arithmetic, not

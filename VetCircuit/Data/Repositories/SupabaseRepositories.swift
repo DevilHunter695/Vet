@@ -707,11 +707,10 @@ final class SupabaseVisitRepository: VisitRepository {
         if let variantId { params["p_variant_id"] = variantId.uuidString }
         if let packageRedemptionId { params["p_package_redemption_id"] = packageRedemptionId.uuidString }
         // D6: passed as a comma-joined list because `book_visit()`'s params
-        // are all text. The migration adding `p_additional_pet_ids` has not
-        // been written — this call is what it has to satisfy, and until it
-        // exists a multi-pet booking against a real database will record the
-        // primary pet and drop the companions rather than fail. That is a
-        // named gap, not a silent one: see FEATURE_STATUS.md under D6.
+        // are all text. The matching parameter is added in
+        // 0063_visit_additional_pets.sql, which also defaults it to null so a
+        // client build older than the migration keeps booking single-pet
+        // visits unchanged.
         if !additionalPetIds.isEmpty {
             params["p_additional_pet_ids"] = additionalPetIds.map(\.uuidString).joined(separator: ",")
         }
