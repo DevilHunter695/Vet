@@ -264,14 +264,33 @@ actor MockWalletRepository: WalletRepository {
     private var entriesByUser: [UUID: [WalletLedgerEntry]] = [:]
     private let seedAmount = 25_000 // ₹250
 
+    /// Whether to lay down the full demo ledger on top of the welcome credit.
+    ///
+    /// Off by default *deliberately*. The demo rows exist to make the wallet
+    /// screen look like a real account's, but a test that asserts on a
+    /// balance should not have to know what those rows happen to be this
+    /// week — so the app's `DependencyContainer` opts in and every test gets
+    /// the bare welcome credit it has always had.
+    private let includesDemoHistory: Bool
+
+    init(includesDemoHistory: Bool = false) {
+        self.includesDemoHistory = includesDemoHistory
+    }
+
     private func seededEntries(userId: UUID) -> [WalletLedgerEntry] {
         if let existing = entriesByUser[userId] { return existing }
         // A ledger, not a single balance row: a wallet screen with one line in
         // it tells the customer nothing about where their money went.
+        let welcome = WalletLedgerEntry(
+            id: UUID(), userId: userId, amountMinorUnits: seedAmount,
+            reason: "Welcome credit", relatedVisitId: nil, relatedRefundId: nil,
+            createdAt: Calendar.current.date(byAdding: .month, value: -14, to: .now) ?? .now)
+        guard includesDemoHistory else {
+            entriesByUser[userId] = [welcome]
+            return [welcome]
+        }
         let seed = [
-            WalletLedgerEntry(id: UUID(), userId: userId, amountMinorUnits: seedAmount,
-                              reason: "Welcome credit", relatedVisitId: nil, relatedRefundId: nil,
-                              createdAt: Calendar.current.date(byAdding: .month, value: -14, to: .now) ?? .now),
+            welcome,
             WalletLedgerEntry(id: UUID(), userId: userId, amountMinorUnits: 40_000,
                               reason: "Refund — grooming visit cancelled", relatedVisitId: nil, relatedRefundId: nil,
                               createdAt: Calendar.current.date(byAdding: .day, value: -15, to: .now) ?? .now),
@@ -1280,16 +1299,19 @@ actor MockLoyaltyRepository: LoyaltyRepository {
     // E5: concrete type, not the protocol — see `creditFromLoyaltyRedemption`'s
     // doc comment for why redemption needs the extra non-protocol method.
     private let walletRepository: MockWalletRepository?
+    /// See `MockWalletRepository.includesDemoHistory` — same reasoning: the
+    /// app wants a lived-in account, tests want a fresh one.
+    private let demoStartingAccount: LoyaltyAccount?
 
-    init(walletRepository: MockWalletRepository? = nil) {
+    init(walletRepository: MockWalletRepository? = nil, demoStartingAccount: LoyaltyAccount? = nil) {
         self.walletRepository = walletRepository
+        self.demoStartingAccount = demoStartingAccount
     }
 
-    /// Seeded from a plausible history (nine completed visits earning points)
-    /// rather than zero, so the tier badge, the progress-to-next-tier bar and
-    /// the redemption entry on the cart all have something real to render.
     func account(userId: UUID) async throws -> LoyaltyAccount {
-        accounts[userId] ?? LoyaltyAccount(userId: userId, points: 1_240, tier: .silver)
+        if let existing = accounts[userId] { return existing }
+        guard let demoStartingAccount else { return LoyaltyAccount(userId: userId, points: 0, tier: .bronze) }
+        return LoyaltyAccount(userId: userId, points: demoStartingAccount.points, tier: demoStartingAccount.tier)
     }
 
     func awardPoints(userId: UUID, points: Int) async throws -> LoyaltyAccount {

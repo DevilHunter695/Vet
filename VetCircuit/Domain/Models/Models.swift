@@ -1249,8 +1249,23 @@ struct Service: Identifiable, Codable, Equatable, Hashable {
     var eligibility: ServiceEligibility = ServiceEligibility()
     var faqs: [FAQ] = []
 
+    /// The variants a customer can actually buy outright.
+    ///
+    /// A free follow-up is not one of them: it is a courtesy priced at zero
+    /// and only bookable within 14 days of a paid visit. Including it in the
+    /// price floor made every consultation in the app advertise "from ₹0" —
+    /// visible on the circuit rows, the catalog rows and the service detail
+    /// header — and made `discountMinorUnits(catalog:)` compute a package's
+    /// saving against a ₹0 consultation.
+    var bookableVariants: [ServiceVariant] {
+        let bookable = variants.filter { !$0.isFollowUp }
+        // Never return empty: a service whose only variant is a follow-up is
+        // not something this property should silently make disappear.
+        return bookable.isEmpty ? variants : bookable
+    }
+
     var startingPriceMinorUnits: Int? {
-        variants.map(\.priceMinorUnits).min()
+        bookableVariants.map(\.priceMinorUnits).min()
     }
 }
 

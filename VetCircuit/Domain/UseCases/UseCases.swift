@@ -1508,7 +1508,11 @@ struct BuyPackageUseCase {
             // advertised saving from the cheapest variant, so picking
             // `variants.first` here made the cart disagree with the saving
             // shown on the package card whenever they differed.
-            guard let variant = service.variants.min(by: { $0.priceMinorUnits < $1.priceMinorUnits })
+            // `bookableVariants`, not `variants`: the cheapest variant of a
+            // consultation is its free follow-up, so buying a package used to
+            // fill the cart with zero-priced follow-up lines that the customer
+            // is not entitled to.
+            guard let variant = service.bookableVariants.min(by: { $0.priceMinorUnits < $1.priceMinorUnits })
             else { continue }
             let redemption = try await packageRepository.createRedemption(
                 userId: userId, packageId: package.id, packageItemId: item.id,

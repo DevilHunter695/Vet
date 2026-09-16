@@ -51,6 +51,24 @@ final class AppWalkthroughUITests: XCTestCase {
         add(shot)
     }
 
+    /// Scrolls until `element` is on screen, then reports whether it is.
+    ///
+    /// `isHittable` is false both for a control with no touch region — the bug
+    /// this suite exists to catch — and for one that is simply below the fold,
+    /// which is not a bug at all. Conflating the two turns a real signal into
+    /// a false alarm, so anything that lives further down a screen gets
+    /// scrolled into view first and only then asserted on.
+    @MainActor @discardableResult
+    private func scrollToVisible(_ element: XCUIElement, in app: XCUIApplication, maxSwipes: Int = 6) -> Bool {
+        guard element.waitForExistence(timeout: 10) else { return false }
+        var swipes = 0
+        while !element.isHittable && swipes < maxSwipes {
+            app.swipeUp()
+            swipes += 1
+        }
+        return element.isHittable
+    }
+
     /// The tap-reliability check, which is the whole reason this target
     /// exists. `isHittable` is the property that was false for the controls
     /// users had to tap three or four times: the element existed and was
@@ -178,6 +196,7 @@ final class AppWalkthroughUITests: XCTestCase {
 
         // Every grouped row must be reachable in one tap.
         let editProfile = app.buttons.containing(NSPredicate(format: "label BEGINSWITH[c] 'Edit profile'")).element(boundBy: 0)
+        XCTAssertTrue(scrollToVisible(editProfile, in: app), "Couldn't bring the Edit profile row on screen")
         tapAndExpect(editProfile, "the Edit profile row",
                      toReveal: app.navigationBars.firstMatch, "the Edit profile screen")
         snapshot(app, "Profile — edit profile")
@@ -188,7 +207,7 @@ final class AppWalkthroughUITests: XCTestCase {
         let app = launchApp()
         app.tabBars.firstMatch.buttons["Profile"].tap()
         let addresses = app.buttons.containing(NSPredicate(format: "label BEGINSWITH[c] 'Addresses'")).element(boundBy: 0)
-        guard addresses.waitForExistence(timeout: 10) else { throw XCTSkip("Addresses row not reachable") }
+        guard scrollToVisible(addresses, in: app) else { throw XCTSkip("Addresses row not reachable") }
         addresses.tap()
 
         // A8/#14: this screen used to render entirely blank — no loading

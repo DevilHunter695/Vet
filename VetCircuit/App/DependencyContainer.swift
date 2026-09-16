@@ -109,12 +109,17 @@ final class DependencyContainer {
         self.addressRepository = MockAddressRepository()
         self.slotHoldRepository = MockSlotHoldRepository()
         self.cartRepository = MockCartRepository()
-        let mockWalletRepository = MockWalletRepository()
+        // The running app opts into the demo ledger and a lived-in loyalty
+        // balance; tests construct these repositories bare (see their inits).
+        let mockWalletRepository = MockWalletRepository(includesDemoHistory: true)
         self.walletRepository = mockWalletRepository
         // E5: concrete `MockWalletRepository` reference so a mock point
         // redemption can actually credit the mock wallet too — see
         // `MockWalletRepository.creditFromLoyaltyRedemption`'s doc comment.
-        self.loyaltyRepository = MockLoyaltyRepository(walletRepository: mockWalletRepository)
+        self.loyaltyRepository = MockLoyaltyRepository(
+            walletRepository: mockWalletRepository,
+            demoStartingAccount: LoyaltyAccount(userId: MockData.userId, points: 1_240, tier: .silver)
+        )
         self.couponRepository = MockCouponRepository()
         self.quoteRepository = MockQuoteRepository(couponRepository: couponRepository, walletRepository: walletRepository)
         self.refundRepository = MockRefundRepository()
