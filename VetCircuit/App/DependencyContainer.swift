@@ -1,7 +1,20 @@
 import Foundation
+import Supabase
 
-/// Central composition root. Swap mock repositories for Supabase-backed ones
-/// once `SUPABASE_URL` / `SUPABASE_ANON_KEY` are configured (see Resources/Config.swift).
+/// Central composition root.
+///
+/// This used to be mock-only with a `TODO` describing the branch that was
+/// supposed to exist, which made "swap in the real backend" a code change
+/// nobody could stage or review — the single largest thing standing between
+/// this app and a deployment. The branch is now real: supply `SUPABASE_URL`
+/// and `SUPABASE_ANON_KEY` in the app's Info.plist and every repository that
+/// has a Supabase conformer switches to it. Supply neither and the app runs
+/// exactly as it does today, on mocks, with the demo data.
+///
+/// It has never run against a live database. What this buys is that the
+/// remaining distance is now *configuration plus debugging*, not authorship,
+/// and `backendMode` says out loud which of the two an installed build is in
+/// instead of leaving it to be inferred.
 @MainActor
 final class DependencyContainer {
     static let shared = DependencyContainer()
@@ -83,80 +96,127 @@ final class DependencyContainer {
     /// H7: corporate/RWA seat assignment roster.
     let corporateSeatAssignmentRepository: CorporateSeatAssignmentRepository
 
+    /// Which set of repositories this build actually resolved. Surfaced so a
+    /// build can say what it is connected to rather than looking identical
+    /// either way — the failure mode where a "staging" build is quietly
+    /// serving mock data is worth making impossible to miss.
+    enum BackendMode: String {
+        /// No credentials configured. Every repository is a mock and all data
+        /// is the seeded demo set.
+        case mock
+        /// Credentials present. The 48 repositories with a Supabase conformer
+        /// talk to Postgres; the nine listed in `mockOnlyRepositories` below
+        /// stay on mocks because no Supabase implementation exists for them
+        /// yet, and they are the remaining work before a real deployment.
+        case supabase
+    }
+
+    let backendMode: BackendMode
+
+    /// Named, not counted. In a credentialed build these still serve mock
+    /// data, and anyone deploying needs to know exactly which surfaces are
+    /// affected rather than reading "48 of 57" and assuming the rest are
+    /// unimportant. Chat and live tracking are the two that would be noticed
+    /// first by a customer.
+    static let mockOnlyRepositories = [
+        "ChatRepository", "LiveTrackingRepository", "NoShowDetectionRepository",
+        "PaymentRepository", "PostVisitSummaryRepository", "PushTokenRepository",
+        "ReferralRepository", "RenewalReminderDedupeRepository", "TriageRepository",
+    ]
+
     private init() {
-        // TODO: once Supabase package + Config.plist are added, branch here:
-        // if RemoteAppConfig.isBackendConfigured { use Supabase*Repository } else { use Mock*Repository }
-        self.authRepository = MockAuthRepository()
-        self.circuitRepository = MockCircuitRepository()
+        // One client, shared by every Supabase repository. Nil whenever the
+        // credentials are absent, which is what drives the whole branch below.
+        let client: SupabaseClient? = {
+            guard let url = AppConfig.supabaseURL, let key = AppConfig.supabaseAnonKey else { return nil }
+            return SupabaseClient(supabaseURL: url, supabaseKey: key)
+        }()
+        self.backendMode = client == nil ? .mock : .supabase
+
+        self.authRepository = client.map(SupabaseAuthRepository.init) ?? MockAuthRepository()
+        self.circuitRepository = client.map(SupabaseCircuitRepository.init) ?? MockCircuitRepository()
         // D4: created before visitRepository and threaded into it so a
         // package-redeeming booking can atomically bump the matching
         // `PackageRedemption.usedCount` — same "concrete mock reference"
         // pattern `mockWalletRepository`/`loyaltyRepository` use below.
         let mockPackageRepository = MockPackageRepository()
-        self.packageRepository = mockPackageRepository
-        self.visitRepository = MockVisitRepository(packageRepository: mockPackageRepository, seed: MockData.visits)
-        self.subscriptionRepository = MockSubscriptionRepository()
+        self.packageRepository = client.map(SupabasePackageRepository.init) ?? mockPackageRepository
+        // The mock pair is threaded so a package-redeeming booking bumps the
+        // matching redemption in the same actor; against Postgres that
+        // atomicity is the database's job, so the Supabase pair needs no
+        // equivalent wiring.
+        self.visitRepository = client.map(SupabaseVisitRepository.init)
+            ?? MockVisitRepository(packageRepository: mockPackageRepository, seed: MockData.visits)
+        self.subscriptionRepository = client.map(SupabaseSubscriptionRepository.init) ?? MockSubscriptionRepository()
         self.paymentRepository = MockPaymentRepository()
         self.chatRepository = MockChatRepository()
-        self.reviewRepository = MockReviewRepository()
-        self.petRepository = MockPetRepository()
+        self.reviewRepository = client.map(SupabaseReviewRepository.init) ?? MockReviewRepository()
+        self.petRepository = client.map(SupabasePetRepository.init) ?? MockPetRepository()
         self.pushTokenRepository = MockPushTokenRepository()
         self.liveTrackingRepository = MockLiveTrackingRepository()
-        self.callRepository = MockCallRepository()
+        self.callRepository = client.map(SupabaseCallRepository.init) ?? MockCallRepository()
         self.referralRepository = MockReferralRepository()
         self.triageRepository = MockTriageRepository()
-        self.catalogRepository = MockCatalogRepository()
-        self.addressRepository = MockAddressRepository()
-        self.slotHoldRepository = MockSlotHoldRepository()
-        self.cartRepository = MockCartRepository()
+        self.catalogRepository = client.map(SupabaseCatalogRepository.init) ?? MockCatalogRepository()
+        self.addressRepository = client.map(SupabaseAddressRepository.init) ?? MockAddressRepository()
+        self.slotHoldRepository = client.map(SupabaseSlotHoldRepository.init) ?? MockSlotHoldRepository()
+        self.cartRepository = client.map(SupabaseCartRepository.init) ?? MockCartRepository()
         // The running app opts into the demo ledger and a lived-in loyalty
         // balance; tests construct these repositories bare (see their inits).
         let mockWalletRepository = MockWalletRepository(includesDemoHistory: true)
-        self.walletRepository = mockWalletRepository
+        self.walletRepository = client.map(SupabaseWalletRepository.init) ?? mockWalletRepository
         // E5: concrete `MockWalletRepository` reference so a mock point
         // redemption can actually credit the mock wallet too — see
         // `MockWalletRepository.creditFromLoyaltyRedemption`'s doc comment.
-        self.loyaltyRepository = MockLoyaltyRepository(
-            walletRepository: mockWalletRepository,
-            demoStartingAccount: LoyaltyAccount(userId: MockData.userId, points: 1_240, tier: .silver)
-        )
-        self.couponRepository = MockCouponRepository()
-        self.quoteRepository = MockQuoteRepository(couponRepository: couponRepository, walletRepository: walletRepository)
-        self.refundRepository = MockRefundRepository()
-        self.invoiceRepository = MockInvoiceRepository()
-        self.visitOTPRepository = MockVisitOTPRepository()
-        self.consentRepository = MockConsentRepository()
-        self.accountRepository = MockAccountRepository()
-        self.notificationPreferencesRepository = MockNotificationPreferencesRepository()
-        self.appConfigRepository = MockAppConfigRepository()
-        self.helpRepository = MockHelpRepository()
-        self.supportRepository = MockSupportRepository()
-        self.appNotificationRepository = MockAppNotificationRepository()
-        self.petWeightRepository = MockPetWeightRepository()
-        self.vaccinationRepository = MockVaccinationRepository()
-        self.prescriptionRepository = MockPrescriptionRepository()
-        self.emergencyClinicRepository = MockEmergencyClinicRepository()
-        self.householdRepository = MockHouseholdRepository()
-        self.waitlistRepository = MockWaitlistRepository()
-        self.incidentReportRepository = MockIncidentReportRepository()
-        self.subscriptionEntitlementRepository = MockSubscriptionEntitlementRepository()
-        self.vetServiceOverrideRepository = MockVetServiceOverrideRepository()
-        self.recurringBookingRuleRepository = MockRecurringBookingRuleRepository()
-        self.rescheduleProposalRepository = MockRescheduleProposalRepository()
-        self.petDocumentRepository = MockPetDocumentRepository()
-        self.savedPaymentMethodRepository = MockSavedPaymentMethodRepository()
-        self.supportRefundAuditRepository = MockSupportRefundAuditRepository(refundRepository: refundRepository)
-        self.vetBlackoutRepository = MockVetBlackoutRepository()
-        self.medicationReminderRepository = MockMedicationReminderRepository()
-        self.paymentDisputeRepository = MockPaymentDisputeRepository()
-        self.smsFallbackRepository = MockSMSFallbackRepository()
-        self.labTestReportRepository = MockLabTestReportRepository()
-        self.vetOnboardingRepository = MockVetOnboardingRepository()
-        self.visitChecklistRepository = MockVisitChecklistRepository()
+        // Against Postgres, redeeming points moves the wallet in one RPC
+        // (0050_redeem_loyalty_points.sql), so the concrete wallet reference
+        // the mock needs has no Supabase counterpart.
+        self.loyaltyRepository = client.map(SupabaseLoyaltyRepository.init)
+            ?? MockLoyaltyRepository(
+                walletRepository: mockWalletRepository,
+                demoStartingAccount: LoyaltyAccount(userId: MockData.userId, points: 1_240, tier: .silver)
+            )
+        self.couponRepository = client.map(SupabaseCouponRepository.init) ?? MockCouponRepository()
+        // The mock composes coupon + wallet locally to imitate what the
+        // server-signed quote does; the real one is a single RPC.
+        self.quoteRepository = client.map(SupabaseQuoteRepository.init)
+            ?? MockQuoteRepository(couponRepository: couponRepository, walletRepository: walletRepository)
+        self.refundRepository = client.map(SupabaseRefundRepository.init) ?? MockRefundRepository()
+        self.invoiceRepository = client.map(SupabaseInvoiceRepository.init) ?? MockInvoiceRepository()
+        self.visitOTPRepository = client.map(SupabaseVisitOTPRepository.init) ?? MockVisitOTPRepository()
+        self.consentRepository = client.map(SupabaseConsentRepository.init) ?? MockConsentRepository()
+        self.accountRepository = client.map(SupabaseAccountRepository.init) ?? MockAccountRepository()
+        self.notificationPreferencesRepository = client.map(SupabaseNotificationPreferencesRepository.init) ?? MockNotificationPreferencesRepository()
+        self.appConfigRepository = client.map(SupabaseAppConfigRepository.init) ?? MockAppConfigRepository()
+        self.helpRepository = client.map(SupabaseHelpRepository.init) ?? MockHelpRepository()
+        self.supportRepository = client.map(SupabaseSupportRepository.init) ?? MockSupportRepository()
+        self.appNotificationRepository = client.map(SupabaseAppNotificationRepository.init) ?? MockAppNotificationRepository()
+        self.petWeightRepository = client.map(SupabasePetWeightRepository.init) ?? MockPetWeightRepository()
+        self.vaccinationRepository = client.map(SupabaseVaccinationRepository.init) ?? MockVaccinationRepository()
+        self.prescriptionRepository = client.map(SupabasePrescriptionRepository.init) ?? MockPrescriptionRepository()
+        self.emergencyClinicRepository = client.map(SupabaseEmergencyClinicRepository.init) ?? MockEmergencyClinicRepository()
+        self.householdRepository = client.map(SupabaseHouseholdRepository.init) ?? MockHouseholdRepository()
+        self.waitlistRepository = client.map(SupabaseWaitlistRepository.init) ?? MockWaitlistRepository()
+        self.incidentReportRepository = client.map(SupabaseIncidentReportRepository.init) ?? MockIncidentReportRepository()
+        self.subscriptionEntitlementRepository = client.map(SupabaseSubscriptionEntitlementRepository.init) ?? MockSubscriptionEntitlementRepository()
+        self.vetServiceOverrideRepository = client.map(SupabaseVetServiceOverrideRepository.init) ?? MockVetServiceOverrideRepository()
+        self.recurringBookingRuleRepository = client.map(SupabaseRecurringBookingRuleRepository.init) ?? MockRecurringBookingRuleRepository()
+        self.rescheduleProposalRepository = client.map(SupabaseRescheduleProposalRepository.init) ?? MockRescheduleProposalRepository()
+        self.petDocumentRepository = client.map(SupabasePetDocumentRepository.init) ?? MockPetDocumentRepository()
+        self.savedPaymentMethodRepository = client.map(SupabaseSavedPaymentMethodRepository.init) ?? MockSavedPaymentMethodRepository()
+        self.supportRefundAuditRepository = client.map(SupabaseSupportRefundAuditRepository.init)
+            ?? MockSupportRefundAuditRepository(refundRepository: refundRepository)
+        self.vetBlackoutRepository = client.map(SupabaseVetBlackoutRepository.init) ?? MockVetBlackoutRepository()
+        self.medicationReminderRepository = client.map(SupabaseMedicationReminderRepository.init) ?? MockMedicationReminderRepository()
+        self.paymentDisputeRepository = client.map(SupabasePaymentDisputeRepository.init) ?? MockPaymentDisputeRepository()
+        self.smsFallbackRepository = client.map(SupabaseSMSFallbackRepository.init) ?? MockSMSFallbackRepository()
+        self.labTestReportRepository = client.map(SupabaseLabTestReportRepository.init) ?? MockLabTestReportRepository()
+        self.vetOnboardingRepository = client.map(SupabaseVetOnboardingRepository.init) ?? MockVetOnboardingRepository()
+        self.visitChecklistRepository = client.map(SupabaseVisitChecklistRepository.init) ?? MockVisitChecklistRepository()
         self.postVisitSummaryRepository = LocalPostVisitSummaryRepository()
         self.noShowDetectionRepository = LocalNoShowDetectionRepository()
         self.renewalReminderDedupeRepository = LocalRenewalReminderDedupeRepository()
-        self.corporateSeatAssignmentRepository = MockCorporateSeatAssignmentRepository()
+        self.corporateSeatAssignmentRepository = client.map(SupabaseCorporateSeatAssignmentRepository.init) ?? MockCorporateSeatAssignmentRepository()
     }
 
     // MARK: Use case factories

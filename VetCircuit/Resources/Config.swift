@@ -11,8 +11,14 @@ enum AppConfig {
         return URL(string: value)
     }
 
+    /// Empty-string-is-nil, matching `supabaseURL` above. A build template
+    /// that leaves the key blank rather than absent would otherwise report
+    /// itself as configured and then fail every request with a 401 — the
+    /// worst of both modes.
     static var supabaseAnonKey: String? {
-        Bundle.main.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String,
+              !value.isEmpty else { return nil }
+        return value
     }
 
     static var isBackendConfigured: Bool {

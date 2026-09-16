@@ -195,3 +195,30 @@ struct MaintenanceModeTests {
         }
     }
 }
+
+/// The composition root's backend branch. This is the seam a deployment turns
+/// on, so it is worth a test that it resolves at all and reports honestly
+/// which side it landed on — a build that silently serves mock data while
+/// believing it is connected is the expensive version of this going wrong.
+@Suite("DependencyContainer backend selection")
+struct BackendSelectionTests {
+    @MainActor
+    @Test("with no credentials in the bundle, the container resolves to mocks and says so")
+    func resolvesToMockWithoutCredentials() {
+        #expect(AppConfig.isBackendConfigured == false,
+                "The test bundle should carry no Supabase credentials")
+        #expect(DependencyContainer.shared.backendMode == .mock)
+    }
+
+    /// The nine are named in the container so whoever deploys knows exactly
+    /// which surfaces still serve mock data in a credentialed build. If a
+    /// Supabase conformer is written for one of them, this fails and the list
+    /// gets corrected rather than quietly going stale.
+    @MainActor
+    @Test("the mock-only repositories are still the nine that have no Supabase conformer")
+    func mockOnlyListIsCurrent() {
+        #expect(DependencyContainer.mockOnlyRepositories.count == 9)
+        #expect(DependencyContainer.mockOnlyRepositories.contains("ChatRepository"))
+        #expect(DependencyContainer.mockOnlyRepositories.contains("PaymentRepository"))
+    }
+}
