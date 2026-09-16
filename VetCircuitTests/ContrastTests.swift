@@ -148,9 +148,11 @@ struct ContrastTests {
         // navigation title.
         let auroraTop = Color(hue: 0.585, saturation: 0.70, brightness: 0.20)
         let measured = ratio(Theme.textPrimary, on: auroraTop)
+        // One interpolated literal, not a concatenation: Swift Testing's
+        // message parameter is `Comment?`, which a string *literal* converts to
+        // and a `String` expression does not. `"a" + "b"` is an expression.
         #expect(measured >= 4.5,
-                "White text at the top of the aurora is \(String(format: "%.2f", measured)):1 — "
-                + "this is the regression that made the app look washed out")
+                "White text at the top of the aurora is \(String(format: "%.2f", measured)):1 — this is the regression that made the app look washed out")
     }
 
     @Test("the ground really is near-black, not a mid-tone wash")
