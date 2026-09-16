@@ -231,6 +231,17 @@ struct Visit: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var userId: UUID
     var petId: UUID
+    /// D6: the other pets seen on this same visit.
+    ///
+    /// Additive rather than turning `petId` into a list, deliberately. `petId`
+    /// is a real column with real foreign keys and 23 call sites; widening it
+    /// is a migration, not a refactor, and would have to be co-ordinated with
+    /// a database this code has never run against. A second column carrying
+    /// the companions closes the customer-visible gap — a two-pet booking
+    /// records and shows two pets — without pretending to a schema change
+    /// nobody can apply yet. `petId` stays the primary pet, which is also
+    /// what `PricingEngine.additionalPetCount` already prices against.
+    var additionalPetIds: [UUID] = []
     var vetId: UUID
     var circuitId: UUID
     var status: VisitStatus
@@ -259,6 +270,10 @@ struct Visit: Identifiable, Codable, Equatable, Hashable {
     var diagnosisNotes: String?
     var proceduresPerformed: [String] = []
     var medicationsGiven: [String] = []
+
+    /// D6: every pet on this visit, primary first. The UI should prefer this
+    /// over `petId` so a multi-pet booking never renders as a single pet.
+    var allPetIds: [UUID] { [petId] + additionalPetIds }
 
     /// True once there's anything structured to show, so the UI can fall
     /// back to the legacy `notes` blob when there isn't.

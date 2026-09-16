@@ -71,7 +71,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | D3 | Add-ons | 🟡 | `D3 add-on eligibility` + `ManageCartUseCase — D3/D6` suites |
 | D4 | Packages with redemption tracking | 🟢 | Driven, asserting each card lists its contents; `BuyPackageUseCase` + `PackageRedemptionPolicy` suites |
 | D5 | Per-vet pricing overrides | 🟡 | `PricingEngine vet override (D5)` + `MockQuoteRepository override resolution (D5)` suites |
-| D6 | Multi-pet in one visit | 🟡 | Cart side tested. **Known gap:** `createVisit` still books one pet per visit — the cart books the first item's first pet |
+| D6 | Multi-pet in one visit | 🟡 | `D6 multi-pet in one visit` suite — the booking now records every pet on the line, de-duplicating repeats so nobody is charged twice. **Remaining:** `book_visit()` has no `p_additional_pet_ids` parameter yet, so against a real database the companions are dropped until that migration is written |
 
 ## Cart & Checkout
 
@@ -246,8 +246,12 @@ the four that remain have been checked by hand.
    twelve inert features in the first place. There is now a `PDF rendering`
    suite that asserts the output actually begins with `%PDF-`, because that is
    the difference between a renderer that works and one that believes it does.
-3. **D6 has a named structural gap.** `VisitRepository.createVisit` books one
-   pet per visit, so a cart with several pets books the first one.
+3. **D6 is closed on the app side, open on the database side.** A booking now
+   carries every pet on the cart line, and the mock records them. The Postgres
+   `book_visit()` function has no parameter for them yet, so a credentialed
+   build would record the primary pet and silently drop the companions. The
+   client passes `p_additional_pet_ids` already — the migration is what is
+   missing, and it is one column plus one parameter.
 4. **The screenshots exist but I have not seen them.** CI attaches one per
    walkthrough stop; this environment's egress blocks the artifact host. Every
    claim here about layout rests on the tests and on contrast arithmetic, not

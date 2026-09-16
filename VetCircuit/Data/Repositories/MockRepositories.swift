@@ -533,7 +533,7 @@ actor MockVisitRepository: VisitRepository {
         statusEvents[visitId, default: []].append(VisitStatusEvent(id: UUID(), visitId: visitId, status: status, occurredAt: .now))
     }
 
-    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?) async throws -> Visit {
+    func createVisit(petId: UUID, additionalPetIds: [UUID], vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?) async throws -> Visit {
         if let existingVisitId = visitsByIdempotencyKey[idempotencyKey],
            let existing = visits.first(where: { $0.id == existingVisitId }) {
             return existing
@@ -550,7 +550,8 @@ actor MockVisitRepository: VisitRepository {
             _ = try await packageRepository?.redeem(id: packageRedemptionId)
         }
         let visit = Visit(
-            id: UUID(), userId: MockData.user.id, petId: petId, vetId: vetId, circuitId: circuitId,
+            id: UUID(), userId: MockData.user.id, petId: petId, additionalPetIds: additionalPetIds,
+            vetId: vetId, circuitId: circuitId,
             status: .requested, scheduledAt: slot.startTime, completedAt: nil, notes: nil, paymentId: nil,
             serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId
         )

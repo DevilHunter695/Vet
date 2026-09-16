@@ -691,7 +691,7 @@ final class SupabaseVisitRepository: VisitRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
-    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?) async throws -> Visit {
+    func createVisit(petId: UUID, additionalPetIds: [UUID], vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?) async throws -> Visit {
         // Calls the atomic book_visit() Postgres function (Appendix D,
         // extended by 0062_package_redemptions.sql) rather than a raw insert
         // — it locks the slot row, checks capacity, and (when
@@ -706,6 +706,15 @@ final class SupabaseVisitRepository: VisitRepository {
         if let serviceId { params["p_service_id"] = serviceId.uuidString }
         if let variantId { params["p_variant_id"] = variantId.uuidString }
         if let packageRedemptionId { params["p_package_redemption_id"] = packageRedemptionId.uuidString }
+        // D6: passed as a comma-joined list because `book_visit()`'s params
+        // are all text. The migration adding `p_additional_pet_ids` has not
+        // been written — this call is what it has to satisfy, and until it
+        // exists a multi-pet booking against a real database will record the
+        // primary pet and drop the companions rather than fail. That is a
+        // named gap, not a silent one: see FEATURE_STATUS.md under D6.
+        if !additionalPetIds.isEmpty {
+            params["p_additional_pet_ids"] = additionalPetIds.map(\.uuidString).joined(separator: ",")
+        }
         let row: SupabaseVisitRow = try await client.rpc("book_visit", params: params).execute().value
         return row.toDomain()
     }
@@ -2139,6 +2148,10 @@ private struct SupabaseVisitRow: Decodable {
     let id: UUID
     let userId: UUID
     let petId: UUID
+    /// D6. Optional because the column does not exist yet — the decoder has
+    /// to keep working against today's schema, and will pick the companions
+    /// up for free once the migration lands.
+    let additionalPetIds: [UUID]?
     let vetId: UUID
     let circuitId: UUID
     let status: String
@@ -2156,14 +2169,16 @@ private struct SupabaseVisitRow: Decodable {
     let packageRedemptionId: UUID?
 
     enum CodingKeys: String, CodingKey {
-        case id, userId = "user_id", petId = "pet_id", vetId = "vet_id", circuitId = "circuit_id"
+        case id, userId = "user_id", petId = "pet_id", additionalPetIds = "additional_pet_ids"
+        case vetId = "vet_id", circuitId = "circuit_id"
         case status, scheduledAt = "scheduled_at", completedAt = "completed_at", notes, paymentId = "payment_id"
         case diagnosisNotes = "diagnosis_notes", proceduresPerformed = "procedures_performed", medicationsGiven = "medications_given"
         case serviceId = "service_id", variantId = "variant_id", packageRedemptionId = "package_redemption_id"
     }
 
     func toDomain() -> Visit {
-        Visit(id: id, userId: userId, petId: petId, vetId: vetId, circuitId: circuitId,
+        Visit(id: id, userId: userId, petId: petId, additionalPetIds: additionalPetIds ?? [],
+              vetId: vetId, circuitId: circuitId,
               status: Visit.VisitStatus(rawValue: status) ?? .requested,
               scheduledAt: scheduledAt, completedAt: completedAt, notes: notes, paymentId: paymentId,
               // Argument order has to match `Visit`'s property order: the D4

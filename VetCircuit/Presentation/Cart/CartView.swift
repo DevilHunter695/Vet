@@ -167,6 +167,14 @@ final class CartViewModel {
     /// single-visit booking is tracked as a separate structural change to
     /// `VisitRepository.createVisit`, out of scope here.
     var primaryPetId: UUID? { cart?.items.first?.petIds.first }
+
+    /// D6: the rest of the pets on the booked cart line. These used to be
+    /// dropped on the floor — the line was priced for two pets and the visit
+    /// recorded one — which is the whole of what "multi-pet in one visit"
+    /// was missing on the customer's side.
+    var companionPetIds: [UUID] {
+        Array((cart?.items.first?.petIds ?? []).dropFirst())
+    }
     /// D4: the same "books only the first item" limitation `primaryPetId`
     /// already documents — so the visit this pipeline actually books is
     /// tagged with *that* item's service/variant/redemption, not lost
@@ -204,7 +212,8 @@ final class CartViewModel {
                 // E8: booked and confirmed immediately — no hosted checkout,
                 // no webhook to wait on.
                 let visit = try await bookingCheckoutUseCase.startPayAfterVisit(
-                    petId: petId, vetId: circuit.vetId, circuitId: circuitId, slot: slot,
+                    petId: petId, additionalPetIds: companionPetIds,
+                    vetId: circuit.vetId, circuitId: circuitId, slot: slot,
                     quote: quote, idempotencyKey: checkoutIdempotencyKey,
                     serviceId: primaryItem?.serviceId, variantId: primaryItem?.variantId,
                     packageRedemptionId: primaryItem?.packageRedemptionId
@@ -217,7 +226,8 @@ final class CartViewModel {
                 )
             } else {
                 let session = try await bookingCheckoutUseCase.start(
-                    petId: petId, vetId: circuit.vetId, circuitId: circuitId, slot: slot,
+                    petId: petId, additionalPetIds: companionPetIds,
+                    vetId: circuit.vetId, circuitId: circuitId, slot: slot,
                     quote: quote, idempotencyKey: checkoutIdempotencyKey,
                     serviceId: primaryItem?.serviceId, variantId: primaryItem?.variantId,
                     packageRedemptionId: primaryItem?.packageRedemptionId

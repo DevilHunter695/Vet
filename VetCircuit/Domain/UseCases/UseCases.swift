@@ -75,15 +75,23 @@ struct BookVisitUseCase {
     /// `book_visit()` transaction (`VisitRepository.createVisit`'s doc
     /// comment) — never as a separate, unguarded follow-up write.
     func execute(
-        petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String = UUID().uuidString,
+        petId: UUID, additionalPetIds: [UUID] = [], vetId: UUID, circuitId: UUID, slot: ScheduleSlot,
+        idempotencyKey: String = UUID().uuidString,
         serviceId: UUID? = nil, variantId: UUID? = nil, packageRedemptionId: UUID? = nil
     ) async throws -> Visit {
         guard slot.isAvailable else { throw DomainError.slotUnavailable }
         guard slot.startTime > Date() else {
             throw DomainError.validation("Please choose a slot in the future.")
         }
+        // D6: the same pet listed twice would be charged twice by
+        // `PricingEngine.additionalPetCount`, and read as a data error to
+        // anyone looking at the visit. Normalise here rather than trusting
+        // every caller to have deduplicated its cart line.
+        var seen: Set<UUID> = [petId]
+        let companions = additionalPetIds.filter { seen.insert($0).inserted }
         return try await visitRepository.createVisit(
-            petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey,
+            petId: petId, additionalPetIds: companions, vetId: vetId, circuitId: circuitId,
+            slot: slot, idempotencyKey: idempotencyKey,
             serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId
         )
     }
@@ -912,12 +920,14 @@ struct BookingCheckoutUseCase {
     /// be paid for. E6 is supposed to gate the order, and an order that
     /// leaves a row behind wasn't gated.
     func start(
-        petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, quote: Quote, idempotencyKey: String,
+        petId: UUID, additionalPetIds: [UUID] = [], vetId: UUID, circuitId: UUID, slot: ScheduleSlot,
+        quote: Quote, idempotencyKey: String,
         serviceId: UUID? = nil, variantId: UUID? = nil, packageRedemptionId: UUID? = nil
     ) async throws -> Session {
         try StartCheckoutUseCase.validate(quote: quote)
         let visit = try await bookVisitUseCase.execute(
-            petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey,
+            petId: petId, additionalPetIds: additionalPetIds, vetId: vetId, circuitId: circuitId,
+            slot: slot, idempotencyKey: idempotencyKey,
             serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId
         )
         let checkoutURL = try await startCheckoutUseCase.execute(visitId: visit.id, quote: quote)
@@ -934,14 +944,16 @@ struct BookingCheckoutUseCase {
     /// created directly in `.payAfterVisit` status and attached immediately,
     /// so the visit is confirmed in one step with nothing left to `resolve`.
     func startPayAfterVisit(
-        petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, quote: Quote, idempotencyKey: String,
+        petId: UUID, additionalPetIds: [UUID] = [], vetId: UUID, circuitId: UUID, slot: ScheduleSlot,
+        quote: Quote, idempotencyKey: String,
         serviceId: UUID? = nil, variantId: UUID? = nil, packageRedemptionId: UUID? = nil
     ) async throws -> Visit {
         // Same up-front gate as `start`: E8 must not be the cheaper way to
         // leave an unpaid visit behind with an expired quote.
         try StartCheckoutUseCase.validate(quote: quote)
         let visit = try await bookVisitUseCase.execute(
-            petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey,
+            petId: petId, additionalPetIds: additionalPetIds, vetId: vetId, circuitId: circuitId,
+            slot: slot, idempotencyKey: idempotencyKey,
             serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId
         )
         let paymentId = try await startCheckoutUseCase.executePayAfterVisit(visitId: visit.id, quote: quote)

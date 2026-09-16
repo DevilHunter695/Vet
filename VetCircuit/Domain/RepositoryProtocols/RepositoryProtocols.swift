@@ -25,7 +25,10 @@ protocol VisitRepository: Sendable {
     /// booking should atomically redeem one unit of (mirrors the slot's own
     /// capacity-lock so a retried/concurrent call can never double-redeem).
     /// All three default nil so every existing call site keeps compiling.
-    func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?) async throws -> Visit
+    /// D6: `additionalPetIds` are the other pets seen on the same visit. It
+    /// defaults empty at every call site, so a single-pet booking is written
+    /// exactly as it always was.
+    func createVisit(petId: UUID, additionalPetIds: [UUID], vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?) async throws -> Visit
     func listVisits(userId: UUID) async throws -> [Visit]
     func visit(id: UUID) async throws -> Visit
     func updateStatus(visitId: UUID, status: Visit.VisitStatus) async throws -> Visit
@@ -56,7 +59,7 @@ extension VisitRepository {
     /// protocol requirements can't carry default argument values themselves,
     /// so this extension supplies the nils instead of touching every caller.
     func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String) async throws -> Visit {
-        try await createVisit(petId: petId, vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey, serviceId: nil, variantId: nil, packageRedemptionId: nil)
+        try await createVisit(petId: petId, additionalPetIds: [], vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey, serviceId: nil, variantId: nil, packageRedemptionId: nil)
     }
 }
 

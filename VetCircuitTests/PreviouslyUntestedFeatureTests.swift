@@ -222,3 +222,70 @@ struct BackendSelectionTests {
         #expect(DependencyContainer.mockOnlyRepositories.contains("PaymentRepository"))
     }
 }
+
+/// D6 was the last functional gap I had named and not closed: a cart line
+/// could carry several pets and be *priced* for them, but the visit it booked
+/// recorded exactly one. The customer paid a second-pet fee and got a booking
+/// that said one pet.
+@Suite("D6 multi-pet in one visit")
+struct MultiPetVisitTests {
+    private func futureSlot() -> ScheduleSlot {
+        let start = Calendar.current.date(byAdding: .day, value: 2, to: .now) ?? .now
+        return ScheduleSlot(id: UUID(), dayOfWeek: 3, startTime: start,
+                            endTime: start.addingTimeInterval(3600), capacity: 5, bookedCount: 0)
+    }
+
+    @Test("a booking for three pets records all three")
+    func recordsEveryPet() async throws {
+        let repo = MockVisitRepository()
+        let bruno = UUID(), miso = UUID(), kiwi = UUID()
+
+        let visit = try await BookVisitUseCase(visitRepository: repo).execute(
+            petId: bruno, additionalPetIds: [miso, kiwi],
+            vetId: UUID(), circuitId: UUID(), slot: futureSlot()
+        )
+
+        #expect(visit.petId == bruno, "The primary pet must stay the primary pet")
+        #expect(visit.additionalPetIds == [miso, kiwi])
+        #expect(visit.allPetIds == [bruno, miso, kiwi])
+    }
+
+    @Test("a single-pet booking is written exactly as it always was")
+    func singlePetIsUnchanged() async throws {
+        let repo = MockVisitRepository()
+        let visit = try await BookVisitUseCase(visitRepository: repo).execute(
+            petId: UUID(), vetId: UUID(), circuitId: UUID(), slot: futureSlot()
+        )
+        #expect(visit.additionalPetIds.isEmpty)
+        #expect(visit.allPetIds.count == 1)
+    }
+
+    /// The same pet listed twice would be charged twice by
+    /// `PricingEngine.additionalPetCount` and read as a data error to anyone
+    /// looking at the visit, so the use case normalises rather than trusting
+    /// callers to have deduplicated their cart line.
+    @Test("a pet repeated in the list is not booked or charged twice")
+    func deduplicates() async throws {
+        let repo = MockVisitRepository()
+        let bruno = UUID(), miso = UUID()
+
+        let visit = try await BookVisitUseCase(visitRepository: repo).execute(
+            petId: bruno, additionalPetIds: [miso, bruno, miso],
+            vetId: UUID(), circuitId: UUID(), slot: futureSlot()
+        )
+
+        #expect(visit.additionalPetIds == [miso])
+        #expect(visit.allPetIds == [bruno, miso])
+    }
+
+    @Test("the primary pet appearing in the companion list does not duplicate it")
+    func primaryIsNeverAlsoACompanion() async throws {
+        let repo = MockVisitRepository()
+        let bruno = UUID()
+        let visit = try await BookVisitUseCase(visitRepository: repo).execute(
+            petId: bruno, additionalPetIds: [bruno],
+            vetId: UUID(), circuitId: UUID(), slot: futureSlot()
+        )
+        #expect(visit.additionalPetIds.isEmpty)
+    }
+}
