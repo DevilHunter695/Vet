@@ -4,11 +4,18 @@ import SwiftUI
 @MainActor
 final class MyTicketsViewModel {
     var tickets: [SupportTicket] = []
+    /// False until the first load finishes.
+    ///
+    /// Without it the empty state rendered instantly on every open, so on a
+    /// slow connection "No tickets yet" was the first thing anybody saw —
+    /// stating as fact something the app had not yet checked.
+    private(set) var hasLoaded = false
     var errorMessage: String?
 
     private let contactSupportUseCase = DependencyContainer.shared.contactSupportUseCase()
 
     func load(userId: UUID) async {
+        defer { hasLoaded = true }
         do {
             tickets = try await contactSupportUseCase.myTickets(userId: userId)
         } catch {
@@ -27,7 +34,7 @@ struct MyTicketsView: View {
             if let errorMessage = viewModel.errorMessage {
                 ErrorBanner(message: errorMessage)
             }
-            if viewModel.tickets.isEmpty && viewModel.errorMessage == nil {
+            if viewModel.hasLoaded && viewModel.tickets.isEmpty && viewModel.errorMessage == nil {
                 EmptyStateView(
                     systemImage: "bubble.left.and.bubble.right",
                     title: "No tickets yet",

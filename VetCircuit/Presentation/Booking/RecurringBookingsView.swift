@@ -12,7 +12,15 @@ final class RecurringBookingsViewModel {
 
     private let manageRecurringBookingUseCase = DependencyContainer.shared.manageRecurringBookingUseCase()
 
+    /// False until the first load finishes.
+    ///
+    /// Without it the empty state rendered instantly on every open, so on a
+    /// slow connection the first thing anybody saw was the app stating as
+    /// fact something it had not yet checked.
+    private(set) var hasLoaded = false
+
     func load(userId: UUID) async {
+        defer { hasLoaded = true }
         do {
             rules = try await manageRecurringBookingUseCase.list(userId: userId)
         } catch {
@@ -49,7 +57,7 @@ struct RecurringBookingsView: View {
             if let errorMessage = viewModel.errorMessage {
                 ErrorBanner(message: errorMessage)
             }
-            if viewModel.rules.isEmpty && viewModel.errorMessage == nil {
+            if viewModel.hasLoaded && viewModel.rules.isEmpty && viewModel.errorMessage == nil {
                 Text("No recurring bookings yet — toggle \"Make this recurring\" when booking a deworming or physio visit.")
                     .foregroundStyle(Theme.textSecondary)
             }

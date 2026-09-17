@@ -15,7 +15,15 @@ final class MedicationRemindersViewModel {
 
     init(pet: Pet) { self.pet = pet }
 
+    /// False until the first load finishes.
+    ///
+    /// Without it the empty state rendered instantly on every open, so on a
+    /// slow connection the first thing anybody saw was the app stating as
+    /// fact something it had not yet checked.
+    private(set) var hasLoaded = false
+
     func load() async {
+        defer { hasLoaded = true }
         do {
             reminders = try await manageMedicationRemindersUseCase.list(petId: pet.id)
         } catch {
@@ -75,7 +83,7 @@ struct MedicationRemindersView: View {
 
     var body: some View {
         List {
-            if viewModel.reminders.isEmpty {
+            if viewModel.hasLoaded && viewModel.reminders.isEmpty {
                 EmptyStateView(
                     systemImage: "bell.badge",
                     title: "No reminders yet",

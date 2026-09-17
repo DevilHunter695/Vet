@@ -10,7 +10,15 @@ final class NotificationCenterViewModel {
 
     private let getNotificationCenterUseCase = DependencyContainer.shared.getNotificationCenterUseCase()
 
+    /// False until the first load finishes.
+    ///
+    /// Without it the empty state rendered instantly on every open, so on a
+    /// slow connection the first thing anybody saw was the app stating as
+    /// fact something it had not yet checked.
+    private(set) var hasLoaded = false
+
     func load(userId: UUID) async {
+        defer { hasLoaded = true }
         do {
             notifications = try await getNotificationCenterUseCase.execute(userId: userId)
         } catch {
@@ -35,7 +43,7 @@ struct NotificationCenterView: View {
             if let errorMessage = viewModel.errorMessage {
                 ErrorBanner(message: errorMessage)
             }
-            if viewModel.notifications.isEmpty && viewModel.errorMessage == nil {
+            if viewModel.hasLoaded && viewModel.notifications.isEmpty && viewModel.errorMessage == nil {
                 // No action here: there is nothing to create, so the useful
                 // next step is choosing what gets sent at all.
                 EmptyStateView(

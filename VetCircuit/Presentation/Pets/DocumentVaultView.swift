@@ -15,7 +15,15 @@ final class DocumentVaultViewModel {
 
     init(pet: Pet) { self.pet = pet }
 
+    /// False until the first load finishes.
+    ///
+    /// Without it the empty state rendered instantly on every open, so on a
+    /// slow connection the first thing anybody saw was the app stating as
+    /// fact something it had not yet checked.
+    private(set) var hasLoaded = false
+
     func load() async {
+        defer { hasLoaded = true }
         do {
             documents = try await useCase.list(petId: pet.id)
         } catch {
@@ -67,7 +75,7 @@ struct DocumentVaultView: View {
                     .listRowSeparator(.hidden)
             }
 
-            if viewModel.documents.isEmpty {
+            if viewModel.hasLoaded && viewModel.documents.isEmpty {
                 EmptyStateView(
                     systemImage: "doc.text.image",
                     title: "No documents yet",

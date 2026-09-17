@@ -11,7 +11,15 @@ final class HelpCenterViewModel {
 
     private let getHelpArticlesUseCase = DependencyContainer.shared.getHelpArticlesUseCase()
 
+    /// False until the first load finishes.
+    ///
+    /// Without it the empty state rendered instantly on every open, so on a
+    /// slow connection the first thing anybody saw was the app stating as
+    /// fact something it had not yet checked.
+    private(set) var hasLoaded = false
+
     func load() async {
+        defer { hasLoaded = true }
         do {
             articles = try await getHelpArticlesUseCase.execute()
         } catch {
@@ -73,7 +81,7 @@ struct HelpCenterView: View {
                     }
                 }
             }
-            if viewModel.grouped.isEmpty && viewModel.errorMessage == nil {
+            if viewModel.hasLoaded && viewModel.grouped.isEmpty && viewModel.errorMessage == nil {
                 if viewModel.searchText.trimmingCharacters(in: .whitespaces).isEmpty {
                     ContentUnavailableView("No articles yet", systemImage: "questionmark.circle", description: Text("Help articles will show up here once they're published."))
                         .listRowBackground(Color.clear)
