@@ -10,7 +10,14 @@ create table slot_holds (
   created_at timestamptz not null default now()
 );
 
-create index slot_holds_slot_id_idx on slot_holds(slot_id) where expires_at > now();
+-- NOTE (immutability): this cannot be a partial index on `expires_at > now()`.
+-- A partial index predicate must be IMMUTABLE and `now()` is STABLE, so
+-- Postgres rejects it with "functions in index predicate must be marked
+-- IMMUTABLE" — the index would also be nonsense, since which rows it covers
+-- would change with the clock while the index stayed as built. Index both
+-- columns instead and let the query filter on expiry. Found by actually
+-- running the migrations (backend/test).
+create index slot_holds_slot_id_idx on slot_holds(slot_id, expires_at);
 
 alter table slot_holds enable row level security;
 

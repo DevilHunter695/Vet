@@ -1,0 +1,58 @@
+name: Backend migrations
+
+# 61 migrations were written, reviewed and never once executed. Nothing in this
+# repository could apply them, so "the schema is fine" was an assumption that
+# had gone unchallenged for the whole life of the project — and the first three
+# files to be run turned out to contain errors that made them impossible to
+# apply anywhere, on any Postgres.
+#
+# This job exists so that can never be true again: every push applies every
+# migration, in order, to a real Postgres, and then exercises the parts whose
+# behaviour matters.
+
+on:
+  push:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  workflow_dispatch:
+
+jobs:
+  apply-migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      # Deliberately NOT continue-on-error. A migration that cannot apply is
+      # not a warning — it is a deploy that will fail, found here instead of
+      # at 2am.
+      - name: Apply every migration, then exercise D6's trigger
+        run: ./backend/test/apply_migrations.sh

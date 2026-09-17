@@ -32,6 +32,25 @@ create policy "addresses all own" on addresses for all
 -- Geofence match: nearest served cluster within a coarse radius. A real
 -- deployment upgrades this to PostGIS ST_DWithin on a cluster polygon column;
 -- this haversine approximation is enough to unblock the client contract.
+-- NOTE (ordering): the table must be created before `match_cluster()`, not
+-- after it. Postgres validates a `language sql` function body at CREATE time
+-- (`check_function_bodies` is on by default), so defining the function first
+-- fails with `relation "circuit_cluster_centers" does not exist` — which means
+-- this migration, as originally written, could never have been applied
+-- anywhere. Found by actually running the migrations (backend/test).
+
+-- Cluster center lookup table — one row per served cluster_area, maintained
+-- by ops as circuits are added (Q: circuit & slot editor).
+create table circuit_cluster_centers (
+  cluster_area text primary key,
+  lat double precision not null,
+  lng double precision not null
+);
+
+alter table circuit_cluster_centers enable row level security;
+create policy "cluster centers public read" on circuit_cluster_centers for select using (true);
+create policy "cluster centers admin write" on circuit_cluster_centers for all using (is_admin()) with check (is_admin());
+
 create or replace function match_cluster(p_lat double precision, p_lng double precision)
 returns text language sql stable as $$
   select c.cluster_area from (
@@ -47,14 +66,3 @@ returns text language sql stable as $$
   limit 1;
 $$;
 
--- Cluster center lookup table — one row per served cluster_area, maintained
--- by ops as circuits are added (Q: circuit & slot editor).
-create table circuit_cluster_centers (
-  cluster_area text primary key,
-  lat double precision not null,
-  lng double precision not null
-);
-
-alter table circuit_cluster_centers enable row level security;
-create policy "cluster centers public read" on circuit_cluster_centers for select using (true);
-create policy "cluster centers admin write" on circuit_cluster_centers for all using (is_admin()) with check (is_admin());

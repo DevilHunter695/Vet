@@ -12,8 +12,13 @@ alter table schedule_slots
 update schedule_slots set capacity = 5, booked_count = 0 where is_available;
 update schedule_slots set capacity = 1, booked_count = 1 where not is_available;
 
+-- NOTE (naming): this cannot be called `schedule_slots_capacity_check`.
+-- Postgres auto-names the inline `check (capacity > 0)` above exactly that,
+-- so declaring it here collides with "constraint ... already exists" and the
+-- migration cannot apply. Found by actually running the migrations
+-- (backend/test).
 alter table schedule_slots
-  add constraint schedule_slots_capacity_check check (booked_count <= capacity);
+  add constraint schedule_slots_booked_within_capacity check (booked_count <= capacity);
 
 -- is_available is now derived (booked_count < capacity), kept in sync by
 -- trigger for any code path still reading the old column during rollout.
