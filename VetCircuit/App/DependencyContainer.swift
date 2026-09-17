@@ -118,9 +118,14 @@ final class DependencyContainer {
     /// affected rather than reading "48 of 57" and assuming the rest are
     /// unimportant. Chat and live tracking are the two that would be noticed
     /// first by a customer.
+    /// What is left is not a backlog. `TriageRepository` is a symptom rules
+    /// engine, not storage — there is nothing for it to write. The other three
+    /// are device-local by design: whether *this* phone has already flagged a
+    /// no-show, sent a post-visit summary or shown a renewal reminder is not
+    /// server state, and syncing it would be wrong, not better.
     static let mockOnlyRepositories = [
-        "LiveTrackingRepository", "NoShowDetectionRepository",
-        "PostVisitSummaryRepository", "RenewalReminderDedupeRepository", "TriageRepository",
+        "NoShowDetectionRepository", "PostVisitSummaryRepository",
+        "RenewalReminderDedupeRepository", "TriageRepository",
     ]
 
     /// Conformers that exist and work, but not completely. Kept separate from
@@ -128,6 +133,9 @@ final class DependencyContainer {
     /// implementation has a hole in it" fail differently, and collapsing them
     /// into one number is how a gap stops being visible.
     static let partialSupabaseRepositories = [
+        "LiveTrackingRepository — the current location is read from vet_locations; "
+        + "streaming needs the same Realtime channel chat does, so the map re-reads "
+        + "on appear rather than following a pin",
         "PaymentRepository — status, lookup and the whole pay-after-visit path are "
         + "real; the four hosted-checkout methods refuse, because creating a gateway "
         + "session needs a server-side function this repository does not contain. "
@@ -169,7 +177,7 @@ final class DependencyContainer {
         self.reviewRepository = client.map(SupabaseReviewRepository.init) ?? MockReviewRepository()
         self.petRepository = client.map(SupabasePetRepository.init) ?? MockPetRepository()
         self.pushTokenRepository = client.map(SupabasePushTokenRepository.init) ?? MockPushTokenRepository()
-        self.liveTrackingRepository = MockLiveTrackingRepository()
+        self.liveTrackingRepository = client.map(SupabaseLiveTrackingRepository.init) ?? MockLiveTrackingRepository()
         self.callRepository = client.map(SupabaseCallRepository.init) ?? MockCallRepository()
         self.referralRepository = client.map(SupabaseReferralRepository.init) ?? MockReferralRepository()
         self.triageRepository = MockTriageRepository()

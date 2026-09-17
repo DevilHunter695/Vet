@@ -52,3 +52,10 @@ create or replace function storage.foldername(name text) returns text[]
   language sql immutable as $$
   select string_to_array(regexp_replace(name, '/[^/]*$', ''), '/');
 $$;
+
+-- Supabase creates this publication and Realtime streams whatever is added to
+-- it. A migration that adds a table to it is correct; bare Postgres just has
+-- no such publication, so the harness makes one. `for all tables` is not used
+-- deliberately — then `alter publication ... add table` would fail, and the
+-- point is to exercise the statement the migration actually runs.
+create publication supabase_realtime;

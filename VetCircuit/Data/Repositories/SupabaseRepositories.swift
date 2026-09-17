@@ -3426,3 +3426,52 @@ final class SupabasePaymentRepository: PaymentRepository {
         return Payment.Status(rawValue: row.status) ?? .pending
     }
 }
+
+/// I4: the vet's live location during a visit.
+///
+/// The last customer-facing repository still pinned to a mock. That mattered
+/// more than the others on the list: `MockLiveTrackingRepository` walks a
+/// fabricated vet along a straight line, so a credentialed build would show a
+/// map confidently tracking somebody who is not there. A map that says "no
+/// location yet" is honest; a map that invents one is not.
+///
+/// `currentLocation` is real against `vet_locations` (0064). Streaming is not,
+/// for the same reason chat's is not — see `SupabaseChatRepository.subscribe`
+/// for the exact Realtime call this wants. The table is already added to the
+/// `supabase_realtime` publication by the migration, so the server side of
+/// that is in place and only the client subscription is outstanding; until it
+/// lands, `LiveTrackingView` re-reads on appear rather than following a pin.
+final class SupabaseLiveTrackingRepository: LiveTrackingRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    private struct Row: Decodable {
+        let visitId: UUID
+        let latitude: Double
+        let longitude: Double
+        let etaMinutes: Int?
+        let updatedAt: Date
+        enum CodingKeys: String, CodingKey {
+            case visitId = "visit_id", latitude, longitude
+            case etaMinutes = "eta_minutes", updatedAt = "updated_at"
+        }
+        func toDomain() -> VetLocation {
+            VetLocation(visitId: visitId, latitude: latitude, longitude: longitude,
+                        updatedAt: updatedAt, etaMinutes: etaMinutes)
+        }
+    }
+
+    /// Returns nil rather than throwing when there is no row: a vet who has
+    /// not started moving yet is the normal case before a visit, not an error
+    /// the UI should surface.
+    func currentLocation(visitId: UUID) async throws -> VetLocation? {
+        let rows: [Row] = try await client
+            .from("vet_locations").select().eq("visit_id", value: visitId)
+            .limit(1).execute().value
+        return rows.first?.toDomain()
+    }
+
+    nonisolated func subscribeToLocation(visitId: UUID, onUpdate: @escaping @Sendable (VetLocation) -> Void) -> AnyObject {
+        NSObject() // TODO(Realtime): see SupabaseChatRepository.subscribe.
+    }
+}

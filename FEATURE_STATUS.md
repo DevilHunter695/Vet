@@ -127,7 +127,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | I1 | "Happening now" card | 🟢 | Driven, **plus a lock that the Visits tab is not empty** now the seed exists. One seeded visit is `enRoute` |
 | I2 | Status timeline | 🟢 | Driven from visit detail; `MockVisitRepository status history` + `Visit.legalTransitions` suites |
 | I3 | Live Activity / Dynamic Island | ⚪ | ActivityKit cannot run in this CI |
-| I4 | Live map + ETA | 🟠 | `TrackVetUseCase` suite covers ETA. Map rendering not assertable |
+| I4 | Live map + ETA | 🟡 | `TrackVetUseCase` suite covers ETA; `vet_locations` (0064) and `SupabaseLiveTrackingRepository` make the position real rather than a fabricated walk. Map *rendering* is still not assertable in CI, and streaming awaits the same Realtime work chat needs |
 | I5 | Start-of-visit OTP | 🟡 | `StartVisitUseCase` suite |
 | I6 | Digital consent waiver | 🟡 | `ManageConsentUseCase` suite |
 | I7 | Visit checklist | 🟡 | `GetVisitChecklistUseCase (I7)` suite |
@@ -201,21 +201,20 @@ no touch region under what was painted. `exists` was true for all of them.
 | Status | Count |
 |---|---|
 | 🟢 Driven through the running app | 34 |
-| 🟡 Domain logic unit-tested, screen reachable | 57 |
-| 🟠 Built, nothing tests it | 4 |
+| 🟡 Domain logic unit-tested, screen reachable | 58 |
+| 🟠 Built, nothing tests it | 3 |
 | ⚪ Mock-bound, unverifiable without a real backend | 3 |
 | — Excluded at your request | 1 |
 
-**91 of 99 have real evidence behind them. 4 have none. 3 cannot be tested in
+**92 of 99 have real evidence behind them. 3 have none. 3 cannot be tested in
 this environment at any level, and saying otherwise would be a lie.**
 
-The 🟠 four, and why each is genuinely stuck rather than merely neglected:
+The 🟠 three, and why each is genuinely stuck rather than merely neglected:
 
 - **A10 Face ID lock** — `LAContext` has no biometric hardware to talk to in a
   simulator, and no way to simulate a successful or failed match.
-- **C7 coverage map** and **I4 live map rendering** — MapKit draws into a
-  surface XCUITest cannot introspect. The *logic* behind I4 is covered by the
-  `TrackVetUseCase` suite; it is the rendering that is unassertable.
+- **C7 coverage map** — MapKit draws into a surface XCUITest cannot
+  introspect.
 - **N5 rating prompt** — `SKStoreReviewController` deliberately does nothing
   in a test environment, by Apple's design.
 
@@ -235,9 +234,12 @@ the four that remain have been checked by hand.
 
 1. **Everything runs on mock repositories, and the swap is now a config
    change.** Supply `SUPABASE_URL` and `SUPABASE_ANON_KEY` and 51 repositories
-   resolve to Postgres. Five still have no conformer —
-   `LiveTrackingRepository`, `TriageRepository` and three deliberately
-   device-local ones. Two more are partial and say so on the container:
+   resolve to Postgres. Four have no conformer, and none of them is a gap:
+   `TriageRepository` is a symptom rules engine with nothing to store, and the
+   other three are device-local by design — whether *this* phone has already
+   flagged a no-show, sent a post-visit summary or shown a renewal reminder is
+   not server state, and syncing it would be wrong rather than better. Three
+   are partial and say so on the container:
    chat persists messages and read receipts but has no Realtime channel, so a
    thread refreshes on load rather than pushing, and photo attachments refuse
    rather than post an empty message; payments does status, lookup and the
@@ -245,9 +247,11 @@ the four that remain have been checked by hand.
    because creating a gateway session needs a server-side function this
    repository does not contain. That refusal is deliberate — the mock returns
    a fake checkout URL and reports success, so a credentialed build left on it
-   would show a booking as paid when no money moved. The schema is proven to
-   build (61 migrations, applied in CI), but the app has never completed a
-   round trip to a live instance.
+   would show a booking as paid when no money moved; and live tracking reads
+   the vet's current position from `vet_locations` but cannot yet stream it,
+   so the map re-reads on appear instead of following a pin. The schema is
+   proven to build — 62 migrations, applied to a real Postgres in CI on every
+   push — but the app has never completed a round trip to a live instance.
 2. **A correction.** An earlier version of this file said no PDF was rendered
    anywhere. That was wrong. B7, G5, K2, K4 and A7 all render through
    `UIGraphicsPDFRenderer` — a system framework, no service or account needed
