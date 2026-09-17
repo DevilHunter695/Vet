@@ -72,13 +72,15 @@ final class AppWalkthroughUITests: XCTestCase {
     private func tabButton(_ title: String, in app: XCUIApplication) -> XCUIElement {
         let direct = app.buttons[title]
         if direct.waitForExistence(timeout: 3), direct.isHittable { return direct }
-        // Collapsed: the only visible bar button is the current tab. Tapping
-        // it expands the bar, after which the wanted tab exists.
-        let bar = floatingTabBar(in: app)
-        if bar.exists {
-            let firstButton = bar.buttons.element(boundBy: 0)
-            if firstButton.exists, firstButton.isHittable { firstButton.tap() }
-        }
+        // Collapsed: the bar is down to a single button, and only that button
+        // carries the "show all tabs" wording. Target it by that, not by
+        // position — taking the bar's first button instead *switches tab*,
+        // because when the bar is expanded its first button is simply the
+        // first tab. That silently navigated away mid-test.
+        let expander = app.buttons.containing(
+            NSPredicate(format: "label CONTAINS[c] 'show all tabs'")
+        ).element(boundBy: 0)
+        if expander.exists, expander.isHittable { expander.tap() }
         return app.buttons[title]
     }
 
