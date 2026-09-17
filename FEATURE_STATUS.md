@@ -10,9 +10,9 @@ that were structurally present and functionally inert while CI reported green.
 | | Level | What it means |
 |---|---|---|
 | 🟢 | **Driven** | An XCUITest launches the real app and walks a customer through it. The screen renders, the control is *hittable*, and tapping it once produces the next screen. |
-| 🟡 | **Logic tested** | The domain logic has unit tests (406 of them, all passing) and the screen exists and is reachable, but no test drives the whole path end-to-end. |
+| 🟡 | **Logic tested** | The domain logic has unit tests (440 of them, all passing) and the screen exists and is reachable, but no test drives the whole path end-to-end. |
 | 🟠 | **Built, unproven** | The code exists and is wired into `DependencyContainer`, but nothing tests it at either level. It may work. Nobody has checked. |
-| ⚪ | **Mock-bound** | Implemented against a mock repository. Cannot be verified here at all — it needs a real payment gateway, push service, file storage or Apple entitlement. The Supabase implementations exist but have never been run. |
+| ⚪ | **Mock-bound** | Cannot be verified here at all — it needs a real payment gateway, push service, or Apple entitlement. The Supabase conformers compile and the schema they target is applied in CI, but no app-to-database round trip has ever run. |
 
 `isHittable` is the assertion that matters at the 🟢 level. The controls that
 had to be tapped three or four times existed and were visible; they simply had
@@ -71,7 +71,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | D3 | Add-ons | 🟡 | `D3 add-on eligibility` + `ManageCartUseCase — D3/D6` suites |
 | D4 | Packages with redemption tracking | 🟢 | Driven, asserting each card lists its contents; `BuyPackageUseCase` + `PackageRedemptionPolicy` suites |
 | D5 | Per-vet pricing overrides | 🟡 | `PricingEngine vet override (D5)` + `MockQuoteRepository override resolution (D5)` suites |
-| D6 | Multi-pet in one visit | 🟡 | `D6 multi-pet in one visit` suite covers the app side; `0063_visit_additional_pets.sql` adds the column, the `book_visit()` parameter and a trigger rejecting a duplicated or someone-else's pet. The SQL has never been executed — see the caveats |
+| D6 | Multi-pet in one visit | 🟡 | `D6 multi-pet in one visit` suite covers the app side; `0063_visit_additional_pets.sql` adds the column, the `book_visit()` parameter and a trigger rejecting a duplicated or someone-else's pet. The SQL is applied and the trigger exercised with real rows by the `Backend migrations` workflow on every push |
 
 ## Cart & Checkout
 
