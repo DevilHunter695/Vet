@@ -114,7 +114,7 @@ private struct PlanCatalogCard: View {
                 ForEach(entry.inclusions, id: \.self) { inclusion in
                     HStack(alignment: .top, spacing: 9) {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 13))
+                            .scaledIcon(13, weight: .regular)
                             .foregroundStyle(Theme.success)
                         Text(inclusion)
                             .font(.brandCallout)
@@ -144,7 +144,7 @@ private struct ActionRow2: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .medium))
+                .scaledIcon(16, weight: .medium)
                 .foregroundStyle(Theme.primary)
                 .frame(width: 34, height: 34)
                 .background(Theme.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))

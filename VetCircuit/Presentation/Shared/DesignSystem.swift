@@ -37,7 +37,7 @@ struct PrimaryButton: View {
                 // swapping in the spinner never reflows the screen.
                 HStack(spacing: 8) {
                     if let systemImage {
-                        Image(systemName: systemImage).font(.system(size: 16, weight: .semibold))
+                        Image(systemName: systemImage).scaledIcon(16, weight: .semibold)
                     }
                     Text(title).font(.brandHeadline)
                 }
@@ -99,7 +99,7 @@ struct SecondaryButton: View {
         } label: {
             HStack(spacing: 8) {
                 if let systemImage {
-                    Image(systemName: systemImage).font(.system(size: 16, weight: .semibold))
+                    Image(systemName: systemImage).scaledIcon(16, weight: .semibold)
                 }
                 Text(title).font(.brandHeadline)
             }
@@ -139,7 +139,7 @@ struct PillButton: View {
         } label: {
             HStack(spacing: 6) {
                 if let systemImage {
-                    Image(systemName: systemImage).font(.system(size: 13, weight: .semibold))
+                    Image(systemName: systemImage).scaledIcon(13, weight: .semibold)
                 }
                 Text(title).font(.brandCaption)
             }
@@ -224,7 +224,7 @@ struct SectionHeader: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledIcon(14, weight: .semibold)
                     .foregroundStyle(Theme.primary)
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -273,7 +273,7 @@ struct InfoRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 13))
+                    .scaledIcon(13, weight: .regular)
                     .foregroundStyle(Theme.textSecondary)
                     .frame(width: 18, alignment: .leading)
             }
@@ -302,7 +302,7 @@ struct TagChip: View {
     var body: some View {
         HStack(spacing: 4) {
             if let systemImage {
-                Image(systemName: systemImage).font(.system(size: 10, weight: .semibold))
+                Image(systemName: systemImage).scaledIcon(10, weight: .semibold)
             }
             Text(text).font(.brandCaption2)
         }
@@ -325,7 +325,7 @@ struct CalloutNote: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: systemImage)
-                .font(.system(size: 13))
+                .scaledIcon(13, weight: .regular)
                 .foregroundStyle(tint)
             Text(text)
                 .font(.brandCaption)

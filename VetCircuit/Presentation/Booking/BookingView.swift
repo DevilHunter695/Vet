@@ -730,7 +730,7 @@ struct BookingView: View {
                         goBack()
                     } label: {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .semibold))
+                            .scaledIcon(16, weight: .semibold)
                             .foregroundStyle(Theme.textPrimary)
                             .frame(width: 52, height: 54)
                             .contentShape(Rectangle())
@@ -766,7 +766,11 @@ struct BookingView: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 8)
-        .background(.bar)
+        // iOS 26 guidance is to differentiate controls from content with
+        // the material rather than a solid or semi-opaque strip beneath
+        // them, and to let content scroll under it. `.bar` was the old
+        // answer; glass is the current one.
+        .glassEffect(.regular, in: Rectangle())
     }
 
     private var blockingHint: String {
@@ -839,7 +843,11 @@ private struct SlotChip: View {
                     .font(.brandMono(.subheadline, weight: .semibold))
                 if slot.remainingCapacity <= 2 {
                     Text("\(slot.remainingCapacity) left")
-                        .font(.system(size: 9, design: .rounded).weight(.medium))
+                        // Was 9pt and fixed. Nothing in the system type
+                        // scale is that small, it never grew with Dynamic
+                        // Type, and "2 left" is scarcity a person decides on
+                        // — not fine print.
+                        .font(.system(.caption2, design: .rounded, weight: .medium))
                         .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Theme.warning)
                 }
             }
@@ -884,7 +892,7 @@ private struct SelectableRow: View {
             HStack(spacing: 14) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 16, weight: .medium))
+                        .scaledIcon(16, weight: .medium)
                         .foregroundStyle(isSelected ? Color.white : Theme.primary)
                         .frame(width: 38, height: 38)
                         .background {

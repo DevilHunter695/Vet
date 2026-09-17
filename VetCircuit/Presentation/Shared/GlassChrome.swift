@@ -24,7 +24,7 @@ struct GlassIconButton: View {
             action()
         } label: {
             Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .semibold))
+                .scaledIcon(16, weight: .semibold)
                 .foregroundStyle(tint ?? Theme.textPrimary)
                 .frame(width: 44, height: 44)
                 .glassCircle(level: .chrome)
@@ -63,7 +63,7 @@ struct GlassGroupButton: View {
             action()
         } label: {
             Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .semibold))
+                .scaledIcon(16, weight: .semibold)
                 .foregroundStyle(Theme.textPrimary)
                 .frame(width: 46, height: 44)
                 .contentShape(Rectangle())
@@ -95,9 +95,10 @@ struct LargeTitle: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(text)
-                .font(.system(size: 34, weight: .bold, design: .rounded))
-                .tracking(-0.8)
-                .lineSpacing(-2)
+                // A text style, not a fixed 34pt: a screen's own title was
+                // the one label that ignored Dynamic Type. Tracking is the
+                // system's to set — it adjusts it per point size already.
+                .font(.system(.largeTitle, design: .rounded, weight: .bold))
                 .foregroundStyle(Theme.textPrimary)
 
             if let subtitle {

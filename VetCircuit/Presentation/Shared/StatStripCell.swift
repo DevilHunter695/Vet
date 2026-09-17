@@ -9,7 +9,7 @@ struct StatStripCell: View {
     var body: some View {
         VStack(spacing: 5) {
             Image(systemName: item.systemImage)
-                .font(.system(size: 15, weight: .semibold))
+                .scaledIcon(15, weight: .semibold)
                 .foregroundStyle(item.tint)
                 .frame(height: 18)
 

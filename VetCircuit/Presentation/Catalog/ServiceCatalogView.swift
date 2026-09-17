@@ -91,7 +91,7 @@ struct ServiceCatalogView: View {
                 // D4: packages/bundles, one tap from the à la carte catalog.
                 NavigationLink { PackagesView(vertical: vertical, pet: pet) } label: {
                     Label("Packages", systemImage: "shippingbox")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.primaryLight)
                         .frame(minHeight: 44)
                         .contentShape(Rectangle())

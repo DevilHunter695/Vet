@@ -526,7 +526,11 @@ struct CartView: View {
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 8)
-            .background(.bar)
+            // iOS 26 guidance is to differentiate controls from content with
+        // the material rather than a solid or semi-opaque strip beneath
+        // them, and to let content scroll under it. `.bar` was the old
+        // answer; glass is the current one.
+        .glassEffect(.regular, in: Rectangle())
             .animation(Theme.crossFade, value: viewModel.quote?.breakdown.totalMinorUnits)
         }
     }

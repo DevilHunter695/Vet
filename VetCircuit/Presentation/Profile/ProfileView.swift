@@ -806,7 +806,7 @@ struct ProfileLinkRow<Destination: View>: View {
         } label: {
             HStack(spacing: 14) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 15, weight: .medium))
+                    .scaledIcon(15, weight: .medium)
                     .foregroundStyle(tint)
                     .frame(width: 30, height: 30)
                     .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -883,7 +883,7 @@ struct PetCard: View {
                     .clipShape(Circle())
                 } else {
                     Image(systemName: speciesIcon)
-                        .font(.system(size: 20))
+                        .scaledIcon(20, weight: .regular)
                         .foregroundStyle(.white)
                 }
             }

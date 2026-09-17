@@ -420,17 +420,20 @@ extension Font {
 }
 
 extension View {
-    /// Display-size text: tighten tracking as size grows.
-    func brandDisplayText() -> some View {
-        self.tracking(-0.6)
-    }
+    /// Retained as a no-op.
+    ///
+    /// This used to tighten tracking by hand. Apple's typography guidance is
+    /// that "in a running app, the system font dynamically adjusts tracking
+    /// at every point size" — the tightening large text needs is already
+    /// applied. Doing it again on top cramped letters, and cramped them worst
+    /// at the accessibility sizes where legibility matters most. Kept so the
+    /// call sites read the same and did not all have to change.
+    func brandDisplayText() -> some View { self }
 
     /// Screen titles that still live in a navigation bar rather than in the
     /// content. Kept so the two kinds of title agree on tracking even while
     /// some screens have been converted to `LargeTitle` and some have not.
-    func brandNavTitleText() -> some View {
-        self.tracking(-0.5)
-    }
+    func brandNavTitleText() -> some View { self }
 
     /// Small all-caps section eyebrows. Uppercase text needs *positive*
     /// tracking — caps have no ascender/descender variety to separate them,
@@ -535,7 +538,7 @@ struct SelectableCardStyle: ViewModifier {
                 ZStack {
                     Circle().fill(Theme.gradient)
                     Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .scaledIcon(10, weight: .bold)
                         .foregroundStyle(.white)
                 }
                 .frame(width: 20, height: 20)
@@ -609,23 +612,24 @@ struct ShimmerView: View {
 // on a phone.
 
 extension View {
-    /// Screen titles. Tight tracking and negative leading: at 34pt the
-    /// default spacing makes a two-word title look like two separate words.
+    /// Screen titles.
+    ///
+    /// A text style rather than a fixed 34pt: at a fixed size the title was
+    /// the one piece of text on a screen that ignored Dynamic Type entirely,
+    /// so turning text up grew every label around it and left the heading
+    /// behind. Tracking is the system's to set — see `brandDisplayText`.
     func typeDisplay() -> some View {
-        font(.system(size: 34, weight: .bold, design: .rounded))
-            .tracking(-0.8)
+        font(.system(.largeTitle, design: .rounded, weight: .bold))
     }
 
     /// Section titles inside a screen.
     func typeTitle() -> some View {
         font(.system(.title3, design: .rounded, weight: .semibold))
-            .tracking(-0.3)
     }
 
     /// The name of a thing in a row — the line the eye lands on first.
     func typeRowTitle() -> some View {
         font(.system(.body, design: .rounded, weight: .semibold))
-            .tracking(-0.1)
     }
 
     /// Body copy. Tracking at zero, leading opened up: this is the only text
@@ -642,7 +646,6 @@ extension View {
     /// captions feel cramped against the row title sitting above them.
     func typeMeta() -> some View {
         font(.system(.footnote, design: .rounded))
-            .tracking(0.05)
             .lineSpacing(1)
     }
 

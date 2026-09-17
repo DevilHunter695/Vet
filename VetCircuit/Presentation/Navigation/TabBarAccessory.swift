@@ -64,13 +64,13 @@ struct TabBarAccessoryStrip: View {
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(model.title)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .font(.system(.subheadline, design: .rounded, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
 
                     if let detail = model.detail {
                         Text(detail)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .font(.system(.caption, design: .rounded, weight: .medium))
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                     }
@@ -108,7 +108,7 @@ struct TabBarAccessoryInline: View {
                 LivePulse(tint: model.tint, isAnimating: !reduceMotion)
 
                 Text(model.detail ?? model.title)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .font(.system(.footnote, design: .rounded, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)

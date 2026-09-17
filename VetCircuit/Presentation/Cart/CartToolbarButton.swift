@@ -26,13 +26,13 @@ struct CartToolbarButton: View {
         } label: {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: itemCount > 0 ? "cart.fill" : "cart")
-                    .font(.system(size: 17, weight: .semibold))
+                    .scaledIcon(17, weight: .semibold)
                     .foregroundStyle(Theme.primaryLight)
                     .frame(width: 44, height: 44)
 
                 if itemCount > 0 {
                     Text("\(itemCount)")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.caption2.bold())
                         .monospacedDigit()
                         .foregroundStyle(.white)
                         .padding(.horizontal, 5)

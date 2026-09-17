@@ -149,7 +149,7 @@ private struct TriageResultCard: View {
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "calendar.badge.plus")
-                                .font(.system(size: 16, weight: .semibold))
+                                .scaledIcon(16, weight: .semibold)
                             Text("Browse circuits to book").font(.brandHeadline)
                             Spacer(minLength: 0)
                             Image(systemName: "chevron.right").font(.caption)
