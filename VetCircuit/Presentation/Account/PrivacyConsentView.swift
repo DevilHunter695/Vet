@@ -191,6 +191,7 @@ struct PrivacyConsentView: View {
         // its own opaque system background would read as a different app.
         .scrollContentBackground(.hidden)
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Privacy & consent")
         .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
         .confirmationDialog(

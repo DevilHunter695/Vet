@@ -50,7 +50,7 @@ struct MyTicketsView: View {
                         }
                         Text(ticket.body).font(.brandCaption).foregroundStyle(Theme.textSecondary).lineLimit(2)
                         Text(ticket.createdAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption2).foregroundStyle(Theme.textTertiary)
+                            .font(.brandCaption).foregroundStyle(Theme.textTertiary)
                     }
                     .padding(.vertical, 4)
                 }
@@ -60,6 +60,7 @@ struct MyTicketsView: View {
         // its own opaque system background would read as a different app.
         .scrollContentBackground(.hidden)
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("My tickets")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -93,7 +94,7 @@ private struct StatusChip: View {
 
     var body: some View {
         Text(status.displayName)
-            .font(.caption2.weight(.semibold))
+            .font(.brandCaption.weight(.semibold))
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(color.opacity(0.15))
             .foregroundStyle(color)

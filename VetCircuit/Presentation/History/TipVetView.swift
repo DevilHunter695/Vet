@@ -77,6 +77,11 @@ struct TipVetView: View {
                 }
             }
         }
+        // A short, focused form — a medium sheet with a visible grabber reads
+        // as "quick task" rather than the full-screen takeover a bare .sheet
+        // defaults to.
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private func submit(amountMinorUnits: Int) async {

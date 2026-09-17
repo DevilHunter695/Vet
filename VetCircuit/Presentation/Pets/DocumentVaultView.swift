@@ -97,6 +97,7 @@ struct DocumentVaultView: View {
         // its own opaque system background would read as a different app.
         .scrollContentBackground(.hidden)
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Document vault")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

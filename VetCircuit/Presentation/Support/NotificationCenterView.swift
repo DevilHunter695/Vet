@@ -55,11 +55,12 @@ struct NotificationCenterView: View {
                             .frame(width: 8, height: 8)
                             .padding(.top, 5)
                             .accessibilityHidden(true)
+                            .animation(.easeOut(duration: 0.2), value: notification.isRead)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(notification.title).font(.brandHeadline).foregroundStyle(.primary)
                             Text(notification.body).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                             Text((notification.sentAt ?? notification.createdAt).formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption2).foregroundStyle(Theme.textTertiary)
+                                .font(.brandCaption).foregroundStyle(Theme.textTertiary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -75,6 +76,7 @@ struct NotificationCenterView: View {
         // its own opaque system background would read as a different app.
         .scrollContentBackground(.hidden)
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Notifications")
         .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
     }

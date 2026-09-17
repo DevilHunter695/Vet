@@ -90,6 +90,7 @@ struct AddressListView: View {
         // its own opaque system background would read as a different app.
         .scrollContentBackground(.hidden)
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Addresses")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -129,11 +130,7 @@ private struct AddressRow: View {
                     HStack {
                         Text(address.label).font(.brandHeadline).foregroundStyle(.primary)
                         if !address.isServed {
-                            Text("Not yet covered").font(.caption2)
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Theme.neutral.opacity(0.15))
-                                .foregroundStyle(Theme.neutral)
-                                .clipShape(Capsule())
+                            TagChip(text: "Not yet covered", tint: Theme.neutral)
                         }
                     }
                     Text(address.line1).font(.brandBody).foregroundStyle(Theme.textSecondary)

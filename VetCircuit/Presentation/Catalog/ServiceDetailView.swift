@@ -69,7 +69,12 @@ struct ServiceDetailView: View {
     }
 
     private func addToCart() async {
-        guard let variant = selectedVariant, let userId = session.currentUser?.id, !selectedPetIds.isEmpty else { return }
+        guard let variant = selectedVariant, !selectedPetIds.isEmpty else { return }
+        guard let userId = session.currentUser?.id else {
+            Haptics.error()
+            errorMessage = "Sign in to add this to your cart."
+            return
+        }
         isAddingToCart = true
         errorMessage = nil
         defer { isAddingToCart = false }
@@ -227,6 +232,8 @@ private struct VariantRow: View {
                 Text(variant.priceMinorUnits == 0 ? "Free" : CurrencyFormatter.rupees(variant.priceMinorUnits))
                     .font(.brandHeadline)
                     .foregroundStyle(isSelected ? Theme.primary : .secondary)
+                    .contentTransition(.numericText())
+                    .animation(Theme.springQuick, value: isSelected)
             }
             .padding()
             .background(

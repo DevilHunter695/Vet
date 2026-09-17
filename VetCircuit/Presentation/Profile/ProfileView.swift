@@ -115,26 +115,15 @@ struct ProfileView: View {
     @Environment(Router.self) private var router
     @State private var viewModel = ProfileViewModel()
     @State private var checkoutURL: URL?
-    @AppStorage("vc.selected_vertical") private var selectedVerticalRaw: String = Vertical.vet.rawValue
-    @AppStorage("vc.appearance") private var appearanceRaw: String = AppearanceOption.system.rawValue
+    // RawRepresentable (String) enums are stored directly by @AppStorage, so
+    // there's no need for a Binding(get:set:) shim built in the view body to
+    // bridge a raw-string key to the enum the pickers below actually bind to.
+    @AppStorage("vc.selected_vertical") private var selectedVertical: Vertical = .vet
+    @AppStorage("vc.appearance") private var appearance: AppearanceOption = .system
     // A10: UserDefaults-backed directly (not routed through the view model) —
     // this is a local device preference, not server state; RootView reads
     // the same key via `BiometricLockSetting`.
     @AppStorage("vc.biometric_lock_enabled") private var biometricLockEnabled: Bool = false
-
-    private var appearance: Binding<AppearanceOption> {
-        Binding(
-            get: { AppearanceOption(rawValue: appearanceRaw) ?? .system },
-            set: { appearanceRaw = $0.rawValue }
-        )
-    }
-
-    private var selectedVertical: Binding<Vertical> {
-        Binding(
-            get: { Vertical(rawValue: selectedVerticalRaw) ?? .vet },
-            set: { selectedVerticalRaw = $0.rawValue }
-        )
-    }
 
     var body: some View {
         // N7: path driven by the shared Router, mirroring VisitHistoryView —
@@ -426,24 +415,24 @@ struct ProfileView: View {
             VStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Care type").brandEyebrow()
-                    Picker("Care type", selection: selectedVertical) {
+                    Picker("Care type", selection: $selectedVertical) {
                         ForEach(Vertical.allCases) { vertical in
                             Text(vertical.displayName).tag(vertical)
                         }
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: selectedVerticalRaw) { _, _ in Haptics.selection() }
+                    .onChange(of: selectedVertical) { _, _ in Haptics.selection() }
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Appearance").brandEyebrow()
-                    Picker("Appearance", selection: appearance) {
+                    Picker("Appearance", selection: $appearance) {
                         ForEach(AppearanceOption.allCases) { option in
                             Text(option.displayName).tag(option)
                         }
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: appearanceRaw) { _, _ in Haptics.selection() }
+                    .onChange(of: appearance) { _, _ in Haptics.selection() }
                     Text("The blue-green aurora is tuned for both — dark leans into it, light keeps it as a wash.")
                         .font(.brandCaption2)
                         .foregroundStyle(Theme.textSecondary)

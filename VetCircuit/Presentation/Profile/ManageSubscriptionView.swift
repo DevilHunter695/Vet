@@ -238,6 +238,7 @@ struct ManageSubscriptionView: View {
         // its own opaque system background would read as a different app.
         .scrollContentBackground(.hidden)
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Manage subscription")
         .navigationBarTitleDisplayMode(.inline)
         .task { if let user = session.currentUser { await viewModel.load(userId: user.id, currentUser: user) } }

@@ -67,7 +67,7 @@ struct TicketDetailView: View {
                     Text(viewModel.ticket.subject).font(.brandHeadline)
                     Text(viewModel.ticket.body).font(.brandBody).foregroundStyle(Theme.textSecondary)
                     Text(viewModel.ticket.createdAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption2).foregroundStyle(Theme.textTertiary)
+                        .font(.brandCaption).foregroundStyle(Theme.textTertiary)
                 }
                 .padding(.vertical, 4)
             }
@@ -100,7 +100,7 @@ struct TicketDetailView: View {
                                 }
                                 Text(audit.reason).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                                 Text(audit.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption2).foregroundStyle(Theme.textTertiary)
+                                    .font(.brandCaption).foregroundStyle(Theme.textTertiary)
                             }
                             .padding(.vertical, 2)
                         }
@@ -117,6 +117,7 @@ struct TicketDetailView: View {
         // its own opaque system background would read as a different app.
         .scrollContentBackground(.hidden)
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Ticket")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.loadAuditTrail() }
@@ -188,6 +189,8 @@ private struct IssueSupportRefundSheet: View {
                 .background(.regularMaterial)
             }
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
 

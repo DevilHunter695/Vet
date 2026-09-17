@@ -660,10 +660,11 @@ private struct ActionRow: View {
             Spacer()
             if badgeCount > 0 {
                 Text("\(badgeCount)")
-                    .font(.caption2.bold())
+                    .font(.brandCaption.bold())
                     .foregroundStyle(.white)
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(Theme.danger, in: Capsule())
+                    .contentTransition(.numericText())
                     .accessibilityLabel("\(badgeCount) unread messages")
             }
             if isLoading {
@@ -676,6 +677,7 @@ private struct ActionRow: View {
         .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: Theme.cardShadow, radius: 8, y: 3)
         .accessibilityElement(children: .combine)
+        .animation(Theme.springQuick, value: badgeCount)
     }
 }
 

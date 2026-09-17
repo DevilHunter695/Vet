@@ -23,6 +23,9 @@ struct VisitTimelineView: View {
                     }
                 }
                 .listStyle(.plain)
+                // Pushed from VisitDetailView, which sits under the floating
+                // tab bar — without this the last timeline row rests behind it.
+                .floatingTabBarInset()
             }
         }
         // The aurora is the app's ground everywhere else; a List that keeps

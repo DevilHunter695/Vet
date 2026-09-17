@@ -109,6 +109,7 @@ struct CorporateSeatAssignmentView: View {
         // its own opaque system background would read as a different app.
         .scrollContentBackground(.hidden)
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Seat assignments")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load(subscriptionId: subscription.id) }

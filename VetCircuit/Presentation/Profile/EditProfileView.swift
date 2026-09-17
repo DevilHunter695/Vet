@@ -129,6 +129,7 @@ struct EditProfileView: View {
         // its own opaque system background would read as a different app.
         .scrollContentBackground(.hidden)
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Edit profile")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

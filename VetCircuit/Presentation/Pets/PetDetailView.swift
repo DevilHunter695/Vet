@@ -134,10 +134,25 @@ struct PetDetailView: View {
     @State private var shareFileURL: URL?
     @State private var showingShareSheet = false
 
+    // Local mirrors of optional `Pet` fields so the form controls below can
+    // bind to plain, non-optional state instead of building a fresh
+    // `Binding(get:set:)` in the view body on every render. Edits are pushed
+    // back into `viewModel.pet` via `.onChange`, so behaviour is unchanged.
+    @State private var petSex: Pet.Sex = .unknown
+    @State private var isNeutered = false
+    @State private var microchipText = ""
+    @State private var allergiesText = ""
+    @State private var chronicConditionsText = ""
+
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
 
     init(pet: Pet) {
         _viewModel = State(initialValue: PetDetailViewModel(pet: pet))
+        _petSex = State(initialValue: pet.sex ?? .unknown)
+        _isNeutered = State(initialValue: pet.isNeutered ?? false)
+        _microchipText = State(initialValue: pet.microchipNumber ?? "")
+        _allergiesText = State(initialValue: pet.allergies ?? "")
+        _chronicConditionsText = State(initialValue: pet.chronicConditions ?? "")
     }
 
     /// The pet's own photograph, leading the screen and colouring it.
@@ -285,44 +300,38 @@ struct PetDetailView: View {
                     }
                 }
 
-                HStack {
-                    Text("Species").font(.brandCallout).foregroundStyle(Theme.textSecondary)
-                    Spacer()
+                LabeledContent("Species") {
                     TagChip(text: viewModel.pet.species.displayName, systemImage: viewModel.pet.species.symbolName)
                 }
                 if let breed = viewModel.pet.breed, !breed.isEmpty {
                     LabeledContent("Breed", value: breed)
                 }
 
-                Picker("Sex", selection: Binding(
-                    get: { viewModel.pet.sex ?? .unknown },
-                    set: { viewModel.pet.sex = $0 }
-                )) {
+                Picker("Sex", selection: $petSex) {
                     ForEach(Pet.Sex.allCases, id: \.self) { Text($0.displayName).tag($0) }
                 }
+                .onChange(of: petSex) { _, newValue in viewModel.pet.sex = newValue }
 
-                Toggle("Neutered / spayed", isOn: Binding(
-                    get: { viewModel.pet.isNeutered ?? false },
-                    set: { viewModel.pet.isNeutered = $0 }
-                ))
+                Toggle("Neutered / spayed", isOn: $isNeutered)
+                    .onChange(of: isNeutered) { _, newValue in viewModel.pet.isNeutered = newValue }
 
-                TextField("Microchip number", text: Binding(
-                    get: { viewModel.pet.microchipNumber ?? "" },
-                    set: { viewModel.pet.microchipNumber = $0.isEmpty ? nil : $0 }
-                ))
-                .textFieldStyle(.roundedBorder)
+                TextField("Microchip number", text: $microchipText)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: microchipText) { _, newValue in
+                        viewModel.pet.microchipNumber = newValue.isEmpty ? nil : newValue
+                    }
 
-                TextField("Allergies", text: Binding(
-                    get: { viewModel.pet.allergies ?? "" },
-                    set: { viewModel.pet.allergies = $0.isEmpty ? nil : $0 }
-                ))
-                .textFieldStyle(.roundedBorder)
+                TextField("Allergies", text: $allergiesText)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: allergiesText) { _, newValue in
+                        viewModel.pet.allergies = newValue.isEmpty ? nil : newValue
+                    }
 
-                TextField("Chronic conditions", text: Binding(
-                    get: { viewModel.pet.chronicConditions ?? "" },
-                    set: { viewModel.pet.chronicConditions = $0.isEmpty ? nil : $0 }
-                ))
-                .textFieldStyle(.roundedBorder)
+                TextField("Chronic conditions", text: $chronicConditionsText)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: chronicConditionsText) { _, newValue in
+                        viewModel.pet.chronicConditions = newValue.isEmpty ? nil : newValue
+                    }
 
                 Button(viewModel.isSaving ? "Saving…" : "Save changes") {
                     Task { await viewModel.save() }
@@ -362,6 +371,8 @@ struct PetDetailView: View {
                     if let latest = viewModel.weightHistory.last {
                         Text("Latest: \(latest.weightKg, specifier: "%.1f") kg on \(latest.recordedAt.formatted(date: .abbreviated, time: .omitted))")
                             .font(.brandCaption).foregroundStyle(Theme.textSecondary)
+                            .contentTransition(.numericText())
+                            .animation(.default, value: latest.weightKg)
                         // B3: vitals beyond weight — shown only when present.
                         if latest.temperatureCelsius != nil || latest.heartRateBpm != nil {
                             HStack(spacing: 12) {

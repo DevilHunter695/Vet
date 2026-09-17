@@ -53,7 +53,7 @@ struct HelpCenterView: View {
                 }
                 .accessibilityHint("Available 9 AM to 9 PM IST")
                 Text("Available 9 AM – 9 PM IST. Outside these hours, use chat or email below.")
-                    .font(.caption2).foregroundStyle(Theme.textTertiary)
+                    .font(.brandCaption).foregroundStyle(Theme.textTertiary)
                 NavigationLink("Contact support") {
                     ContactSupportView()
                 }
@@ -74,7 +74,13 @@ struct HelpCenterView: View {
                 }
             }
             if viewModel.grouped.isEmpty && viewModel.errorMessage == nil {
-                Text("No matching articles.").foregroundStyle(Theme.textSecondary)
+                if viewModel.searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    ContentUnavailableView("No articles yet", systemImage: "questionmark.circle", description: Text("Help articles will show up here once they're published."))
+                        .listRowBackground(Color.clear)
+                } else {
+                    ContentUnavailableView.search(text: viewModel.searchText)
+                        .listRowBackground(Color.clear)
+                }
             }
         }
         .searchable(text: $viewModel.searchText, prompt: "Search help articles")
@@ -82,6 +88,7 @@ struct HelpCenterView: View {
         // its own opaque system background would read as a different app.
         .scrollContentBackground(.hidden)
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Help centre")
         .task { await viewModel.load() }
         .alert("Support is closed right now", isPresented: $showingOutsideHoursAlert) {

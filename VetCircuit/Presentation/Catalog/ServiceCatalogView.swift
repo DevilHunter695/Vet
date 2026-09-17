@@ -135,9 +135,10 @@ private struct ServiceRow: View {
                         Text(CurrencyFormatter.rupees(price))
                             .font(.brandMono(.callout, weight: .bold))
                             .foregroundStyle(Theme.primary)
+                            .contentTransition(.numericText())
                     }
                     Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(Theme.textTertiary)
                 }
             }

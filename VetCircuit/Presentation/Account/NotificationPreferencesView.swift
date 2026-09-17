@@ -70,6 +70,7 @@ struct NotificationPreferencesView: View {
         // its own opaque system background would read as a different app.
         .scrollContentBackground(.hidden)
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Notifications")
         .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
     }

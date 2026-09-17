@@ -91,6 +91,7 @@ final class LiveTrackingViewModel {
 /// string covers the rest of the flow, this map is additive reassurance.
 struct LiveTrackingView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var viewModel: LiveTrackingViewModel
     @State private var showingSOSConfirmation = false
     /// The SOS share sheet's payload, held directly rather than rebuilt in a
@@ -131,9 +132,11 @@ struct LiveTrackingView: View {
                             Circle().fill(Theme.inProgress.opacity(0.18))
                             Image(systemName: "figure.walk.motion")
                                 .foregroundStyle(Theme.inProgress)
+                                .symbolEffect(.pulse, options: reduceMotion ? .nonRepeating : .repeating, value: viewModel.location != nil)
                         }
                         .frame(width: 44, height: 44)
                         .allowsHitTesting(false)
+                        .accessibilityHidden(true)
 
                         VStack(alignment: .leading, spacing: 2) {
                             if let eta = viewModel.location?.etaMinutes {
@@ -141,19 +144,19 @@ struct LiveTrackingView: View {
                                     .font(.brandHeadline)
                                     .contentTransition(.numericText())
                                 Text("Updated \(lastUpdatedText)")
-                                    .font(.brandCaption2)
+                                    .font(.brandCaption)
                                     .foregroundStyle(Theme.textSecondary)
                             } else {
                                 Text("Waiting for your vet's location…")
                                     .font(.brandCallout)
                                 Text("The map updates as soon as they start moving.")
-                                    .font(.brandCaption2)
+                                    .font(.brandCaption)
                                     .foregroundStyle(Theme.textSecondary)
                             }
                         }
                         Spacer(minLength: 0)
                     }
-                    .animation(Theme.springQuick, value: viewModel.location?.etaMinutes)
+                    .animation(reduceMotion ? nil : Theme.springQuick, value: viewModel.location?.etaMinutes)
 
                     CalloutNote(
                         text: "Have your pet somewhere calm and easy to reach, and keep your phone handy — the vet will ask for your start-of-visit code on arrival.",

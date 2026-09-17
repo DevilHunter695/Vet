@@ -342,7 +342,14 @@ struct BookingView: View {
     }
 
     private var flowPlan: BookingFlowPlan {
-        BookingFlowPlan(hasMultiplePets: viewModel.pets.count > 1)
+        // Not just "more than one pet": an account with *no* pets yet still
+        // needs the pet step, because that's the only place the "add a pet"
+        // notice is shown. Gating this on `> 1` alone skipped straight from
+        // .slot to .confirm for a petless account, and `canAdvance` on
+        // .confirm requires a selected pet — so the customer was stuck on a
+        // disabled "Confirm" button with a hint to "go back", with nowhere to
+        // go back to that explained why.
+        BookingFlowPlan(hasMultiplePets: viewModel.pets.count != 1)
     }
 
     private func advance() {

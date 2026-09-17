@@ -180,7 +180,7 @@ struct CircuitsListView: View {
                             // booking flow, not only reachable via the
                             // emergency path itself.
                             Text("VetCircuit isn't an emergency service. For a life-threatening situation, use the emergency button above or call a clinic directly.")
-                                .font(.caption2)
+                                .font(.brandCaption)
                                 .foregroundStyle(Theme.textSecondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -332,6 +332,8 @@ struct CircuitsListView: View {
             .onChange(of: viewModel.sort) { reload() }
             .sheet(isPresented: $showingFilters) {
                 CircuitFilterSheet(filter: $viewModel.filter) { reload() }
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showingAddresses, onDismiss: {
                 Task {
@@ -362,7 +364,7 @@ struct CircuitsListView: View {
     private var searchResultsList: some View {
         let result = viewModel.searchResult
         if (result?.circuits.isEmpty ?? true) && (result?.services.isEmpty ?? true) {
-            EmptyStateView(systemImage: "magnifyingglass", title: "No matches", message: "Try a different vet name, area, or service.", actionTitle: nil) { }
+            ContentUnavailableView.search(text: viewModel.searchArea)
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
@@ -390,6 +392,7 @@ struct CircuitsListView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
+            .floatingTabBarScroll()
         }
     }
 }
@@ -422,11 +425,20 @@ private struct CircuitFilterSheet: View {
     let onApply: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var draft: CircuitFilter
+    @State private var hasDateFilter: Bool
+    @State private var hasMaxPrice: Bool
+    @State private var onOrAfterDate: Date
+    @State private var maxPrice: Int
 
     init(filter: Binding<CircuitFilter>, onApply: @escaping () -> Void) {
         self._filter = filter
         self.onApply = onApply
-        self._draft = State(initialValue: filter.wrappedValue)
+        let initial = filter.wrappedValue
+        self._draft = State(initialValue: initial)
+        self._hasDateFilter = State(initialValue: initial.onOrAfter != nil)
+        self._hasMaxPrice = State(initialValue: initial.maxPriceMinorUnits != nil)
+        self._onOrAfterDate = State(initialValue: initial.onOrAfter ?? .now)
+        self._maxPrice = State(initialValue: initial.maxPriceMinorUnits ?? 100_000)
     }
 
     var body: some View {
@@ -441,15 +453,15 @@ private struct CircuitFilterSheet: View {
                     }
                 }
                 Section("Date & time") {
-                    Toggle("From a specific date", isOn: Binding(
-                        get: { draft.onOrAfter != nil },
-                        set: { draft.onOrAfter = $0 ? .now : nil }
-                    ))
-                    if draft.onOrAfter != nil {
-                        DatePicker("On or after", selection: Binding(
-                            get: { draft.onOrAfter ?? .now },
-                            set: { draft.onOrAfter = $0 }
-                        ), displayedComponents: .date)
+                    Toggle("From a specific date", isOn: $hasDateFilter)
+                        .onChange(of: hasDateFilter) { _, isOn in
+                            draft.onOrAfter = isOn ? onOrAfterDate : nil
+                        }
+                    if hasDateFilter {
+                        DatePicker("On or after", selection: $onOrAfterDate, displayedComponents: .date)
+                            .onChange(of: onOrAfterDate) { _, newValue in
+                                draft.onOrAfter = newValue
+                            }
                     }
                     Picker("Time of day", selection: $draft.timeOfDay) {
                         Text("Any").tag(CircuitFilter.TimeOfDay?.none)
@@ -459,15 +471,15 @@ private struct CircuitFilterSheet: View {
                     }
                 }
                 Section("Price & rating") {
-                    Toggle("Max price", isOn: Binding(
-                        get: { draft.maxPriceMinorUnits != nil },
-                        set: { draft.maxPriceMinorUnits = $0 ? 100_000 : nil }
-                    ))
-                    if let maxPrice = draft.maxPriceMinorUnits {
-                        Stepper(CurrencyFormatter.rupees(maxPrice), value: Binding(
-                            get: { maxPrice },
-                            set: { draft.maxPriceMinorUnits = $0 }
-                        ), in: 0...500_000, step: 10_000)
+                    Toggle("Max price", isOn: $hasMaxPrice)
+                        .onChange(of: hasMaxPrice) { _, isOn in
+                            draft.maxPriceMinorUnits = isOn ? maxPrice : nil
+                        }
+                    if hasMaxPrice {
+                        Stepper(CurrencyFormatter.rupees(maxPrice), value: $maxPrice, in: 0...500_000, step: 10_000)
+                            .onChange(of: maxPrice) { _, newValue in
+                                draft.maxPriceMinorUnits = newValue
+                            }
                     }
                     Picker("Minimum rating", selection: $draft.minRating) {
                         Text("Any").tag(Double?.none)
@@ -501,7 +513,13 @@ private struct CircuitFilterSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Clear") { draft = CircuitFilter() }
+                    Button("Clear") {
+                        draft = CircuitFilter()
+                        hasDateFilter = false
+                        hasMaxPrice = false
+                        onOrAfterDate = .now
+                        maxPrice = 100_000
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Apply") {
@@ -647,20 +665,15 @@ struct CircuitRow: View {
                         }
                     }
 
-                    HStack(spacing: 6) {
-                        Image(systemName: "mappin.and.ellipse")
-                            .font(.caption2)
-                            .foregroundStyle(Theme.textSecondary)
-                        Text(circuit.clusterArea)
-                            .font(.brandCaption)
-                            .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(1)
-                    }
+                    Label(circuit.clusterArea, systemImage: "mappin.and.ellipse")
+                        .font(.brandCaption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
 
                     if let vet = circuit.vet {
                         HStack(spacing: 5) {
                             Image(systemName: "star.fill")
-                                .font(.caption2)
+                                .font(.caption)
                                 .foregroundStyle(Theme.goldTier)
                             Text(String(format: "%.1f", vet.rating))
                                 .font(.brandMono(.caption))

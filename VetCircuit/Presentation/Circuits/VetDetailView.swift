@@ -53,7 +53,9 @@ struct VetDetailView: View {
 
     private var nextSevenDaysSlots: [ScheduleSlot] {
         let cutoff = Calendar.current.date(byAdding: .day, value: 7, to: .now) ?? .now
-        return upcomingSlots.filter { $0.isAvailable && $0.startTime <= cutoff }.sorted { $0.startTime < $1.startTime }
+        return upcomingSlots
+            .filter { $0.isAvailable && $0.remainingCapacity > 0 && $0.startTime <= cutoff }
+            .sorted { $0.startTime < $1.startTime }
     }
 
     var body: some View {
