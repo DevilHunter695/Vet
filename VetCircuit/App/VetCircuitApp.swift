@@ -214,7 +214,11 @@ struct MainTabView: View {
             .toolbar(.hidden, for: .tabBar)
             // Each tab root reports its scroll offset through this key (see
             // `tracksScrollOffset`), which is what drives the collapse.
-            .onPreferenceChange(ScrollOffsetKey.self) { offset in
+            // `chrome` is captured explicitly: `onPreferenceChange`'s action
+            // is `@Sendable`, and reading `self.chrome` inside it would drag
+            // the whole View into the closure. The capture list keeps it to
+            // the one main-actor-isolated object, which is Sendable.
+            .onPreferenceChange(ScrollOffsetKey.self) { [chrome] offset in
                 Task { @MainActor in
                     chrome.scrollOffsetChanged(offset)
                     chrome.resetIfAtTop(offset)
