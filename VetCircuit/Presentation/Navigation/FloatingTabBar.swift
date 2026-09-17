@@ -90,6 +90,39 @@ struct FloatingTabBar: View {
     @Namespace private var pill
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    // MARK: Motion
+    //
+    // Apple Music's tab bar does not move like a menu appearing; it moves
+    // like an object being pushed. The pill overshoots its target slightly
+    // and settles back, which is what reads as weight. Apple's own guidance
+    // is that overshoot belongs to momentum-carrying gestures and not to
+    // taps — the exception it makes for itself, and the reason this one
+    // earns it, is that the pill is *travelling across a distance* rather
+    // than appearing in place, and motion across a distance without any
+    // follow-through reads as a jump-cut.
+    //
+    // Springs are used rather than durations because they retarget from the
+    // current on-screen value: tapping a third tab mid-flight redirects the
+    // pill from wherever it actually is, instead of restarting it.
+
+    /// The pill's travel. Bouncier and a touch slower than the old motion,
+    /// which was nearly critically damped and so read as a slide rather than
+    /// a throw.
+    private var selectionSpring: Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.2)
+            : .spring(response: 0.42, dampingFraction: 0.72)
+    }
+
+    /// Collapse/expand. Kept tighter than the pill: this one changes the
+    /// bar's *size*, and a bouncing container is distracting in a way that a
+    /// bouncing highlight inside it is not.
+    private var collapseSpring: Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.2)
+            : .spring(response: 0.38, dampingFraction: 0.82)
+    }
+
     private var selectedItem: TabItem? { items.first { $0.id == selection } }
 
     var body: some View {
@@ -114,8 +147,8 @@ struct FloatingTabBar: View {
         // capsule its background draws — otherwise the selection pill's
         // corners poke through the rim.
         .clipShape(Capsule(style: .continuous))
-        .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.38, dampingFraction: 0.82), value: chrome.isCollapsed)
-        .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.34, dampingFraction: 0.8), value: selection)
+        .animation(collapseSpring, value: chrome.isCollapsed)
+        .animation(selectionSpring, value: selection)
         .padding(.bottom, 6)
     }
 
@@ -130,18 +163,36 @@ struct FloatingTabBar: View {
                 Image(systemName: isSelected ? item.selectedIcon : item.icon)
                     .font(.system(size: 16, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
-                    // `contentTransition` cross-fades the glyph instead of
-                    // popping it, so switching tabs morphs rather than blinks.
+                    // `contentTransition` morphs the outline glyph into the
+                    // filled one instead of blinking between them.
                     .contentTransition(.symbolEffect(.replace))
+                    // …and the glyph gives a little kick as it lands. This is
+                    // the part that most reads as Apple Music: the symbol
+                    // itself acknowledges the tap, so the feedback comes from
+                    // the thing you pressed rather than only from the
+                    // highlight sliding over to it.
+                    .symbolEffect(.bounce, options: .speed(1.5), value: isSelected)
+                    // A small size pop on top of the bounce. Together they
+                    // make the selected icon the brightest, nearest thing in
+                    // the bar, which is what stops three similar glyphs
+                    // reading as one undifferentiated row.
+                    .scaleEffect(isSelected ? 1.08 : 1)
 
                 if isSelected {
                     Text(item.title)
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .tracking(-0.1)
                         .fixedSize()
+                        // The label unfurls from the icon rather than fading
+                        // in over it: it scales out horizontally from its
+                        // leading edge, anchored where the icon sits, so the
+                        // bar reads as widening to make room for a word
+                        // instead of a word materialising in a gap.
                         .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .offset(x: -6)),
-                            removal: .opacity
+                            insertion: .scale(scale: 0.4, anchor: .leading)
+                                .combined(with: .opacity),
+                            removal: .scale(scale: 0.6, anchor: .leading)
+                                .combined(with: .opacity)
                         ))
                 }
             }
