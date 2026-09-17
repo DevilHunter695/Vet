@@ -6,21 +6,13 @@
 // service role key (which bypasses RLS, since this is a trusted server context).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { mapGatewayStatus, verifySignature, walletDebitMinorUnits } from "./logic.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const webhookSecret = Deno.env.get("PAYMENT_GATEWAY_WEBHOOK_SECRET")!;
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
-
-function verifySignature(rawBody: string, signatureHeader: string | null): boolean {
-  if (!signatureHeader) return false;
-  const expected = createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
-  const expectedBuf = Buffer.from(expected, "utf8");
-  const givenBuf = Buffer.from(signatureHeader, "utf8");
-  return expectedBuf.length === givenBuf.length && timingSafeEqual(expectedBuf, givenBuf);
-}
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
@@ -30,7 +22,7 @@ Deno.serve(async (req) => {
   const rawBody = await req.text();
   const signature = req.headers.get("x-gateway-signature");
 
-  if (!verifySignature(rawBody, signature)) {
+  if (!verifySignature(rawBody, signature, webhookSecret)) {
     return new Response("Invalid signature", { status: 401 });
   }
 
@@ -42,10 +34,7 @@ Deno.serve(async (req) => {
     return new Response("Missing payment reference", { status: 400 });
   }
 
-  const mappedStatus =
-    status === "captured" ? "succeeded" :
-    status === "refunded" ? "refunded" :
-    "failed";
+  const mappedStatus = mapGatewayStatus(status);
 
   const { data: updatedPayments, error } = await supabase
     .from("payments")
@@ -96,17 +85,15 @@ Deno.serve(async (req) => {
         .eq("id", payment.quote_id)
         .limit(1);
       const quote = quoteRows?.[0];
-      const walletLine = (quote?.breakdown?.lineItems ?? []).find(
-        (item: { label?: string; amountMinorUnits?: number }) => item.label === "Wallet credit",
-      );
-      if (quote?.cart_id && walletLine?.amountMinorUnits < 0) {
+      const debit = walletDebitMinorUnits(quote?.breakdown?.lineItems);
+      if (quote?.cart_id && debit !== null) {
         const { data: cartRows } = await supabase
           .from("carts").select("user_id").eq("id", quote.cart_id).limit(1);
         const userId = cartRows?.[0]?.user_id;
         if (userId) {
           const { error: ledgerError } = await supabase.from("wallet_ledger").insert({
             user_id: userId,
-            amount_minor_units: walletLine.amountMinorUnits, // already negative = debit
+            amount_minor_units: debit, // always negative — see walletDebitMinorUnits
             reason: "visit_checkout_wallet_applied",
             related_visit_id: payment.visit_id,
           });

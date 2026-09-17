@@ -73,6 +73,12 @@ jobs:
         working-directory: backend/supabase/functions
         run: deno lint
 
+      # The payment webhook is the only place a payment is ever marked
+      # succeeded, so its decisions get executed, not just compiled.
+      - name: Test the edge functions
+        working-directory: backend/supabase/functions
+        run: deno test --allow-all
+
       - name: Type-check every edge function
         working-directory: backend/supabase/functions
         run: |

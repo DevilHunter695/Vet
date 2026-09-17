@@ -104,7 +104,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | ID | Feature | Status | Evidence |
 |---|---|---|---|
 | G1 | Hosted checkout, no raw card data | ⚪ | Architecturally correct — the app only ever holds a URL. Unverifiable without a gateway, and `SupabasePaymentRepository` now refuses rather than handing back a fake one |
-| G2 | Webhook-only confirmation | 🟠 | The handler **does** exist — `backend/supabase/functions/payment-webhook`, which I had reported as absent. CI now type-checks it along with the other ten edge functions. Whether it behaves correctly against a real gateway callback is still unverified |
+| G2 | Webhook-only confirmation | 🟡 | `payment-webhook/logic_test.ts` — 12 tests executing the handler's actual decisions: signature verification (wrong secret, tampered body, missing and truncated headers, empty secret), status mapping (anything unrecognised fails rather than succeeds), and the wallet debit (a positive amount can never become a credit). The Postgres writes and the real gateway callback are still unexercised |
 | G3 | Payment retry | 🟡 | `PaymentRetryPolicy` + `RetryPaymentUseCase` suites |
 | G4 | Refunds | 🟡 | `G4 refunds` suite — issuance, per-visit scoping, and that an ops-initiated refund stays attributable while a policy-driven one does not |
 | G5 | GST invoice PDF | 🟡 | `G5 GST invoice` suite covers itemisation and inclusive totals; `InvoicePDFRenderer` renders and the screen previews it via PDFKit |
@@ -201,12 +201,12 @@ no touch region under what was painted. `exists` was true for all of them.
 | Status | Count |
 |---|---|
 | 🟢 Driven through the running app | 34 |
-| 🟡 Domain logic unit-tested, screen reachable | 60 |
+| 🟡 Domain logic unit-tested, screen reachable | 61 |
 | 🟠 Built, nothing tests it | 1 |
-| ⚪ Mock-bound, unverifiable without a real backend | 3 |
+| ⚪ Mock-bound, unverifiable without a real backend | 2 |
 | — Excluded at your request | 1 |
 
-**94 of 99 have real evidence behind them. 1 has none. 3 cannot be tested in
+**95 of 99 have real evidence behind them. 1 has none. 2 cannot be tested in
 this environment at any level, and saying otherwise would be a lie.**
 
 A10 and N5 moved up from 🟠 by separating the decision from the system call.
@@ -220,9 +220,11 @@ XCUITest cannot introspect, and unlike the other two there is no decision
 wrapped around it to test — the data it renders is already covered by A8's
 suite. It needs a person looking at a screen.
 
-The ⚪ three: G1 hosted checkout, G2 webhook-only confirmation, I3 Live Activity.
-All three need something this environment cannot provide — a payment gateway, a
-server receiving webhooks, and ActivityKit on a real device.
+The ⚪ two: G1 hosted checkout and I3 Live Activity — a payment gateway and
+ActivityKit on a real device. G2 left this list once its handler's decisions
+were executed rather than merely compiled; what remains unexercised there is
+the Postgres writes and a real gateway callback, not the logic that decides
+whether to trust one.
 
 One more correction while I am counting honestly: O8 was listed as untested
 because I grepped for the tag "O8" and found none in the test target. It had a
