@@ -196,11 +196,14 @@ enum Theme {
     /// nothing that has to be read.
     static let auroraGradient = LinearGradient(
         stops: [
-            .init(color: Color(hue: 0.585, saturation: 0.70, brightness: 0.20), location: 0.0),
-            .init(color: Color(hue: 0.575, saturation: 0.62, brightness: 0.13), location: 0.14),
-            .init(color: abyssSoft, location: 0.34),
-            .init(color: abyss, location: 0.62),
-            .init(color: abyss, location: 1.0)
+            .init(color: Color(hue: 0.585, saturation: 0.72, brightness: 0.22), location: 0.0),
+            .init(color: Color(hue: 0.575, saturation: 0.64, brightness: 0.15), location: 0.18),
+            .init(color: abyssSoft, location: 0.48),
+            // Never reaches pure black. A card made of blur has nothing to
+            // refract over flat #000 — it just resolves to grey. The floor
+            // keeps a little blue in it so the glass has light to bend.
+            .init(color: Color(hue: 0.60, saturation: 0.45, brightness: 0.085), location: 0.78),
+            .init(color: Color(hue: 0.61, saturation: 0.40, brightness: 0.065), location: 1.0)
         ],
         startPoint: .top, endPoint: .bottom
     )
@@ -303,11 +306,18 @@ struct AuroraBackground: View {
     // them. They are there to stop the ground looking like flat black paint,
     // not to be seen in their own right.
     private var blueOpacity: Double {
-        (isDark ? 0.22 : 0.20) * intensity
+        (isDark ? 0.34 : 0.20) * intensity
     }
 
     private var greenOpacity: Double {
-        (isDark ? 0.18 : 0.16) * intensity
+        (isDark ? 0.28 : 0.16) * intensity
+    }
+
+    /// A third light, low and off-centre. Two lights at the top corners leave
+    /// the bottom two-thirds of every screen in flat dark — which is exactly
+    /// where most cards sit, and exactly why they read as grey rectangles.
+    private var deepOpacity: Double {
+        (isDark ? 0.24 : 0.10) * intensity
     }
 
     var body: some View {
@@ -331,18 +341,25 @@ struct AuroraBackground: View {
                     .fill(Theme.emerald.opacity(greenOpacity))
                     .frame(width: blob * 0.9, height: blob * 0.9)
                     .blur(radius: blob * 0.26)
-                    .offset(x: w * 0.36, y: drift ? h * 0.30 : h * 0.40)
+                    .offset(x: w * 0.36, y: drift ? h * 0.16 : h * 0.26)
 
-                // In dark mode the bottom has to actually reach black, or the
-                // green light bleeds all the way down and the screen reads as
-                // uniformly murky instead of having a floor.
+                Circle()
+                    .fill(Theme.primary.opacity(deepOpacity))
+                    .frame(width: blob * 0.85, height: blob * 0.85)
+                    .blur(radius: blob * 0.30)
+                    .offset(x: drift ? -w * 0.18 : -w * 0.30, y: h * 0.62)
+
+                // The floor. It used to reach opaque black by 60% of the
+                // height, which flattened every card below the fold — glass
+                // over #000 is just grey. It now only damps the lights so
+                // text keeps its contrast, and stops well short of opaque.
                 if isDark {
                     LinearGradient(
                         stops: [
                             .init(color: .clear, location: 0.0),
-                            .init(color: Theme.abyss.opacity(0.70), location: 0.32),
-                            .init(color: Theme.abyss.opacity(0.94), location: 0.6),
-                            .init(color: Theme.abyss, location: 1.0)
+                            .init(color: Theme.abyss.opacity(0.22), location: 0.38),
+                            .init(color: Theme.abyss.opacity(0.42), location: 0.72),
+                            .init(color: Theme.abyss.opacity(0.52), location: 1.0)
                         ],
                         startPoint: .top, endPoint: .bottom
                     )

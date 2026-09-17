@@ -595,54 +595,105 @@ extension URL: @retroactive Identifiable {
 /// The identity card at the top of the tab: photo (or the paw mascot), name,
 /// phone, and the loyalty tier, over a brand-tinted glass surface. This is the
 /// first thing on the screen, so it carries the aurora rather than a grey row.
+/// The header, deliberately not shaped like the cards below it.
+///
+/// Every element on this screen used to be the same width, the same corner
+/// radius and roughly the same height, which is what made the screen read as
+/// one grey texture no matter how good the material was. The fix is not more
+/// glass — it is rhythm: one tall, bright, full-bleed element at the top that
+/// nothing below it imitates.
 private struct ProfileHeroCard: View {
     let user: User
     let tier: LoyaltyAccount.Tier?
     let tierColor: Color
 
-    var body: some View {
-        HStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(Theme.gradient)
-                    .frame(width: 68, height: 68)
-                    .shadow(color: Theme.primary.opacity(0.4), radius: 12, y: 6)
-                if let photoURL = user.photoURL {
-                    AsyncImage(url: photoURL) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        PawMascot(size: 68, animated: false)
-                    }
-                    .frame(width: 68, height: 68)
-                    .clipShape(Circle())
-                } else {
-                    Text(initials)
-                        .font(.system(size: 26, design: .rounded).weight(.bold))
-                        .foregroundStyle(.white)
-                }
-            }
-            .allowsHitTesting(false)
+    private let avatarSize: CGFloat = 92
 
-            VStack(alignment: .leading, spacing: 5) {
+    var body: some View {
+        VStack(spacing: 14) {
+            avatar
+                .allowsHitTesting(false)
+
+            VStack(spacing: 6) {
                 Text(user.name)
-                    .font(.brandTitle)
+                    .font(.system(.title, design: .rounded, weight: .bold))
                     .brandDisplayText()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+
                 if let phone = user.phone {
                     Text(phone)
-                        .font(.brandCaption)
+                        .font(.brandCallout)
                         .foregroundStyle(Theme.textSecondary)
                 }
+
                 if let tier {
                     TagChip(text: "\(tier.rawValue.capitalized) member", systemImage: "star.fill", tint: tierColor)
+                        .padding(.top, 2)
                 }
             }
-            Spacer(minLength: 0)
         }
-        .padding(18)
-        .featuredGlassCard()
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .padding(.horizontal, 20)
+        .background {
+            // The light lives *behind* the header rather than being a tint on
+            // it, so the glass above still reads as glass instead of as a
+            // coloured panel.
+            ZStack {
+                Circle()
+                    .fill(Theme.primary.opacity(0.38))
+                    .frame(width: 260, height: 260)
+                    .blur(radius: 90)
+                    .offset(x: -70, y: -60)
+                Circle()
+                    .fill((tier.map { _ in tierColor } ?? Theme.emerald).opacity(0.30))
+                    .frame(width: 220, height: 220)
+                    .blur(radius: 85)
+                    .offset(x: 80, y: 60)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+            .allowsHitTesting(false)
+        }
+        .featuredGlassCard(cornerRadius: 30)
         .accessibilityElement(children: .combine)
+    }
+
+    private var avatar: some View {
+        ZStack {
+            Circle()
+                .fill(Theme.gradient)
+                .frame(width: avatarSize, height: avatarSize)
+                .shadow(color: Theme.primary.opacity(0.45), radius: 20, y: 8)
+
+            if let photoURL = user.photoURL {
+                AsyncImage(url: photoURL) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    PawMascot(size: avatarSize, animated: false)
+                }
+                .frame(width: avatarSize, height: avatarSize)
+                .clipShape(Circle())
+            } else {
+                Text(initials)
+                    .font(.system(size: 34, design: .rounded).weight(.bold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .overlay {
+            // The rim light that sells the avatar as a lit object rather than
+            // a flat swatch, matched to the glass edge above it.
+            Circle()
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [.white.opacity(0.55), .white.opacity(0.05)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.5
+                )
+                .frame(width: avatarSize, height: avatarSize)
+        }
     }
 
     private var initials: String {

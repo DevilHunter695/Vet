@@ -146,13 +146,33 @@ struct ContrastTests {
         // The first stop of `auroraGradient` — the brightest point of the
         // background, at the very top of the screen, directly behind the
         // navigation title.
-        let auroraTop = Color(hue: 0.585, saturation: 0.70, brightness: 0.20)
+        let auroraTop = Color(hue: 0.585, saturation: 0.72, brightness: 0.22)
         let measured = ratio(Theme.textPrimary, on: auroraTop)
         // One interpolated literal, not a concatenation: Swift Testing's
         // message parameter is `Comment?`, which a string *literal* converts to
         // and a `String` expression does not. `"a" + "b"` is an expression.
         #expect(measured >= 4.5,
                 "White text at the top of the aurora is \(String(format: "%.2f", measured)):1 — this is the regression that made the app look washed out")
+    }
+
+    /// The opposite regression from `auroraTopIsLegible`, and the one that
+    /// made every card look like a flat grey rectangle: the aurora's floor
+    /// was pushed all the way to opaque black, and a blurred material over
+    /// pure black has no light to refract, so it resolves to plain grey. The
+    /// floor has to stay dark enough for white text and bright enough to be
+    /// glass — this pins both ends of that window.
+    @Test("the aurora floor keeps enough light in it for glass to refract")
+    func auroraFloorIsNotPureBlack() {
+        // The last stop of `auroraGradient`, behind the bottom of every
+        // scrolling screen — which is where most cards actually sit.
+        let auroraFloor = Color(hue: 0.61, saturation: 0.40, brightness: 0.065)
+        let luminance = relativeLuminance(auroraFloor, dark: true)
+        #expect(luminance > 0.002,
+                "The aurora floor has luminance \(String(format: "%.4f", luminance)) — it is effectively black again, and glass over it will read as a grey rectangle")
+
+        let measured = ratio(Theme.textPrimary, on: auroraFloor)
+        #expect(measured >= 4.5,
+                "White text on the aurora floor is \(String(format: "%.2f", measured)):1 — the floor was brightened past what body text can sit on")
     }
 
     @Test("the ground really is near-black, not a mid-tone wash")

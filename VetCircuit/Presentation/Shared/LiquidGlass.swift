@@ -46,9 +46,9 @@ enum GlassLevel {
     /// How bright the refracted edge is at its strongest point.
     var edgeOpacity: Double {
         switch self {
-        case .chrome: return 0.38
-        case .surface: return 0.24
-        case .featured: return 0.30
+        case .chrome: return 0.46
+        case .surface: return 0.34
+        case .featured: return 0.42
         }
     }
 
@@ -101,6 +101,10 @@ struct LiquidGlassModifier<S: InsettableShape>: ViewModifier {
 
     private var isDark: Bool { colorScheme == .dark }
 
+    private var faceOpacity: Double {
+        isDark ? level.fillOpacity : level.fillOpacity * 0.5
+    }
+
     func body(content: Content) -> some View {
         content
             .background {
@@ -112,7 +116,22 @@ struct LiquidGlassModifier<S: InsettableShape>: ViewModifier {
                         shape.fill(isDark ? Color(white: 0.11) : Color(white: 0.97))
                     } else {
                         shape.fill(.ultraThinMaterial)
-                        shape.fill(Color.white.opacity(isDark ? level.fillOpacity : level.fillOpacity * 0.5))
+                        // The face is a gradient, not a flat wash. A single
+                        // opacity across the whole card is what makes blur
+                        // read as "grey rectangle": real glass is brightest
+                        // where the light enters it and nearly clear at the
+                        // far side, and that vertical falloff is most of
+                        // what the eye uses to decide something is glass.
+                        shape.fill(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .white.opacity(faceOpacity * 2.1), location: 0.0),
+                                    .init(color: .white.opacity(faceOpacity * 0.9), location: 0.42),
+                                    .init(color: .white.opacity(faceOpacity * 0.45), location: 1.0)
+                                ],
+                                startPoint: .top, endPoint: .bottom
+                            )
+                        )
                         if let tint {
                             shape.fill(
                                 LinearGradient(
@@ -124,6 +143,26 @@ struct LiquidGlassModifier<S: InsettableShape>: ViewModifier {
                     }
                 }
                 .allowsHitTesting(false)
+            }
+            .overlay {
+                // Specular highlight: a hairline that only exists along the
+                // top of the shape. The full-perimeter stroke below gives the
+                // rim; this is the bright catch where the light source is,
+                // and it is the difference between an outlined box and
+                // something that looks lit.
+                shape
+                    .strokeBorder(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .white.opacity(reduceTransparency ? 0 : (isDark ? 0.55 : 0.75)), location: 0.0),
+                                .init(color: .white.opacity(0.0), location: 0.28)
+                            ],
+                            startPoint: .top, endPoint: .bottom
+                        ),
+                        lineWidth: strokeWidth
+                    )
+                    .blendMode(.plusLighter)
+                    .allowsHitTesting(false)
             }
             .overlay {
                 shape
