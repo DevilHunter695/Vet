@@ -149,7 +149,7 @@ struct ProfileView: View {
                         NextVisitCard(visit: visit) {
                             // Hands off to the Visits tab, which owns the
                             // visit-detail destination.
-                            router.selectedTab = 1
+                            router.selectedTab = .visits
                         }
                         .appearAnimation(delay: 0.08)
                     }

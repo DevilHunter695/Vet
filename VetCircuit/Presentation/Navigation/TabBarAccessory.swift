@@ -28,7 +28,30 @@ struct TabBarAccessoryModel: Equatable {
     }
 }
 
-/// The accessory's full-width form, sitting above the tabs.
+/// The accessory, in whichever form the system is currently giving it room
+/// for.
+///
+/// `tabViewBottomAccessoryPlacement` is `.expanded` while the tab bar is at
+/// full size and `.inline` once it has minimized and the accessory has moved
+/// in beside the tabs — the MiniPlayer transition, handed to us. Reading it
+/// is what makes this an accessory rather than a strip that happens to sit
+/// near the bar.
+struct TabBarAccessory: View {
+    let model: TabBarAccessoryModel
+
+    @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+
+    var body: some View {
+        switch placement {
+        case .inline:
+            TabBarAccessoryInline(model: model)
+        default:
+            TabBarAccessoryStrip(model: model)
+        }
+    }
+}
+
+/// The accessory's full-width form, shown while the tab bar is at full size.
 struct TabBarAccessoryStrip: View {
     let model: TabBarAccessoryModel
 

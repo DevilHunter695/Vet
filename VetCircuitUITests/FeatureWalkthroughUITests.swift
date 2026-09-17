@@ -38,20 +38,22 @@ final class FeatureWalkthroughUITests: XCTestCase {
     /// The bar also collapses to a single button while scrolling, so a tab
     /// that is not currently drawn has to be brought back first: tapping the
     /// collapsed button expands it.
+    /// The tab bar is the system's again, so `app.tabBars` works.
+    ///
+    /// These helpers used to hunt for a custom container by identifier and,
+    /// when the bar had collapsed to a single circle, tap a button labelled
+    /// "show all tabs" to get the tabs back. None of that exists now: the
+    /// system bar minimizes rather than collapsing, and its tabs stay present
+    /// and hittable throughout, which is the behaviour Apple's own guidance
+    /// asks for and the custom bar could not manage.
     @MainActor
     private func tabButton(_ title: String, in app: XCUIApplication) -> XCUIElement {
-        let direct = app.buttons[title]
-        if direct.waitForExistence(timeout: 3), direct.isHittable { return direct }
-        // Collapsed: the bar is down to a single button, and only that button
-        // carries the "show all tabs" wording. Target it by that, not by
-        // position — taking the bar's first button instead *switches tab*,
-        // because when the bar is expanded its first button is simply the
-        // first tab. That silently navigated away mid-test.
-        let expander = app.buttons.containing(
-            NSPredicate(format: "label CONTAINS[c] 'show all tabs'")
-        ).element(boundBy: 0)
-        if expander.exists, expander.isHittable { expander.tap() }
-        return app.buttons[title]
+        let inBar = app.tabBars.buttons[title]
+        if inBar.waitForExistence(timeout: 3) { return inBar }
+        // A minimized bar still carries its tabs; scrolling up restores it at
+        // full size if a screen happens to have scrolled it away.
+        app.swipeDown()
+        return app.tabBars.buttons[title]
     }
 
     @MainActor

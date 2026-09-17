@@ -2,91 +2,50 @@ import SwiftUI
 
 // MARK: - Liquid glass
 //
-// Apple's own `glassEffect` needs iOS 26 and an Xcode 26 SDK; this project
-// targets iOS 17 and builds on Xcode 16, so the material is hand-rolled. That
-// is not purely a constraint — the system glass is deliberately conservative
-// about opacity, and the brief here is "as transparent as you can", which
-// needs control the API does not expose.
+// This was hand-rolled — `.ultraThinMaterial` under a gradient face, a
+// specular hairline and a rim stroke — because `glassEffect` needed iOS 26
+// and the project targeted 17. It now targets 26, so the imitation is gone
+// and the real material does the work.
 //
-// What actually makes glass read as glass, rather than as a blurred rectangle:
+// That deletes a lot more than the drawing code. The hand-rolled version had
+// to reason about colour scheme, composite its own reduced-transparency
+// fallback, and pick a shadow radius per surface size; the system material
+// handles every one of those itself, and handles them better, because it can
+// see what is actually behind the surface and we could only guess.
 //
-//  1. **Refraction at the edge.** Real glass bends light at its rim, so the
-//     boundary is brighter than the face. A single flat hairline border does
-//     not do this — the highlight has to be strongest where light would hit
-//     (top-leading) and fall away to nothing at the opposite edge.
-//  2. **The face is barely there.** Most of the effect is blur plus edge. A
-//     heavy fill turns glass into plastic. The fill here is 4–9% white.
-//  3. **It sits above its background.** A shadow, and a dark under-layer that
-//     keeps the blur from washing out over bright content.
-//
-// Apple's "never stack a light translucent surface on another" rule is why
-// `GlassLevel` exists: chrome floating over content uses `.chrome`, a card
-// sitting *in* content uses `.surface`, and nothing nests.
+// `GlassLevel` stays, and is now a mapping rather than a set of magic
+// numbers: it says what a surface *is* in this app's hierarchy — floating
+// chrome, a card in the content, the one featured card on a screen — and
+// turns that into the system variant that suits it. Apple's rule that a light
+// translucent surface must never stack on another is still the reason the
+// distinction exists.
 
 enum GlassLevel {
-    /// Floating chrome — tab bar, toolbar buttons, the pinned checkout bar.
-    /// The most transparent of the three: this layer is meant to let content
-    /// pass under it, and it is always the topmost surface.
+    /// Floating chrome — toolbar buttons, the pinned checkout bar. The
+    /// clearest of the three: this layer exists to let content pass beneath
+    /// it, and it is always the topmost surface.
     case chrome
-    /// A card in the content flow. Slightly more substantial, because text
-    /// sits directly on it and it has no floating chrome above it.
+    /// A card in the content flow. Text sits directly on it and nothing
+    /// floats above it, so it takes the standard material.
     case surface
     /// The one card on a screen that should read as the headline. Carries a
-    /// brand wash; still glass, not a filled panel.
+    /// brand tint; still glass, not a filled panel.
     case featured
 
-    var fillOpacity: Double {
+    /// The system material this level maps to.
+    ///
+    /// `.clear` is the variant meant for chrome over content, `.regular` the
+    /// standard surface. `interactive` is reserved for surfaces a finger
+    /// actually lands on — it makes the material respond to touch, which is
+    /// wrong for a card that is only being read.
+    func glass(tint: Color? = nil, interactive: Bool = false) -> Glass {
+        let base: Glass
         switch self {
-        case .chrome: return 0.04
-        case .surface: return 0.07
-        case .featured: return 0.09
+        case .chrome: base = .clear
+        case .surface: base = .regular
+        case .featured: base = .regular
         }
-    }
-
-    /// How bright the refracted edge is at its strongest point.
-    var edgeOpacity: Double {
-        switch self {
-        case .chrome: return 0.46
-        case .surface: return 0.34
-        case .featured: return 0.42
-        }
-    }
-
-    var shadowRadius: CGFloat {
-        switch self {
-        case .chrome: return 24
-        case .surface: return 16
-        case .featured: return 22
-        }
-    }
-
-    var shadowOpacity: Double {
-        switch self {
-        case .chrome: return 0.45
-        case .surface: return 0.35
-        case .featured: return 0.40
-        }
-    }
-}
-
-/// The edge highlight. Brightest at top-leading, gone by bottom-trailing —
-/// one light source, consistently placed, which is what stops a screenful of
-/// glass elements looking like unrelated stickers.
-private struct GlassEdge: ShapeStyle {
-    let opacity: Double
-    let isDark: Bool
-
-    func resolve(in environment: EnvironmentValues) -> some ShapeStyle {
-        LinearGradient(
-            stops: [
-                .init(color: .white.opacity(opacity), location: 0.0),
-                .init(color: .white.opacity(opacity * 0.35), location: 0.35),
-                .init(color: .white.opacity(opacity * 0.08), location: 0.7),
-                .init(color: .white.opacity(isDark ? 0.02 : 0.10), location: 1.0),
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        return base.tint(tint).interactive(interactive)
     }
 }
 
@@ -94,106 +53,18 @@ struct LiquidGlassModifier<S: InsettableShape>: ViewModifier {
     let shape: S
     let level: GlassLevel
     var tint: Color?
+    /// Retained so existing call sites keep compiling. The system draws the
+    /// material's own edge now, and it does it better than a hand-drawn
+    /// stroke could — so this no longer has anything to set.
     var strokeWidth: CGFloat = 1
-    /// True for small chips — an icon button, a control-group capsule —
-    /// as opposed to a card-sized surface. Apple's rule is that bigger
-    /// surfaces should read as *thicker* than small chips: a deeper shadow
-    /// on a card, a lighter one on a 44pt button. `GlassLevel` encodes
-    /// floating-vs-in-content hierarchy, not size, so this scales the
-    /// shadow down independently rather than adding more `GlassLevel`
-    /// cases for the same chrome tier.
+    /// True for small chips — an icon button, a control-group capsule — as
+    /// opposed to a card-sized surface. The system varies the material by
+    /// the shape it is given, so this now only decides whether the surface
+    /// should respond to touch.
     var compact: Bool = false
 
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    private var isDark: Bool { colorScheme == .dark }
-
-    private var faceOpacity: Double {
-        isDark ? level.fillOpacity : level.fillOpacity * 0.5
-    }
-
     func body(content: Content) -> some View {
-        content
-            .background {
-                ZStack {
-                    // Reduced transparency is not a suggestion: somebody who
-                    // asked for it cannot read text over a live blur. Go
-                    // nearly opaque and drop the material entirely.
-                    if reduceTransparency {
-                        shape.fill(isDark ? Color(white: 0.11) : Color(white: 0.97))
-                    } else {
-                        shape.fill(.ultraThinMaterial)
-                        // The face is a gradient, not a flat wash. A single
-                        // opacity across the whole card is what makes blur
-                        // read as "grey rectangle": real glass is brightest
-                        // where the light enters it and nearly clear at the
-                        // far side, and that vertical falloff is most of
-                        // what the eye uses to decide something is glass.
-                        shape.fill(
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .white.opacity(faceOpacity * 2.1), location: 0.0),
-                                    .init(color: .white.opacity(faceOpacity * 0.9), location: 0.42),
-                                    .init(color: .white.opacity(faceOpacity * 0.45), location: 1.0)
-                                ],
-                                startPoint: .top, endPoint: .bottom
-                            )
-                        )
-                        if let tint {
-                            shape.fill(
-                                LinearGradient(
-                                    colors: [tint.opacity(isDark ? 0.20 : 0.12), tint.opacity(0.0)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                )
-                            )
-                        }
-                    }
-                }
-                .allowsHitTesting(false)
-            }
-            .overlay {
-                // Specular highlight: a hairline that only exists along the
-                // top of the shape. The full-perimeter stroke below gives the
-                // rim; this is the bright catch where the light source is,
-                // and it is the difference between an outlined box and
-                // something that looks lit.
-                // `.plusLighter` adds straight onto whatever is beneath it,
-                // uncapped — on a dark background that reads as a bright
-                // catch-light, but the same opacity on a light background
-                // is adding white onto near-white and clips to a flat,
-                // blown-out line instead of a highlight. Light mode gets a
-                // lower opacity so the hairline stays a highlight rather
-                // than a smear.
-                shape
-                    .strokeBorder(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .white.opacity(reduceTransparency ? 0 : (isDark ? 0.55 : 0.38)), location: 0.0),
-                                .init(color: .white.opacity(0.0), location: 0.28)
-                            ],
-                            startPoint: .top, endPoint: .bottom
-                        ),
-                        lineWidth: strokeWidth
-                    )
-                    .blendMode(reduceTransparency ? .normal : .plusLighter)
-                    .allowsHitTesting(false)
-            }
-            .overlay {
-                shape
-                    .strokeBorder(
-                        reduceTransparency
-                            ? AnyShapeStyle(Color.primary.opacity(0.25))
-                            : AnyShapeStyle(GlassEdge(opacity: level.edgeOpacity, isDark: isDark)),
-                        lineWidth: strokeWidth
-                    )
-                    .allowsHitTesting(false)
-            }
-            .shadow(
-                color: .black.opacity(isDark ? level.shadowOpacity : level.shadowOpacity * 0.35),
-                radius: compact ? level.shadowRadius * 0.5 : level.shadowRadius,
-                y: (compact ? level.shadowRadius * 0.5 : level.shadowRadius) * 0.35
-            )
+        content.glassEffect(level.glass(tint: tint, interactive: compact), in: shape)
     }
 }
 
@@ -229,82 +100,36 @@ extension View {
     }
 }
 
-// MARK: - Scroll offset
+// MARK: - Floating chrome (retained as no-ops)
 //
-// The floating chrome needs to know which way the content is moving. iOS 18's
-// `onScrollGeometryChange` would do this in a line; on iOS 17 a preference key
-// reading a pinned `GeometryReader` is the portable equivalent, and it costs
-// one invisible view at the top of the scroll content.
-
-struct ScrollOffsetKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-extension View {
-    /// Put this at the very top of a `ScrollView`'s content.
-    func tracksScrollOffset(in space: String = "scroll") -> some View {
-        background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: ScrollOffsetKey.self,
-                    value: proxy.frame(in: .named(space)).minY
-                )
-            }
-        }
-    }
-}
-
-// MARK: - Living with floating chrome
+// The system tab bar reserves its own space and minimizes itself, so nothing
+// here has work left to do. The modifiers stay, doing nothing, so the ~37
+// screens that call them did not all have to be edited in the same change
+// that swapped the bar — and so that swap stays reviewable.
+//
+// `ScrollOffsetProbe` likewise: it used to report a scroll view's offset up
+// to the bar so the bar could decide whether to collapse. The bar decides
+// that for itself now.
 
 enum FloatingChrome {
-    /// How much room a scroll view must leave at the bottom so its last row
-    /// can be read and tapped rather than sitting under the tab bar.
-    ///
-    /// Content scrolls *under* the bar by design — that is the point of a
-    /// translucent floating layer — but the final item still has to come to
-    /// rest somewhere clear of it.
-    /// 56pt of tab cell + 16pt of the bar's vertical padding + 6pt bottom
-    /// float = a 78pt surface, plus clearance so the last row is not merely
-    /// uncovered but comfortably readable. The bar grew when every tab gained
-    /// a label, and this has to grow with it or the final item sits under the
-    /// glass again.
-    static let tabBarInset: CGFloat = 124
+    /// Nothing to reserve any more: the system bar participates in safe area
+    /// on its own, so content can no longer come to rest underneath it.
+    /// Kept at zero rather than deleted so the constant's callers still read.
+    static let tabBarInset: CGFloat = 0
 }
 
 extension View {
-    /// Everything a tab-root scroll view needs to cooperate with the floating
-    /// bar: a named coordinate space for the offset reader, and enough bottom
-    /// room that the last row comes to rest above the bar.
-    ///
-    /// `contentMargins` rather than `safeAreaInset`, deliberately. An inset
-    /// *reserves* the strip, which is exactly the opaque-bar behaviour the
-    /// floating bar exists to avoid — content would stop dead above it
-    /// instead of passing beneath the glass. Content margins pad the
-    /// scrollable content while leaving the scroll view itself full-bleed, so
-    /// rows still travel under the bar and only the last one is guaranteed
-    /// clear of it.
-    func floatingTabBarScroll() -> some View {
-        coordinateSpace(name: "scroll")
-            .contentMargins(.bottom, FloatingChrome.tabBarInset, for: .scrollContent)
-    }
+    /// No longer needed — the system tab bar handles its own safe area.
+    func floatingTabBarScroll() -> some View { self }
 
-    /// For the many pushed screens that are not tab roots. The bar floats over
-    /// them too — it lives above the whole `TabView` — so they need the same
-    /// bottom room, but none of them drive the collapse.
-    func floatingTabBarInset() -> some View {
-        contentMargins(.bottom, FloatingChrome.tabBarInset, for: .scrollContent)
-    }
+    /// No longer needed — the system tab bar handles its own safe area.
+    func floatingTabBarInset() -> some View { self }
+
+    /// No longer needed — the bar tracks its own scrolling.
+    func tracksScrollOffset() -> some View { self }
 }
 
-/// Put this as the first child of a tab root's scroll content. Zero height, no
-/// layout effect — it exists only to report where the content currently sits.
+/// No longer needed — the bar tracks its own scrolling.
 struct ScrollOffsetProbe: View {
-    var body: some View {
-        Color.clear
-            .frame(height: 0)
-            .tracksScrollOffset()
-    }
+    var body: some View { EmptyView() }
 }

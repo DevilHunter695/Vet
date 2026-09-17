@@ -189,65 +189,62 @@ struct RootView: View {
 struct MainTabView: View {
     @Environment(PendingDeepLinkStore.self) private var pendingDeepLink
     @Environment(Router.self) private var router
-    @State private var chrome = TabBarChrome()
+    @Environment(SessionStore.self) private var session
+    /// The one visit that is happening right now, for the tab bar's bottom
+    /// accessory. Lives here because the accessory outlives any one screen.
+    @State private var liveVisit = LiveVisitStore()
 
-    private static let tabs = [
-        // Named for their contents, not as vague umbrellas — "Book" says what
-        // happens when you tap it in a way "Home" never would.
-        TabItem(id: 0, title: "Book", icon: "calendar", selectedIcon: "calendar.badge.plus"),
-        TabItem(id: 1, title: "Visits", icon: "clock.arrow.circlepath", selectedIcon: "clock.fill"),
-        TabItem(id: 2, title: "Profile", icon: "person.circle", selectedIcon: "person.crop.circle.fill"),
-    ]
+    /// The bottom accessory: present only while a visit is genuinely live.
+    private var liveVisitAccessory: TabBarAccessoryModel? {
+        guard let visit = liveVisit.liveVisit else { return nil }
+        return TabBarAccessoryModel(
+            title: visit.status.displayText,
+            detail: visit.scheduledAt.formatted(date: .omitted, time: .shortened),
+            systemImage: "stethoscope",
+            tint: Theme.inProgress
+        ) {
+            router.handle(.visit(visit.id))
+        }
+    }
 
     var body: some View {
         @Bindable var router = router
-        ZStack(alignment: .bottom) {
-            TabView(selection: $router.selectedTab) {
-                // `.toolbar(.hidden, for: .tabBar)` has to be applied to each
-                // tab's *content*, not to the TabView. Applied to the
-                // container it does nothing, which is why the system bar was
-                // still drawing its background underneath the floating one
-                // and the bar appeared doubled.
-                CircuitsListView().tag(0).toolbar(.hidden, for: .tabBar)
-                VisitHistoryView().tag(1).toolbar(.hidden, for: .tabBar)
-                ProfileView().tag(2).toolbar(.hidden, for: .tabBar)
+        // The system tab bar, not a hand-rolled one.
+        //
+        // This used to be a custom floating bar over a hidden system bar,
+        // because the material and the minimize behaviour it needed did not
+        // exist below iOS 26. They do now, and the system's versions are
+        // better than the imitation in the ways that are hardest to fake:
+        // the bar is genuine Liquid Glass, it minimizes on scroll without
+        // any scroll-offset plumbing of ours, it handles its own safe area
+        // so content can never come to rest underneath it, and it is a real
+        // `tabBar` element again for VoiceOver and the accessibility rotor.
+        TabView(selection: $router.selectedTab) {
+            SwiftUI.Tab("Book", systemImage: "calendar", value: Router.Tab.book) {
+                CircuitsListView()
             }
-            // Each tab root reports its scroll offset through this key (see
-            // `tracksScrollOffset`), which is what drives the collapse.
-            // `chrome` is captured explicitly: `onPreferenceChange`'s action
-            // is `@Sendable`, and reading `self.chrome` inside it would drag
-            // the whole View into the closure. The capture list keeps it to
-            // the one main-actor-isolated object, which is Sendable.
-            .onPreferenceChange(ScrollOffsetKey.self) { [chrome] offset in
-                Task { @MainActor in
-                    chrome.scrollOffsetChanged(offset)
-                    chrome.resetIfAtTop(offset)
-                }
+            SwiftUI.Tab("Visits", systemImage: "clock.arrow.circlepath", value: Router.Tab.visits) {
+                VisitHistoryView()
             }
-
-            if !chrome.isHiddenForDetail {
-                FloatingTabBar(selection: $router.selectedTab, items: Self.tabs, chrome: chrome)
-                    // Leaves downward, the way it arrived — a bar that fades
-                    // in place reads as a glitch, one that drops out reads as
-                    // making room.
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            SwiftUI.Tab("Profile", systemImage: "person.crop.circle", value: Router.Tab.profile) {
+                ProfileView()
             }
         }
-        .environment(chrome)
+        // Apple's guidance describes minimizing as something you do to a bar
+        // that has an accessory to move inline with it. This app's accessory
+        // is a visit that is actually happening, below.
+        .tabBarMinimizeBehavior(.onScrollDown)
+        .tabViewBottomAccessory {
+            if let accessory = liveVisitAccessory {
+                TabBarAccessory(model: accessory)
+            }
+        }
         .onChange(of: router.selectedTab) { _, _ in
             Haptics.selection()
-            // Switching tabs is a navigation moment, so the bar should be
-            // whole when you arrive — landing on a new screen with collapsed
-            // chrome reads as broken.
-            chrome.expand()
         }
-        // `initial: true` so a `.book` deep link that arrived while the
-        // session was still bootstrapping (before MainTabView existed to
-        // subscribe) is still picked up the moment this view appears —
-        // otherwise `pending` is already set by the time this `onChange`
-        // starts observing it, no further *change* ever happens, and the
-        // link is silently dropped. `CircuitsListView`'s own consumption of
-        // `.book` is outside this file's scope; see the report for that half.
+        .task(id: session.currentUser?.id) {
+            await liveVisit.refresh(userId: session.currentUser?.id)
+        }
         .onChange(of: pendingDeepLink.pending, initial: true) { _, link in
             if case .book = link { router.selectedTab = 0 }
         }

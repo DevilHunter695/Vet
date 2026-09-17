@@ -15,13 +15,20 @@ import SwiftUI
 @MainActor
 @Observable
 final class Router {
-    enum Tab: Int {
+    /// The app's sections.
+    ///
+    /// `Hashable`, and selected by case rather than by `rawValue`: SwiftUI's
+    /// own guidance is that a `TabView`'s selection should bind to an enum,
+    /// not an integer, and passing ints around let `router.selectedTab = 1`
+    /// mean nothing at the call site. The raw values are kept because
+    /// existing deep links and tests refer to tabs positionally.
+    enum Tab: Int, Hashable, CaseIterable {
         case book = 0
         case visits = 1
         case profile = 2
     }
 
-    var selectedTab: Int = Tab.book.rawValue
+    var selectedTab: Tab = .book
     var visitsPath = NavigationPath()
     var profilePath = NavigationPath()
 
@@ -40,15 +47,15 @@ final class Router {
     func handle(_ deepLink: DeepLink) {
         switch deepLink {
         case .visit(let id):
-            selectedTab = Tab.visits.rawValue
+            selectedTab = .visits
             visitsPath = NavigationPath()
             visitsPath.append(Route.visitDetail(id))
         case .chat(let visitId):
-            selectedTab = Tab.visits.rawValue
+            selectedTab = .visits
             visitsPath = NavigationPath()
             visitsPath.append(Route.chat(visitId: visitId))
         case .household:
-            selectedTab = Tab.profile.rawValue
+            selectedTab = .profile
             profilePath = NavigationPath()
             profilePath.append(Route.household)
         case .book, .unknown:
