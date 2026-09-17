@@ -49,7 +49,12 @@ struct ServiceCatalogView: View {
                     .padding()
                 }
             } else if let errorMessage = viewModel.errorMessage {
-                EmptyStateView(systemImage: "exclamationmark.triangle", title: "Couldn't load services", message: errorMessage)
+                EmptyStateView(
+                    systemImage: "exclamationmark.triangle", title: "Couldn't load services",
+                    message: errorMessage, actionTitle: "Try again"
+                ) {
+                    Task { await viewModel.load(vertical: vertical, species: pet?.species) }
+                }
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {

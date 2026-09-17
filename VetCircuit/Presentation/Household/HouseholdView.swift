@@ -264,6 +264,15 @@ struct HouseholdView: View {
                 await viewModel.load(userId: user.id)
             }
         }
+        // The error copy on this screen tells people to pull to refresh.
+        // It did not have a refresh gesture, so that sentence was an
+        // instruction to do something impossible — worse than saying
+        // nothing, because it reads as the user failing rather than the app.
+        .refreshable {
+            if let user = session.currentUser {
+                await viewModel.load(userId: user.id)
+            }
+        }
     }
 }
 

@@ -93,7 +93,12 @@ struct InvoiceView: View {
             if let pdfDocument = viewModel.pdfDocument {
                 PDFKitView(document: pdfDocument)
             } else if let errorMessage = viewModel.errorMessage {
-                EmptyStateView(systemImage: "doc.text", title: "Invoice unavailable", message: errorMessage)
+                EmptyStateView(
+                    systemImage: "doc.text", title: "Invoice unavailable",
+                    message: errorMessage, actionTitle: "Try again"
+                ) {
+                    Task { await viewModel.load(visit: visit) }
+                }
             } else {
                 ProgressView()
             }

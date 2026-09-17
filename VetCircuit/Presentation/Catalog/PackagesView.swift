@@ -96,7 +96,15 @@ struct PackagesView: View {
                     .padding()
                 }
             } else if let errorMessage = viewModel.errorMessage, viewModel.packages.isEmpty {
-                EmptyStateView(systemImage: "exclamationmark.triangle", title: "Couldn't load packages", message: errorMessage)
+                // An error state with no way out is a dead end dressed up
+                // as an explanation. EmptyStateView has always taken an
+                // action; these three screens just never passed one.
+                EmptyStateView(
+                    systemImage: "exclamationmark.triangle", title: "Couldn't load packages",
+                    message: errorMessage, actionTitle: "Try again"
+                ) {
+                    Task { await viewModel.load(vertical: vertical, userId: session.currentUser?.id) }
+                }
             } else if viewModel.packages.isEmpty {
                 EmptyStateView(systemImage: "shippingbox", title: "No packages yet", message: "Bundled plans will show up here.")
             } else {
