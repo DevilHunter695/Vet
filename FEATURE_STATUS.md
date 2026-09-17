@@ -84,7 +84,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | E5 | Wallet/loyalty redemption | 🟡 | `LoyaltyRedemptionPolicy` + `PricingEngine coupon + wallet interplay` suites |
 | E6 | Server-signed quote gating | 🟡 | `BookingCheckoutUseCase` suite — including two tests that an expired quote books nothing |
 | E7 | Slot hold during checkout | 🟢 | Driven in the slot-picker test; `HoldSlotUseCase` suite |
-| E8 | Pay-after-visit choice | 🟡 | `PaymentRetryPolicy + pay-after-visit` + `MarkPayAfterVisitCollectedUseCase` suites |
+| E8 | Pay-after-visit choice | 🟡 | `PaymentRetryPolicy + pay-after-visit` + `MarkPayAfterVisitCollectedUseCase` suites. The one payment path that works end to end against Postgres, because it moves no money |
 | E9 | Saved payment methods | 🟢 | Screen driven; `ManageSavedPaymentMethodsUseCase (E9)` suite |
 | E11 | Tip the vet | 🟡 | `TipUseCase` suite |
 
@@ -103,7 +103,7 @@ no touch region under what was painted. `exists` was true for all of them.
 
 | ID | Feature | Status | Evidence |
 |---|---|---|---|
-| G1 | Hosted checkout, no raw card data | ⚪ | Architecturally correct — the app only ever holds a URL. **Unverifiable without a gateway** |
+| G1 | Hosted checkout, no raw card data | ⚪ | Architecturally correct — the app only ever holds a URL. Unverifiable without a gateway, and `SupabasePaymentRepository` now refuses rather than handing back a fake one |
 | G2 | Webhook-only confirmation | ⚪ | Same. The webhook handler is server-side and does not exist here |
 | G3 | Payment retry | 🟡 | `PaymentRetryPolicy` + `RetryPaymentUseCase` suites |
 | G4 | Refunds | 🟡 | `G4 refunds` suite — issuance, per-visit scoping, and that an ops-initiated refund stays attributable while a policy-driven one does not |
@@ -235,12 +235,19 @@ the four that remain have been checked by hand.
 
 1. **Everything runs on mock repositories, and the swap is now a config
    change.** Supply `SUPABASE_URL` and `SUPABASE_ANON_KEY` and 51 repositories
-   resolve to Postgres. Six still have no conformer at all —
-   `LiveTrackingRepository`, `TriageRepository`, `PaymentRepository` and three
-   deliberately device-local ones — and chat's conformer is real for messages
-   and read receipts but has no Realtime channel yet, so a thread refreshes on
-   load rather than pushing, and photo attachments refuse rather than post an
-   empty message. None of this has ever executed against a database.
+   resolve to Postgres. Five still have no conformer —
+   `LiveTrackingRepository`, `TriageRepository` and three deliberately
+   device-local ones. Two more are partial and say so on the container:
+   chat persists messages and read receipts but has no Realtime channel, so a
+   thread refreshes on load rather than pushing, and photo attachments refuse
+   rather than post an empty message; payments does status, lookup and the
+   entire pay-after-visit path, but refuses the four hosted-checkout methods,
+   because creating a gateway session needs a server-side function this
+   repository does not contain. That refusal is deliberate — the mock returns
+   a fake checkout URL and reports success, so a credentialed build left on it
+   would show a booking as paid when no money moved. The schema is proven to
+   build (61 migrations, applied in CI), but the app has never completed a
+   round trip to a live instance.
 2. **A correction.** An earlier version of this file said no PDF was rendered
    anywhere. That was wrong. B7, G5, K2, K4 and A7 all render through
    `UIGraphicsPDFRenderer` — a system framework, no service or account needed
