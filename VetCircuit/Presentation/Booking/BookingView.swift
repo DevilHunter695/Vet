@@ -322,6 +322,9 @@ struct BookingView: View {
     @Environment(SessionStore.self) private var session
     @State private var viewModel: BookingViewModel
     @State private var showingWaiver = false
+    @State private var step: BookingStep = .slot
+    /// Which way the last step change went, so the transition mirrors it.
+    @State private var isAdvancing = true
     @State private var hasAcceptedWaiver = false
     private let manageConsentUseCase = DependencyContainer.shared.manageConsentUseCase()
 
@@ -338,150 +341,242 @@ struct BookingView: View {
         Task { await viewModel.confirmBooking() }
     }
 
+    private var flowPlan: BookingFlowPlan {
+        BookingFlowPlan(hasMultiplePets: viewModel.pets.count > 1)
+    }
+
+    private func advance() {
+        if let next = flowPlan.next(after: step) {
+            Haptics.tap()
+            isAdvancing = true
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { step = next }
+        } else {
+            confirmBookingTapped()
+        }
+    }
+
+    private func goBack() {
+        guard let previous = flowPlan.previous(before: step) else { return }
+        Haptics.tap()
+        isAdvancing = false
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { step = previous }
+    }
+
+    /// Whether the current step has been answered. A Continue button that is
+    /// always enabled teaches people to tap it and read the error; one that
+    /// reflects the actual state teaches them what the screen wants.
+    private var canAdvance: Bool {
+        switch step {
+        case .slot: return viewModel.selectedSlot != nil
+        case .pet: return viewModel.selectedPet != nil
+        case .confirm: return viewModel.selectedPet != nil && viewModel.selectedSlot != nil
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if let vet = viewModel.circuit.vet {
-                    NavigationLink {
-                        // C5's "next 7 days" availability section reads
-                        // `upcomingSlots`; without this it was always empty,
-                        // since a `Vet` alone carries no schedule.
-                        VetDetailView(
-                            vet: vet,
-                            clusterArea: viewModel.circuit.clusterArea,
-                            upcomingSlots: viewModel.circuit.schedule
-                        )
-                    } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    BookingProgressBar(steps: flowPlan.steps(), current: step)
+                    Text(step.title)
+                        .font(.system(.title, design: .rounded, weight: .bold))
+                        .tracking(-0.5)
+                        .foregroundStyle(Theme.textPrimary)
+                    Text(step.subtitle)
+                        .font(.brandCallout)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.bottom, 2)
+                // The heading is the one thing that must not slide with the
+                // step content — it is the label for the transition, so
+                // animating it alongside makes the whole screen feel like it
+                // jumped rather than advanced.
+                .animation(.spring(response: 0.4, dampingFraction: 1.0), value: step)
+
+                switch step {
+                case .slot:
+                    VStack(alignment: .leading, spacing: 20) {
+                    slotPicker
+                    if let vet = viewModel.circuit.vet {
+                        NavigationLink {
+                            // C5's "next 7 days" availability section reads
+                            // `upcomingSlots`; without this it was always empty,
+                            // since a `Vet` alone carries no schedule.
+                            VetDetailView(
+                                vet: vet,
+                                clusterArea: viewModel.circuit.clusterArea,
+                                upcomingSlots: viewModel.circuit.schedule
+                            )
+                        } label: {
+                            Card {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack(spacing: 6) {
+                                        Text(vet.name).font(.title3.bold()).foregroundStyle(.primary)
+                                        // L3: a verified badge here, not just in the list row — this
+                                        // is the last screen before money changes hands.
+                                        VerifiedBadge(status: vet.verificationStatus)
+                                    }
+                                    Text(viewModel.circuit.clusterArea).foregroundStyle(Theme.textSecondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .buttonStyle(PressableStyle())
+                        .accessibilityElement(children: .combine)
+                    } else {
                         Card {
                             VStack(alignment: .leading, spacing: 6) {
-                                HStack(spacing: 6) {
-                                    Text(vet.name).font(.title3.bold()).foregroundStyle(.primary)
-                                    // L3: a verified badge here, not just in the list row — this
-                                    // is the last screen before money changes hands.
-                                    VerifiedBadge(status: vet.verificationStatus)
-                                }
+                                Text("Veterinarian").font(.title3.bold())
                                 Text(viewModel.circuit.clusterArea).foregroundStyle(Theme.textSecondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
-                    .buttonStyle(PressableStyle())
-                    .accessibilityElement(children: .combine)
-                } else {
-                    Card {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Veterinarian").font(.title3.bold())
-                            Text(viewModel.circuit.clusterArea).foregroundStyle(Theme.textSecondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                }
+                    .transition(.bookingStep(isAdvancing: isAdvancing))
 
-                VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader(title: "Which pet?", systemImage: "pawprint.fill")
-                    if viewModel.pets.isEmpty {
-                        CalloutNote(
-                            text: "You haven't added a pet yet. Add one from your profile and their record will be ready for the vet before they arrive.",
-                            systemImage: "exclamationmark.circle.fill", tint: Theme.warning
-                        )
-                    } else {
-                        ForEach(Array(viewModel.pets.enumerated()), id: \.element.id) { index, pet in
-                            SelectableRow(
-                                title: pet.name,
-                                subtitle: petSubtitle(pet),
-                                systemImage: petIcon(pet),
-                                isSelected: viewModel.selectedPet?.id == pet.id
-                            ) {
-                                viewModel.selectedPet = pet
-                            }
-                            .appearAnimation(delay: Theme.staggerDelay(index))
-                        }
-                    }
-                }
-
-                slotPicker
-
-                if viewModel.offersRecurring {
-                    Card {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Toggle("Make this recurring", isOn: $viewModel.makeRecurring.animation(Theme.springQuick))
-                                .font(.brandBody.bold())
-                            if viewModel.makeRecurring {
-                                Picker("Repeats", selection: $viewModel.recurringCadence) {
-                                    ForEach(RecurringBookingRule.Cadence.allCases, id: \.self) { cadence in
-                                        Text(cadence.displayName).tag(cadence)
-                                    }
+                case .pet:
+                    VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        SectionHeader(title: "Which pet?", systemImage: "pawprint.fill")
+                        if viewModel.pets.isEmpty {
+                            CalloutNote(
+                                text: "You haven't added a pet yet. Add one from your profile and their record will be ready for the vet before they arrive.",
+                                systemImage: "exclamationmark.circle.fill", tint: Theme.warning
+                            )
+                        } else {
+                            ForEach(Array(viewModel.pets.enumerated()), id: \.element.id) { index, pet in
+                                SelectableRow(
+                                    title: pet.name,
+                                    subtitle: petSubtitle(pet),
+                                    systemImage: petIcon(pet),
+                                    isSelected: viewModel.selectedPet?.id == pet.id
+                                ) {
+                                    viewModel.selectedPet = pet
                                 }
-                                .pickerStyle(.segmented)
-                                Text("We'll set up a \(viewModel.recurringCadence.displayName.lowercased()) reminder — booking the next visit each cycle still needs confirming.")
+                                .appearAnimation(delay: Theme.staggerDelay(index))
+                            }
+                        }
+                    }
+                    if let seconds = viewModel.holdSecondsRemaining {
+                        // E7: the hold is the app doing something for the customer
+                        // — worth stating plainly, with the clock, rather than as
+                        // a grey footnote.
+                        HStack(spacing: 10) {
+                            Image(systemName: "lock.badge.clock.fill")
+                                .foregroundStyle(Theme.inProgress)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("This slot is held for you")
                                     .font(.brandCaption)
+                                Text("No one else can take it for the next \(seconds / 60):\(String(format: "%02d", seconds % 60))")
+                                    .font(.brandCaption2)
                                     .foregroundStyle(Theme.textSecondary)
                             }
+                            Spacer(minLength: 0)
+                            Text("\(seconds / 60):\(String(format: "%02d", seconds % 60))")
+                                .font(.brandMono(.callout, weight: .bold))
+                                .foregroundStyle(Theme.inProgress)
                         }
-                    }
-                }
-
-                if viewModel.canCheckoutWithPayment {
-                    VStack(alignment: .leading, spacing: 12) {
-                        SectionHeader(title: "How do you want to pay?", systemImage: "creditcard.fill")
-                        SelectableRow(
-                            title: "Pay now", subtitle: "UPI, card, netbanking or wallet",
-                            systemImage: "bolt.fill", isSelected: !viewModel.payAfterVisit
-                        ) {
-                            viewModel.payAfterVisit = false
-                        }
-                        SelectableRow(
-                            title: "Pay after visit", subtitle: "Cash or UPI to the vet on-site",
-                            systemImage: "hand.wave.fill", isSelected: viewModel.payAfterVisit
-                        ) {
-                            viewModel.payAfterVisit = true
-                        }
+                        .padding(12)
+                        .background(Theme.inProgress.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .transition(.opacity)
                     }
 
-                    priceBreakdown
-                } else {
-                    // Honest about the narrower path: this entry point has no
-                    // service/variant to price against, so quoting anything
-                    // would be a guess.
-                    CalloutNote(
-                        text: "You're requesting a visit directly with this vet. They'll confirm the slot and the price is settled from the service catalogue at the visit.",
-                        systemImage: "info.circle.fill"
-                    )
-                }
-
-                if let seconds = viewModel.holdSecondsRemaining {
-                    // E7: the hold is the app doing something for the customer
-                    // — worth stating plainly, with the clock, rather than as
-                    // a grey footnote.
-                    HStack(spacing: 10) {
-                        Image(systemName: "lock.badge.clock.fill")
-                            .foregroundStyle(Theme.inProgress)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("This slot is held for you")
-                                .font(.brandCaption)
-                            Text("No one else can take it for the next \(seconds / 60):\(String(format: "%02d", seconds % 60))")
-                                .font(.brandCaption2)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                        Spacer(minLength: 0)
-                        Text("\(seconds / 60):\(String(format: "%02d", seconds % 60))")
-                            .font(.brandMono(.callout, weight: .bold))
-                            .foregroundStyle(Theme.inProgress)
-                    }
-                    .padding(12)
-                    .background(Theme.inProgress.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .transition(.opacity)
-                }
-
-                if let errorMessage = viewModel.errorMessage {
-                    ErrorBanner(message: errorMessage)
-                    if viewModel.canRetryPayment {
-                        PrimaryButton(title: "Retry payment", isLoading: viewModel.isLoading) {
-                            Task { await viewModel.retryCheckout() }
+                    if let errorMessage = viewModel.errorMessage {
+                        ErrorBanner(message: errorMessage)
+                        if viewModel.canRetryPayment {
+                            PrimaryButton(title: "Retry payment", isLoading: viewModel.isLoading) {
+                                Task { await viewModel.retryCheckout() }
+                            }
                         }
                     }
-                }
+                    }
+                    .transition(.bookingStep(isAdvancing: isAdvancing))
 
+                case .confirm:
+                    VStack(alignment: .leading, spacing: 20) {
+                    if viewModel.canCheckoutWithPayment {
+                        VStack(alignment: .leading, spacing: 12) {
+                            SectionHeader(title: "How do you want to pay?", systemImage: "creditcard.fill")
+                            SelectableRow(
+                                title: "Pay now", subtitle: "UPI, card, netbanking or wallet",
+                                systemImage: "bolt.fill", isSelected: !viewModel.payAfterVisit
+                            ) {
+                                viewModel.payAfterVisit = false
+                            }
+                            SelectableRow(
+                                title: "Pay after visit", subtitle: "Cash or UPI to the vet on-site",
+                                systemImage: "hand.wave.fill", isSelected: viewModel.payAfterVisit
+                            ) {
+                                viewModel.payAfterVisit = true
+                            }
+                        }
+
+                        priceBreakdown
+                    } else {
+                        // Honest about the narrower path: this entry point has no
+                        // service/variant to price against, so quoting anything
+                        // would be a guess.
+                        CalloutNote(
+                            text: "You're requesting a visit directly with this vet. They'll confirm the slot and the price is settled from the service catalogue at the visit.",
+                            systemImage: "info.circle.fill"
+                        )
+                    }
+                    if viewModel.offersRecurring {
+                        Card {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Toggle("Make this recurring", isOn: $viewModel.makeRecurring.animation(Theme.springQuick))
+                                    .font(.brandBody.bold())
+                                if viewModel.makeRecurring {
+                                    Picker("Repeats", selection: $viewModel.recurringCadence) {
+                                        ForEach(RecurringBookingRule.Cadence.allCases, id: \.self) { cadence in
+                                            Text(cadence.displayName).tag(cadence)
+                                        }
+                                    }
+                                    .pickerStyle(.segmented)
+                                    Text("We'll set up a \(viewModel.recurringCadence.displayName.lowercased()) reminder — booking the next visit each cycle still needs confirming.")
+                                        .font(.brandCaption)
+                                        .foregroundStyle(Theme.textSecondary)
+                                }
+                            }
+                        }
+                    }
+                    if let seconds = viewModel.holdSecondsRemaining {
+                        // E7: the hold is the app doing something for the customer
+                        // — worth stating plainly, with the clock, rather than as
+                        // a grey footnote.
+                        HStack(spacing: 10) {
+                            Image(systemName: "lock.badge.clock.fill")
+                                .foregroundStyle(Theme.inProgress)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("This slot is held for you")
+                                    .font(.brandCaption)
+                                Text("No one else can take it for the next \(seconds / 60):\(String(format: "%02d", seconds % 60))")
+                                    .font(.brandCaption2)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            Spacer(minLength: 0)
+                            Text("\(seconds / 60):\(String(format: "%02d", seconds % 60))")
+                                .font(.brandMono(.callout, weight: .bold))
+                                .foregroundStyle(Theme.inProgress)
+                        }
+                        .padding(12)
+                        .background(Theme.inProgress.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .transition(.opacity)
+                    }
+
+                    if let errorMessage = viewModel.errorMessage {
+                        ErrorBanner(message: errorMessage)
+                        if viewModel.canRetryPayment {
+                            PrimaryButton(title: "Retry payment", isLoading: viewModel.isLoading) {
+                                Task { await viewModel.retryCheckout() }
+                            }
+                        }
+                    }
+                    }
+                    .transition(.bookingStep(isAdvancing: isAdvancing))
+                }
             }
             .padding(16)
             // Room for the pinned action bar, so the last card is never
@@ -633,36 +728,78 @@ struct BookingView: View {
 
     // MARK: - Pinned action bar
 
+    /// The pinned action bar. One primary action, whose label says what the
+    /// tap will actually do at this step — "Continue" while choosing,
+    /// "Confirm booking" only when that is genuinely what happens next.
+    ///
+    /// The total appears here only on the last step. Earlier it would either
+    /// be a placeholder or a number that changes under the customer as they
+    /// pick, and a price that moves while you are not looking at it is worse
+    /// than no price.
     private var confirmBar: some View {
         VStack(spacing: 10) {
-            if let quote = viewModel.previewQuote {
+            if step == .confirm, let quote = viewModel.previewQuote {
                 HStack {
                     Text("Total").font(.brandCaption).foregroundStyle(Theme.textSecondary)
                     Spacer()
                     Text(CurrencyFormatter.rupees(quote.breakdown.totalMinorUnits))
                         .font(.brandMono(.headline, weight: .bold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .contentTransition(.numericText())
                 }
             }
 
-            PrimaryButton(
-                title: confirmTitle,
-                systemImage: viewModel.canCheckoutWithPayment && !viewModel.payAfterVisit ? "lock.fill" : "checkmark",
-                isLoading: viewModel.isLoading,
-                isEnabled: viewModel.selectedPet != nil && viewModel.selectedSlot != nil
-            ) {
-                confirmBookingTapped()
-            }
+            HStack(spacing: 10) {
+                if flowPlan.previous(before: step) != nil {
+                    Button {
+                        goBack()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .frame(width: 52, height: 54)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressableStyle(scale: 0.94))
+                    .glassPanel(cornerRadius: 16, level: .chrome)
+                    .accessibilityLabel("Back")
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
 
-            if viewModel.selectedSlot == nil {
-                Text("Pick a time slot to continue")
+                PrimaryButton(
+                    title: step == .confirm ? confirmTitle : step.advanceTitle,
+                    systemImage: step == .confirm
+                        ? (viewModel.canCheckoutWithPayment && !viewModel.payAfterVisit ? "lock.fill" : "checkmark")
+                        : nil,
+                    isLoading: viewModel.isLoading,
+                    isEnabled: canAdvance
+                ) {
+                    advance()
+                }
+            }
+            .animation(.spring(response: 0.36, dampingFraction: 0.9), value: step)
+
+            // Says what is missing, at the step where it is missing — rather
+            // than one generic hint that was wrong on two screens out of three.
+            if !canAdvance {
+                Text(blockingHint)
                     .font(.brandCaption2)
                     .foregroundStyle(Theme.textSecondary)
+                    .transition(.opacity)
             }
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 8)
         .background(.bar)
+    }
+
+    private var blockingHint: String {
+        switch step {
+        case .slot: return "Pick a time to continue"
+        case .pet: return "Choose which pet this visit is for"
+        case .confirm: return "Something's missing — go back and check your time and pet"
+        }
     }
 
     private var confirmTitle: String {
