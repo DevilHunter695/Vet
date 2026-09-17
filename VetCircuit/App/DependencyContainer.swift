@@ -140,9 +140,10 @@ final class DependencyContainer {
         + "Refusing is deliberate: the mock returns a fake checkout URL and reports "
         + "success, so a credentialed build on the mock would show a booking as paid "
         + "when no money moved",
-        "ChatRepository — messages, read receipts and live delivery are real; photo "
-        + "attachments need a storage bucket and an attachment_url column, and refuse "
-        + "rather than posting an empty message",
+        "ChatRepository — complete in code: messages, read receipts, live delivery "
+        + "and photo attachments. The one external step is provisioning the private "
+        + "\"chat-attachments\" bucket and its two policies, which cannot be done from "
+        + "a migration — 0012_chat_attachments.sql records the exact SQL",
     ]
 
     private init() {

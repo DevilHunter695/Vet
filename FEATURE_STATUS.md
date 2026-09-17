@@ -137,7 +137,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | ID | Feature | Status | Evidence |
 |---|---|---|---|
 | J1 | Per-visit chat | 🟡 | `SendChatMessageUseCase` suite; `SupabaseChatRepository` persists messages, read receipts and subscribes to live inserts over Realtime |
-| J2 | Chat photo attachments | 🟡 | `SendChatMessageUseCase photo attachments` suite. Against Postgres this refuses rather than posting an empty message — it needs a storage bucket and an `attachment_url` column |
+| J2 | Chat photo attachments | 🟡 | `SendChatMessageUseCase photo attachments` suite; `SupabaseChatRepository.sendPhoto` uploads to the private bucket and stores `attachment_path` (0012), and threads resolve it to a short-lived signed URL. Needs the bucket provisioned once, outside SQL |
 | J3 | Read receipts / unread badge | 🟡 | `ChatUnreadPolicy` suite |
 | J5 | Auto-close chat + escalation | 🟡 | `ChatPolicy` suite |
 | J7 | Notification centre + preferences | 🟢 | Both screens driven; `ManageNotificationPreferencesUseCase` suite. Centre now seeded with five notifications, two unread |
@@ -240,9 +240,10 @@ the four that remain have been checked by hand.
    flagged a no-show, sent a post-visit summary or shown a renewal reminder is
    not server state, and syncing it would be wrong rather than better. Two
    are partial and say so on the container:
-   chat has messages, read receipts and live delivery, but photo attachments
-   need a storage bucket and an `attachment_url` column and refuse rather than
-   post an empty message; payments does status, lookup and the entire
+   chat is complete in code — messages, read receipts, live delivery and photo
+   attachments — with one external step left: provisioning the private
+   `chat-attachments` bucket and its two policies, which a migration cannot do
+   (0012_chat_attachments.sql records the exact SQL); payments does status, lookup and the entire
    pay-after-visit path, but refuses the four hosted-checkout methods, because
    creating a gateway session needs a server-side function this repository
    does not contain. That refusal is deliberate — the mock returns a fake

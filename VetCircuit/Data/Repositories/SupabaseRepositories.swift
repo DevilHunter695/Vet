@@ -3121,28 +3121,59 @@ final class SupabaseChatRepository: ChatRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
+    /// The bucket 0012_chat_attachments.sql documents. Private: objects are
+    /// only ever reached through a short-lived signed URL, never a public path.
+    private static let attachmentBucket = "chat-attachments"
+    private static let signedURLLifetimeSeconds = 60 * 60
+
     private struct Row: Decodable {
         let id: UUID
         let visitId: UUID
         let senderId: UUID
-        let body: String
+        let body: String?
         let sentAt: Date
         let readAt: Date?
+        /// 0012 made `body` nullable and added this, with a check constraint
+        /// that one of the two is present — so a photo message has no body and
+        /// decoding `body` as non-optional would fail on exactly those rows.
+        let attachmentPath: String?
         enum CodingKeys: String, CodingKey {
             case id, visitId = "visit_id", senderId = "sender_id", body
-            case sentAt = "sent_at", readAt = "read_at"
+            case sentAt = "sent_at", readAt = "read_at", attachmentPath = "attachment_path"
         }
-        func toDomain() -> ChatMessage {
-            // `attachmentURL` has no column in 0001_init.sql — see `sendPhoto`.
-            ChatMessage(id: id, visitId: visitId, senderId: senderId, body: body,
-                        sentAt: sentAt, readAt: readAt, attachmentURL: nil)
+        func toDomain(attachmentURL: URL? = nil) -> ChatMessage {
+            ChatMessage(id: id, visitId: visitId, senderId: senderId, body: body ?? "",
+                        sentAt: sentAt, readAt: readAt, attachmentURL: attachmentURL)
         }
+    }
+
+    /// Turns a stored object path into a signed URL the app can actually load.
+    /// Failures are swallowed to nil rather than thrown: one attachment whose
+    /// signature could not be minted must not take the whole thread down with
+    /// it — the message still renders, without its image.
+    private func signedURL(for path: String?) async -> URL? {
+        guard let path else { return nil }
+        return try? await client.storage
+            .from(Self.attachmentBucket)
+            .createSignedURL(path: path, expiresIn: Self.signedURLLifetimeSeconds)
+    }
+
+    private func hydrate(_ rows: [Row]) async -> [ChatMessage] {
+        var messages: [ChatMessage] = []
+        messages.reserveCapacity(rows.count)
+        for row in rows {
+            messages.append(row.toDomain(attachmentURL: await signedURL(for: row.attachmentPath)))
+        }
+        return messages
     }
 
     private struct Insert: Encodable {
         let visitId: UUID
-        let body: String
-        enum CodingKeys: String, CodingKey { case visitId = "visit_id", body }
+        let body: String?
+        let attachmentPath: String?
+        enum CodingKeys: String, CodingKey {
+            case visitId = "visit_id", body, attachmentPath = "attachment_path"
+        }
     }
 
     private struct ReadUpdate: Encodable {
@@ -3155,25 +3186,44 @@ final class SupabaseChatRepository: ChatRepository {
             .from("chat_messages").select().eq("visit_id", value: visitId)
             .order("sent_at", ascending: true)
             .execute().value
-        return rows.map { $0.toDomain() }
+        return await hydrate(rows)
     }
 
     func send(visitId: UUID, body: String) async throws -> ChatMessage {
         // `sender_id` is deliberately not sent: it defaults to auth.uid()
         // server-side, so a client cannot post as somebody else.
         let rows: [Row] = try await client
-            .from("chat_messages").insert(Insert(visitId: visitId, body: body))
+            .from("chat_messages")
+            .insert(Insert(visitId: visitId, body: body, attachmentPath: nil))
             .select().execute().value
         guard let row = rows.first else { throw DomainError.notFound("Chat message") }
         return row.toDomain()
     }
 
-    /// J2: not implemented rather than half-implemented. It needs both a
-    /// storage upload and an `attachment_url` column that 0001_init.sql does
-    /// not have, and a photo message silently posted as empty text would look
-    /// to the sender like it had been delivered.
+    /// J2. I previously said this needed a column that does not exist —
+    /// 0012_chat_attachments.sql added `attachment_path` and made `body`
+    /// nullable, and I had not looked.
+    ///
+    /// The object goes up first and the row second, deliberately. If the
+    /// insert fails, the worst outcome is an orphaned object in a private
+    /// bucket; if the order were reversed, a failed upload would leave a
+    /// message pointing at nothing, which renders as a permanently broken
+    /// image in the thread. The path is keyed by visit id because that is
+    /// what the bucket's RLS policy matches on
+    /// (`storage.foldername(name)[1]`), so the folder *is* the authorization
+    /// boundary — it cannot be changed without changing that policy too.
     func sendPhoto(visitId: UUID, imageData: Data) async throws -> ChatMessage {
-        throw DomainError.validation("Photo messages aren't available yet on this account.")
+        let path = "\(visitId.uuidString)/\(UUID().uuidString).jpg"
+        _ = try await client.storage
+            .from(Self.attachmentBucket)
+            .upload(path, data: imageData, options: FileOptions(contentType: "image/jpeg"))
+
+        let rows: [Row] = try await client
+            .from("chat_messages")
+            .insert(Insert(visitId: visitId, body: nil, attachmentPath: path))
+            .select().execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Chat message") }
+        return row.toDomain(attachmentURL: await signedURL(for: path))
     }
 
     /// TODO(Realtime): the shape this needs, read off supabase-swift's source
@@ -3209,6 +3259,7 @@ final class SupabaseChatRepository: ChatRepository {
     /// costs nothing on a screen that is already open.
     nonisolated func subscribe(visitId: UUID, onMessage: @escaping @Sendable (ChatMessage) -> Void) -> AnyObject {
         let client = self.client
+        let repository = self
         let task = Task {
             let channel = client.channel("chat:\(visitId.uuidString)")
             let inserts = channel.postgresChange(
@@ -3227,8 +3278,8 @@ final class SupabaseChatRepository: ChatRepository {
                 let rows: [Row]? = try? await client
                     .from("chat_messages").select().eq("id", value: identified.id)
                     .limit(1).execute().value
-                if let message = rows?.first?.toDomain() {
-                    onMessage(message)
+                if let row = rows?.first {
+                    onMessage(row.toDomain(attachmentURL: await repository.signedURL(for: row.attachmentPath)))
                 }
             }
         }
