@@ -31,6 +31,11 @@ struct VisitChecklistView: View {
                     }
                 }
                 .listStyle(.plain)
+                // Without this the last checklist item comes to rest under
+                // the floating tab bar. Every other pushed list in the app
+                // applies one of the two floating-chrome modifiers; this one
+                // was missed.
+                .floatingTabBarInset()
             }
         }
         // The aurora is the app's ground everywhere else; a List that keeps

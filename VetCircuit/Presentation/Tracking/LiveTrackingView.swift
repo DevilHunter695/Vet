@@ -93,7 +93,9 @@ struct LiveTrackingView: View {
     @Environment(SessionStore.self) private var session
     @State private var viewModel: LiveTrackingViewModel
     @State private var showingSOSConfirmation = false
-    @State private var shareItems: [String]?
+    /// The SOS share sheet's payload, held directly rather than rebuilt in a
+    /// binding. See `ShareItemsBox` for why that distinction matters here.
+    @State private var shareBox: ShareItemsBox?
 
     init(visitId: UUID) { _viewModel = State(initialValue: LiveTrackingViewModel(visitId: visitId)) }
 
@@ -203,18 +205,23 @@ struct LiveTrackingView: View {
         }
         .onChange(of: viewModel.sosShareText) { _, text in
             guard let text else { return }
-            shareItems = [text]
+            shareBox = ShareItemsBox([text])
         }
-        .sheet(item: Binding(
-            get: { shareItems.map { ShareItemsBox($0) } },
-            set: { shareItems = $0?.items }
-        )) { box in
+        .sheet(item: $shareBox) { box in
             SOSShareSheet(items: box.items)
         }
     }
 }
 
 /// Bridges `[String]` (not `Identifiable`) into `.sheet(item:)`.
+///
+/// This used to be built inside a `Binding(get:set:)` in the view body, which
+/// meant a fresh `UUID()` on every body evaluation. On this screen in
+/// particular that is not theoretical: live tracking publishes location
+/// updates continuously, so while the SOS share sheet was open the item's
+/// identity changed under it several times a second, and SwiftUI treats a new
+/// identity as a different sheet. It is now held in `@State` and set from
+/// `onChange`, so the identity changes exactly when the payload does.
 private struct ShareItemsBox: Identifiable {
     let id = UUID()
     let items: [String]
