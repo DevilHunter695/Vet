@@ -3094,6 +3094,19 @@ private struct SupabaseLabTestReportRow: Decodable {
 // reminder dedupe (the last three are deliberately device-local), and payments
 // are a gateway integration rather than a table.
 
+/// The `AnyObject` token `ChatRepository`/`LiveTrackingRepository` hand back
+/// from their `subscribe` methods. Those protocols predate this and are
+/// synchronous, so the only place the subscription's lifetime can live is in
+/// the returned object: the caller holds it while it wants updates and drops
+/// it when it doesn't, and `deinit` tears the channel down. Without this the
+/// `Task` would outlive the screen and keep a websocket open for a visit
+/// nobody is looking at any more.
+final class RealtimeSubscriptionToken {
+    private let task: Task<Void, Never>
+    init(task: Task<Void, Never>) { self.task = task }
+    deinit { task.cancel() }
+}
+
 /// J1/J2/J3: per-visit chat.
 ///
 /// `history`, `send` and `markRead` are real. The two `subscribe` methods are
@@ -3185,9 +3198,45 @@ final class SupabaseChatRepository: ChatRepository {
     /// not what I read on `main`. Shipping a plausible-looking guess at an
     /// unpinned API is how the build breaks; leaving the real signature here
     /// costs nothing and removes the research from the next person's job.
+    /// Only the row's `id` is decoded from the Realtime payload, then the
+    /// message is fetched through the same PostgREST path `history` uses.
+    ///
+    /// That is deliberate rather than lazy. Realtime delivers the raw row, and
+    /// its `timestamptz` values arrive in a format that does not always match
+    /// what PostgREST returns — decoding the whole row here means maintaining
+    /// a second date strategy that only fails in production, at the moment a
+    /// message arrives. A uuid has no such ambiguity, and the extra round trip
+    /// costs nothing on a screen that is already open.
     nonisolated func subscribe(visitId: UUID, onMessage: @escaping @Sendable (ChatMessage) -> Void) -> AnyObject {
-        NSObject()
+        let client = self.client
+        let task = Task {
+            let channel = client.channel("chat:\(visitId.uuidString)")
+            let inserts = channel.postgresChange(
+                InsertAction.self,
+                schema: "public",
+                table: "chat_messages",
+                filter: .eq("visit_id", value: visitId.uuidString)
+            )
+            await channel.subscribe()
+            defer { Task { await client.removeChannel(channel) } }
+
+            let decoder = JSONDecoder()
+            for await insert in inserts {
+                if Task.isCancelled { break }
+                guard let identified = try? insert.decodeRecord(as: InsertedId.self, decoder: decoder) else { continue }
+                let rows: [Row]? = try? await client
+                    .from("chat_messages").select().eq("id", value: identified.id)
+                    .limit(1).execute().value
+                if let message = rows?.first?.toDomain() {
+                    onMessage(message)
+                }
+            }
+        }
+        return RealtimeSubscriptionToken(task: task)
     }
+
+    /// Just the id — see `subscribe`.
+    private struct InsertedId: Decodable { let id: UUID }
 
     func markRead(visitId: UUID, readerId: UUID) async throws {
         try await client
@@ -3471,7 +3520,47 @@ final class SupabaseLiveTrackingRepository: LiveTrackingRepository {
         return rows.first?.toDomain()
     }
 
+    /// Listens for both inserts and updates, because a location row is
+    /// created once and then overwritten in place for the rest of the visit —
+    /// subscribing only to inserts would deliver the vet's starting point and
+    /// then nothing at all, which is the worst of both behaviours.
+    ///
+    /// Re-reads through `currentLocation` on each change rather than decoding
+    /// the payload, for the reason given on `SupabaseChatRepository.subscribe`.
     nonisolated func subscribeToLocation(visitId: UUID, onUpdate: @escaping @Sendable (VetLocation) -> Void) -> AnyObject {
-        NSObject() // TODO(Realtime): see SupabaseChatRepository.subscribe.
+        let client = self.client
+        let repository = self
+        let task = Task {
+            let channel = client.channel("vet-location:\(visitId.uuidString)")
+            let filter = RealtimePostgresFilter.eq("visit_id", value: visitId.uuidString)
+            let inserts = channel.postgresChange(
+                InsertAction.self, schema: "public", table: "vet_locations", filter: filter
+            )
+            let updates = channel.postgresChange(
+                UpdateAction.self, schema: "public", table: "vet_locations", filter: filter
+            )
+            await channel.subscribe()
+            defer { Task { await client.removeChannel(channel) } }
+
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    for await _ in inserts {
+                        if Task.isCancelled { break }
+                        if let location = try? await repository.currentLocation(visitId: visitId) {
+                            onUpdate(location)
+                        }
+                    }
+                }
+                group.addTask {
+                    for await _ in updates {
+                        if Task.isCancelled { break }
+                        if let location = try? await repository.currentLocation(visitId: visitId) {
+                            onUpdate(location)
+                        }
+                    }
+                }
+            }
+        }
+        return RealtimeSubscriptionToken(task: task)
     }
 }

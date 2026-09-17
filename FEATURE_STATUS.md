@@ -127,7 +127,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | I1 | "Happening now" card | 🟢 | Driven, **plus a lock that the Visits tab is not empty** now the seed exists. One seeded visit is `enRoute` |
 | I2 | Status timeline | 🟢 | Driven from visit detail; `MockVisitRepository status history` + `Visit.legalTransitions` suites |
 | I3 | Live Activity / Dynamic Island | ⚪ | ActivityKit cannot run in this CI |
-| I4 | Live map + ETA | 🟡 | `TrackVetUseCase` suite covers ETA; `vet_locations` (0064) and `SupabaseLiveTrackingRepository` make the position real rather than a fabricated walk. Map *rendering* is still not assertable in CI, and streaming awaits the same Realtime work chat needs |
+| I4 | Live map + ETA | 🟡 | `TrackVetUseCase` suite covers ETA; `vet_locations` (0064) and `SupabaseLiveTrackingRepository` make the position real rather than a fabricated walk. Map *rendering* is still not assertable in CI, and streaming now listens for both inserts and updates over Realtime |
 | I5 | Start-of-visit OTP | 🟡 | `StartVisitUseCase` suite |
 | I6 | Digital consent waiver | 🟡 | `ManageConsentUseCase` suite |
 | I7 | Visit checklist | 🟡 | `GetVisitChecklistUseCase (I7)` suite |
@@ -136,7 +136,7 @@ no touch region under what was painted. `exists` was true for all of them.
 
 | ID | Feature | Status | Evidence |
 |---|---|---|---|
-| J1 | Per-visit chat | 🟡 | `SendChatMessageUseCase` suite; `SupabaseChatRepository` persists messages and read receipts, with a named Realtime gap |
+| J1 | Per-visit chat | 🟡 | `SendChatMessageUseCase` suite; `SupabaseChatRepository` persists messages, read receipts and subscribes to live inserts over Realtime |
 | J2 | Chat photo attachments | 🟡 | `SendChatMessageUseCase photo attachments` suite. Against Postgres this refuses rather than posting an empty message — it needs a storage bucket and an `attachment_url` column |
 | J3 | Read receipts / unread badge | 🟡 | `ChatUnreadPolicy` suite |
 | J5 | Auto-close chat + escalation | 🟡 | `ChatPolicy` suite |
@@ -238,18 +238,17 @@ the four that remain have been checked by hand.
    `TriageRepository` is a symptom rules engine with nothing to store, and the
    other three are device-local by design — whether *this* phone has already
    flagged a no-show, sent a post-visit summary or shown a renewal reminder is
-   not server state, and syncing it would be wrong rather than better. Three
+   not server state, and syncing it would be wrong rather than better. Two
    are partial and say so on the container:
-   chat persists messages and read receipts but has no Realtime channel, so a
-   thread refreshes on load rather than pushing, and photo attachments refuse
-   rather than post an empty message; payments does status, lookup and the
-   entire pay-after-visit path, but refuses the four hosted-checkout methods,
-   because creating a gateway session needs a server-side function this
-   repository does not contain. That refusal is deliberate — the mock returns
-   a fake checkout URL and reports success, so a credentialed build left on it
-   would show a booking as paid when no money moved; and live tracking reads
-   the vet's current position from `vet_locations` but cannot yet stream it,
-   so the map re-reads on appear instead of following a pin. The schema is
+   chat has messages, read receipts and live delivery, but photo attachments
+   need a storage bucket and an `attachment_url` column and refuse rather than
+   post an empty message; payments does status, lookup and the entire
+   pay-after-visit path, but refuses the four hosted-checkout methods, because
+   creating a gateway session needs a server-side function this repository
+   does not contain. That refusal is deliberate — the mock returns a fake
+   checkout URL and reports success, so a credentialed build left on it would
+   show a booking as paid when no money moved. Live tracking is now complete.
+   The schema is
    proven to build — 62 migrations, applied to a real Postgres in CI on every
    push — but the app has never completed a round trip to a live instance.
 2. **A correction.** An earlier version of this file said no PDF was rendered

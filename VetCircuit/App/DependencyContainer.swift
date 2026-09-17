@@ -133,19 +133,16 @@ final class DependencyContainer {
     /// implementation has a hole in it" fail differently, and collapsing them
     /// into one number is how a gap stops being visible.
     static let partialSupabaseRepositories = [
-        "LiveTrackingRepository — the current location is read from vet_locations; "
-        + "streaming needs the same Realtime channel chat does, so the map re-reads "
-        + "on appear rather than following a pin",
+
         "PaymentRepository — status, lookup and the whole pay-after-visit path are "
         + "real; the four hosted-checkout methods refuse, because creating a gateway "
         + "session needs a server-side function this repository does not contain. "
         + "Refusing is deliberate: the mock returns a fake checkout URL and reports "
         + "success, so a credentialed build on the mock would show a booking as paid "
         + "when no money moved",
-        "ChatRepository — messages persist and read receipts work, but there is no "
-        + "Realtime channel yet, so a thread refreshes on load rather than pushing; "
-        + "photo attachments need a storage bucket and an attachment_url column and "
-        + "currently refuse rather than post an empty message",
+        "ChatRepository — messages, read receipts and live delivery are real; photo "
+        + "attachments need a storage bucket and an attachment_url column, and refuse "
+        + "rather than posting an empty message",
     ]
 
     private init() {
