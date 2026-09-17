@@ -748,7 +748,11 @@ private struct NextVisitCard: View {
 /// A titled card that groups related navigation rows. Replaces the long,
 /// undifferentiated `List` of plain `NavigationLink`s that made the screen
 /// read like a settings dump rather than a product.
-private struct ProfileGroup<Content: View>: View {
+// Deliberately not `private`: Profile's sections were split into their own
+// files (ProfilePetsSection, ProfilePreferencesSection, …) and these are the
+// building blocks they share. File-private was correct while the whole screen
+// lived in one file and stopped being correct the moment it did not.
+struct ProfileGroup<Content: View>: View {
     let title: String
     var systemImage: String? = nil
     @ViewBuilder let content: Content
@@ -785,7 +789,11 @@ private struct ProfileRowPressStyle: ButtonStyle {
     }
 }
 
-private struct ProfileLinkRow<Destination: View>: View {
+// Deliberately not `private`: Profile's sections were split into their own
+// files (ProfilePetsSection, ProfilePreferencesSection, …) and these are the
+// building blocks they share. File-private was correct while the whole screen
+// lived in one file and stopped being correct the moment it did not.
+struct ProfileLinkRow<Destination: View>: View {
     let title: String
     var subtitle: String? = nil
     let systemImage: String
@@ -841,7 +849,11 @@ private struct ProfileLinkRow<Destination: View>: View {
 /// A pet, as a card rather than a line of text — species, age and the flags a
 /// vet would want to know at a glance (allergies, chronic conditions), plus a
 /// clear archived treatment instead of a grey word at the end of a row.
-private struct PetCard: View {
+// Deliberately not `private`: Profile's sections were split into their own
+// files (ProfilePetsSection, ProfilePreferencesSection, …) and these are the
+// building blocks they share. File-private was correct while the whole screen
+// lived in one file and stopped being correct the moment it did not.
+struct PetCard: View {
     let pet: Pet
 
     private var ageText: String? { pet.ageText }
@@ -908,7 +920,11 @@ private struct PetCard: View {
 
 /// Inline "add a pet" composer. Kept on the profile screen (rather than behind
 /// a sheet) because adding the first pet is the step that unblocks booking.
-private struct AddPetField: View {
+// Deliberately not `private`: Profile's sections were split into their own
+// files (ProfilePetsSection, ProfilePreferencesSection, …) and these are the
+// building blocks they share. File-private was correct while the whole screen
+// lived in one file and stopped being correct the moment it did not.
+struct AddPetField: View {
     @Binding var name: String
     @Binding var species: Pet.Species
     let onAdd: () -> Void
