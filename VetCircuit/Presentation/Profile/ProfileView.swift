@@ -855,12 +855,7 @@ private struct ProfileLinkRow<Destination: View>: View {
 private struct PetCard: View {
     let pet: Pet
 
-    private var ageText: String? {
-        guard let dob = pet.dateOfBirth else { return nil }
-        let months = Calendar.current.dateComponents([.month], from: dob, to: .now).month ?? 0
-        if months < 24 { return "\(max(0, months)) mo" }
-        return "\(months / 12) yr"
-    }
+    private var ageText: String? { pet.ageText }
 
     private var speciesIcon: String {
         switch pet.species {

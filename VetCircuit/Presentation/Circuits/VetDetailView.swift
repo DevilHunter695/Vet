@@ -107,26 +107,44 @@ struct VetDetailView: View {
         .task { await viewModel.load(vetId: vet.id) }
     }
 
+    /// Luma's image-led header: the vet's own photograph is both the poster
+    /// and, blurred behind it, the colour of the screen. A stethoscope glyph
+    /// on a brand circle told the customer nothing about the person they are
+    /// about to let into their home — and this is the last screen before they
+    /// decide to.
     private var header: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle().fill(Theme.gradient)
-                Image(systemName: "stethoscope").font(.title).foregroundStyle(.white)
-            }
-            .frame(width: 64, height: 64)
+        PosterHeader(
+            imageURL: vet.photoURL,
+            fallbackSymbol: "stethoscope",
+            seed: vet.id.uuidString,
+            title: vet.name,
+            subtitle: clusterArea
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Label {
+                        Text(String(format: "%.1f", vet.rating))
+                            .font(.brandMono(.callout, weight: .bold))
+                    } icon: {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(Theme.goldTier)
+                    }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(vet.name).font(.brandTitle)
+                    Text("(\(vet.reviewCount) review\(vet.reviewCount == 1 ? "" : "s"))")
+                        .font(.brandCaption)
+                        .foregroundStyle(Theme.textSecondary)
+
+                    if let years = vet.yearsOfExperience {
+                        Text("·").foregroundStyle(Theme.textTertiary)
+                        Text("\(years) yr\(years == 1 ? "" : "s") experience")
+                            .font(.brandCaption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+
                 VerifiedBadge(status: vet.verificationStatus)
-                HStack(spacing: 4) {
-                    Image(systemName: "star.fill").font(.caption2).foregroundStyle(Theme.goldTier)
-                    Text(String(format: "%.1f", vet.rating) + " (\(vet.reviewCount) reviews)")
-                        .font(.brandCaption).foregroundStyle(Theme.textSecondary)
-                }
-                if let clusterArea {
-                    Text(clusterArea).font(.brandCaption).foregroundStyle(Theme.textSecondary)
-                }
             }
+            .padding(.top, 2)
         }
         .appearAnimation()
     }

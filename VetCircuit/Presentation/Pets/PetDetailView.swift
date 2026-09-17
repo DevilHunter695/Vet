@@ -140,9 +140,37 @@ struct PetDetailView: View {
         _viewModel = State(initialValue: PetDetailViewModel(pet: pet))
     }
 
+    /// The pet's own photograph, leading the screen and colouring it.
+    ///
+    /// It was a 64pt circle inside a form card, beside a "Change photo" text
+    /// button — which is a strange thing to do in an app about somebody's
+    /// animal. This is the one image on the screen the owner actually cares
+    /// about, and in Luma's model it is also what the screen's colour should
+    /// come from.
+    private var petPoster: some View {
+        PosterHeader(
+            imageURL: viewModel.pet.photoURL,
+            fallbackSymbol: viewModel.pet.species.symbolName,
+            seed: viewModel.pet.id.uuidString,
+            title: viewModel.pet.name,
+            subtitle: petSubtitle
+        )
+    }
+
+    /// Breed and age, the two things an owner would say first.
+    private var petSubtitle: String? {
+        var parts: [String] = []
+        if let breed = viewModel.pet.breed, !breed.isEmpty { parts.append(breed) }
+        if let age = viewModel.pet.ageText { parts.append(age) }
+        if parts.isEmpty { parts.append(viewModel.pet.species.displayName) }
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                petPoster.appearAnimation()
+
                 if viewModel.pet.isArchived, let reason = viewModel.pet.archiveReason {
                     Card {
                         VStack(alignment: .leading, spacing: 6) {
@@ -239,30 +267,16 @@ struct PetDetailView: View {
                     .font(.brandHeadline).foregroundStyle(Theme.primary)
 
                 // B2: photo upload — PhotosPicker → JPEG data → ManagePetsUseCase.updatePhoto.
-                HStack {
-                    if let photoURL = viewModel.pet.photoURL {
-                        AsyncImage(url: photoURL) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            Circle().fill(Color(.tertiarySystemFill))
-                        }
-                        .frame(width: 64, height: 64)
-                        .clipShape(Circle())
-                    } else {
-                        Circle().fill(Color(.tertiarySystemFill))
-                            .frame(width: 64, height: 64)
-                            .overlay(Image(systemName: "pawprint.fill").foregroundStyle(Theme.textSecondary))
-                    }
-                    // The label is built up front rather than read inside
-                    // PhotosPicker's closure: that closure is checked as
-                    // `Sendable`, so touching the main-actor-isolated view
-                    // model from inside it doesn't compile under strict
-                    // concurrency.
-                    let photoButtonTitle = viewModel.pet.photoURL == nil ? "Add photo" : "Change photo"
-                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                        Text(photoButtonTitle)
-                            .font(.brandCaption)
-                    }
+                // The photograph itself now leads the screen, so this is
+                // only the action. The label is built up front rather than
+                // read inside PhotosPicker's closure: that closure is checked
+                // as `Sendable`, so touching the main-actor-isolated view
+                // model from inside it doesn't compile under strict
+                // concurrency.
+                let photoButtonTitle = viewModel.pet.photoURL == nil ? "Add a photo" : "Change photo"
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                    Label(photoButtonTitle, systemImage: "camera.fill")
+                        .font(.brandCallout)
                 }
                 .onChange(of: selectedPhotoItem) { _, newItem in
                     Task {
