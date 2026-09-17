@@ -10,7 +10,11 @@ import SwiftUI
 /// the cards around it, which is the point.
 struct StatStrip: View {
     struct Item: Identifiable {
-        let id = UUID()
+        /// The label, not a fresh `UUID()`. A UUID minted in the initialiser
+        /// is a new identity on every body evaluation, so SwiftUI tears every
+        /// cell down and rebuilds it whenever any figure changes — and no
+        /// value can ever animate, because nothing persists to animate from.
+        var id: String { label }
         let value: String
         let label: String
         let systemImage: String
@@ -43,36 +47,5 @@ struct StatStrip: View {
         }
         .padding(.vertical, 14)
         .glassCard(cornerRadius: 22)
-    }
-}
-
-/// One figure in a `StatStrip`.
-private struct StatStripCell: View {
-    let item: StatStrip.Item
-
-    var body: some View {
-        VStack(spacing: 5) {
-            Image(systemName: item.systemImage)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(item.tint)
-                .frame(height: 18)
-
-            Text(item.value)
-                .font(.brandMono(.callout, weight: .bold))
-                .foregroundStyle(.primary)
-                .brandDisplayText()
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-
-            Text(item.label)
-                .font(.brandCaption)
-                .foregroundStyle(Theme.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .padding(.horizontal, 6)
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(item.label): \(item.value)")
     }
 }
