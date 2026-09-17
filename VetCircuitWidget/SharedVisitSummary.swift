@@ -36,16 +36,3 @@ struct SharedVisitSummary: Codable, Equatable {
 
     static let empty = SharedVisitSummary(kind: .none, petName: nil, vetName: nil, date: nil, subtitle: nil, vaccineName: nil, generatedAt: .now, visitId: nil)
 }
-
-enum WidgetDataBridge {
-    static let appGroupID = "group.com.vetcircuit.app"
-    private static let storageKey = "vc.widget.next_visit_summary"
-
-    static func read() -> SharedVisitSummary {
-        guard let defaults = UserDefaults(suiteName: appGroupID),
-              let data = defaults.data(forKey: storageKey),
-              let summary = try? JSONDecoder().decode(SharedVisitSummary.self, from: data)
-        else { return .empty }
-        return summary
-    }
-}
