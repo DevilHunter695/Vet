@@ -18,7 +18,7 @@ struct RouterHandleTests {
         let router = Router()
         let id = UUID()
         router.handle(.visit(id))
-        #expect(router.selectedTab == Router.Tab.visits.rawValue)
+        #expect(router.selectedTab == Router.Tab.visits)
         #expect(router.visitsPath.count == 1)
     }
 
@@ -27,7 +27,7 @@ struct RouterHandleTests {
         let router = Router()
         let visitId = UUID()
         router.handle(.chat(visitId: visitId))
-        #expect(router.selectedTab == Router.Tab.visits.rawValue)
+        #expect(router.selectedTab == Router.Tab.visits)
         #expect(router.visitsPath.count == 1)
         // profilePath is untouched by a Visits-tab route.
         #expect(router.profilePath.count == 0)
@@ -37,7 +37,7 @@ struct RouterHandleTests {
     func householdDeepLinkPushesHousehold() {
         let router = Router()
         router.handle(.household)
-        #expect(router.selectedTab == Router.Tab.profile.rawValue)
+        #expect(router.selectedTab == Router.Tab.profile)
         #expect(router.profilePath.count == 1)
         #expect(router.visitsPath.count == 0)
     }

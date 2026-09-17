@@ -246,7 +246,7 @@ struct MainTabView: View {
             await liveVisit.refresh(userId: session.currentUser?.id)
         }
         .onChange(of: pendingDeepLink.pending, initial: true) { _, link in
-            if case .book = link { router.selectedTab = 0 }
+            if case .book = link { router.selectedTab = .book }
         }
     }
 }
