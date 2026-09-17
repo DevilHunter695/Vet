@@ -19,6 +19,12 @@ struct StatStrip: View {
         let label: String
         let systemImage: String
         var tint: Color = Theme.primary
+        /// What VoiceOver reads, when the visible label has to be shorter
+        /// than the thing it names. Four figures share one row here, so
+        /// "Visits" earns its place on screen while "Visits done" is what
+        /// actually describes the number — the abbreviation is a layout
+        /// compromise and should not reach assistive tech.
+        var accessibilityName: String?
     }
 
     let items: [Item]

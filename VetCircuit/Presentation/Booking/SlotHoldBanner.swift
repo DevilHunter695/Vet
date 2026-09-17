@@ -1,0 +1,49 @@
+import SwiftUI
+
+/// E7: the slot hold, stated plainly with its clock.
+///
+/// Placing a hold is the app doing something *for* the customer, and the
+/// reassurance has to arrive at the moment it happens — the instant a time is
+/// picked. It previously appeared only on the later steps of the booking
+/// flow, so picking a slot silently reserved it and the app said nothing
+/// until you had already moved on, which is the one moment the reassurance
+/// was worth nothing.
+struct SlotHoldBanner: View {
+    let secondsRemaining: Int
+
+    private var clock: String {
+        "\(secondsRemaining / 60):\(String(format: "%02d", secondsRemaining % 60))"
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lock.badge.clock.fill")
+                .foregroundStyle(Theme.inProgress)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("This slot is held for you")
+                    .font(.brandCaption)
+                Text("No one else can take it for the next \(clock)")
+                    .font(.brandCaption)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+
+            Spacer(minLength: 0)
+
+            Text(clock)
+                .font(.brandMono(.callout, weight: .bold))
+                // Monospaced digits because a countdown redraws every second,
+                // and proportional figures make the whole row shift sideways
+                // on each tick.
+                .foregroundStyle(Theme.inProgress)
+                // Hidden from VoiceOver: the sentence above already says how
+                // long the hold lasts, and the combined element would
+                // otherwise read the same time twice.
+                .accessibilityHidden(true)
+        }
+        .padding(12)
+        .background(Theme.inProgress.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .transition(.opacity)
+        .accessibilityElement(children: .combine)
+    }
+}

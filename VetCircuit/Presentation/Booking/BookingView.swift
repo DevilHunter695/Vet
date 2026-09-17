@@ -398,6 +398,12 @@ struct BookingView: View {
                 case .slot:
                     VStack(alignment: .leading, spacing: 20) {
                     slotPicker
+                    // The hold is placed the instant a slot is picked, so the
+                    // confirmation belongs on this step and not only on the
+                    // ones after it.
+                    if let seconds = viewModel.holdSecondsRemaining {
+                        SlotHoldBanner(secondsRemaining: seconds)
+                    }
                     if let vet = viewModel.circuit.vet {
                         NavigationLink {
                             // C5's "next 7 days" availability section reads
@@ -460,27 +466,7 @@ struct BookingView: View {
                         }
                     }
                     if let seconds = viewModel.holdSecondsRemaining {
-                        // E7: the hold is the app doing something for the customer
-                        // — worth stating plainly, with the clock, rather than as
-                        // a grey footnote.
-                        HStack(spacing: 10) {
-                            Image(systemName: "lock.badge.clock.fill")
-                                .foregroundStyle(Theme.inProgress)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("This slot is held for you")
-                                    .font(.brandCaption)
-                                Text("No one else can take it for the next \(seconds / 60):\(String(format: "%02d", seconds % 60))")
-                                    .font(.brandCaption2)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-                            Spacer(minLength: 0)
-                            Text("\(seconds / 60):\(String(format: "%02d", seconds % 60))")
-                                .font(.brandMono(.callout, weight: .bold))
-                                .foregroundStyle(Theme.inProgress)
-                        }
-                        .padding(12)
-                        .background(Theme.inProgress.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .transition(.opacity)
+                        SlotHoldBanner(secondsRemaining: seconds)
                     }
 
                     if let errorMessage = viewModel.errorMessage {
@@ -543,27 +529,7 @@ struct BookingView: View {
                         }
                     }
                     if let seconds = viewModel.holdSecondsRemaining {
-                        // E7: the hold is the app doing something for the customer
-                        // — worth stating plainly, with the clock, rather than as
-                        // a grey footnote.
-                        HStack(spacing: 10) {
-                            Image(systemName: "lock.badge.clock.fill")
-                                .foregroundStyle(Theme.inProgress)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("This slot is held for you")
-                                    .font(.brandCaption)
-                                Text("No one else can take it for the next \(seconds / 60):\(String(format: "%02d", seconds % 60))")
-                                    .font(.brandCaption2)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-                            Spacer(minLength: 0)
-                            Text("\(seconds / 60):\(String(format: "%02d", seconds % 60))")
-                                .font(.brandMono(.callout, weight: .bold))
-                                .foregroundStyle(Theme.inProgress)
-                        }
-                        .padding(12)
-                        .background(Theme.inProgress.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .transition(.opacity)
+                        SlotHoldBanner(secondsRemaining: seconds)
                     }
 
                     if let errorMessage = viewModel.errorMessage {

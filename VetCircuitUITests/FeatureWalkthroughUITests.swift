@@ -44,7 +44,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
         if direct.waitForExistence(timeout: 3), direct.isHittable { return direct }
         // Collapsed: the only visible bar button is the current tab. Tapping
         // it expands the bar, after which the wanted tab exists.
-        let bar = app.otherElements["floatingTabBar"]
+        let bar = app.descendants(matching: .any).matching(identifier: "floatingTabBar").firstMatch
         if bar.exists {
             let firstButton = bar.buttons.element(boundBy: 0)
             if firstButton.exists, firstButton.isHittable { firstButton.tap() }

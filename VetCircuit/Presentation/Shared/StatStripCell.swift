@@ -27,6 +27,6 @@ struct StatStripCell: View {
         .padding(.horizontal, 6)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(item.label): \(item.value)")
+        .accessibilityLabel("\(item.accessibilityName ?? item.label): \(item.value)")
     }
 }

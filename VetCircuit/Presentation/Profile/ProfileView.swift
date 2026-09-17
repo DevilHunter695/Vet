@@ -296,7 +296,8 @@ struct ProfileView: View {
             ),
             .init(
                 value: "\(viewModel.completedVisitCount)",
-                label: "Visits", systemImage: "checkmark.seal.fill", tint: Theme.primaryLight
+                label: "Visits", systemImage: "checkmark.seal.fill", tint: Theme.primaryLight,
+                accessibilityName: "Visits done"
             )
         ])
     }

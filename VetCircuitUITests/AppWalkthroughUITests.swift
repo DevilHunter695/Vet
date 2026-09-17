@@ -54,13 +54,27 @@ final class AppWalkthroughUITests: XCTestCase {
     /// The bar also collapses to a single button while scrolling, so a tab
     /// that is not currently drawn has to be brought back first: tapping the
     /// collapsed button expands it.
+
+    /// The bar by identifier, whatever element type it resolves to.
+    ///
+    /// `.accessibilityIdentifier` on the bar's container does not reliably
+    /// surface as an `otherElement`: SwiftUI propagates it onto whichever
+    /// element it decides represents that subtree, and in practice it comes
+    /// through as a Button. Asserting on the type was the bug — the
+    /// identifier is the contract, the element type is an implementation
+    /// detail of how SwiftUI flattens the hierarchy.
+    @MainActor
+    private func floatingTabBar(in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: "floatingTabBar").firstMatch
+    }
+
     @MainActor
     private func tabButton(_ title: String, in app: XCUIApplication) -> XCUIElement {
         let direct = app.buttons[title]
         if direct.waitForExistence(timeout: 3), direct.isHittable { return direct }
         // Collapsed: the only visible bar button is the current tab. Tapping
         // it expands the bar, after which the wanted tab exists.
-        let bar = app.otherElements["floatingTabBar"]
+        let bar = floatingTabBar(in: app)
         if bar.exists {
             let firstButton = bar.buttons.element(boundBy: 0)
             if firstButton.exists, firstButton.isHittable { firstButton.tap() }
@@ -139,7 +153,7 @@ final class AppWalkthroughUITests: XCTestCase {
         // The bar is a row of buttons in a glass capsule, not a system
         // `tabBar` element — so this asserts on the container by identifier
         // and on each tab by name.
-        require(app.otherElements["floatingTabBar"], "the floating tab bar")
+        require(floatingTabBar(in: app), "the floating tab bar")
 
         for label in ["Book", "Visits", "Profile"] {
             let tab = tabButton(label, in: app)
@@ -158,7 +172,7 @@ final class AppWalkthroughUITests: XCTestCase {
     func testTheTabBarCollapsesOnScrollAndComesBack() throws {
         let app = launchApp()
         goToTab("Visits", in: app)
-        require(app.otherElements["floatingTabBar"], "the floating tab bar")
+        require(floatingTabBar(in: app), "the floating tab bar")
 
         app.swipeUp()
         app.swipeUp()
