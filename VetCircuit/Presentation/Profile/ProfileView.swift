@@ -891,18 +891,27 @@ private struct AddPetField: View {
                     .onSubmit { if canAdd { add() } }
             }
 
-            Picker("Species", selection: $species) {
-                ForEach(Pet.Species.allCases, id: \.self) {
-                    Text($0.rawValue.capitalized).tag($0)
+            // The second question appears once the first is answered. At
+            // rest this is a single field saying "add a pet" — which is what
+            // it is — rather than a three-control form standing open on a
+            // screen somebody came to for something else. The species picker
+            // and the button have nothing to act on until there is a name.
+            if canAdd {
+                Picker("Species", selection: $species) {
+                    ForEach(Pet.Species.allCases, id: \.self) {
+                        Text($0.rawValue.capitalized).tag($0)
+                    }
                 }
-            }
-            .pickerStyle(.segmented)
-            .onChange(of: species) { _, _ in Haptics.selection() }
+                .pickerStyle(.segmented)
+                .onChange(of: species) { _, _ in Haptics.selection() }
 
-            PrimaryButton(title: "Add pet", systemImage: "pawprint.fill", isEnabled: canAdd) {
-                add()
+                PrimaryButton(title: "Add \(name.trimmingCharacters(in: .whitespaces))", systemImage: "pawprint.fill") {
+                    add()
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .animation(.spring(response: 0.34, dampingFraction: 0.9), value: canAdd)
         .padding(16)
         .glassCard()
     }
