@@ -24,6 +24,14 @@ struct VerifiedBadge: View {
 final class VetDetailViewModel {
     var reviews: [Review] = []
     var isLoading = false
+    /// Set when the reviews fetch failed.
+    ///
+    /// This mattered more than the usual swallowed error. `try?` wrote a
+    /// failure into `reviews` as an empty array, the section was hidden when
+    /// empty, and the screen then read as "this vet has no reviews" — a claim
+    /// about the vet rather than about the network, on the last screen before
+    /// somebody decides to let this person into their home.
+    var errorMessage: String?
 
     private let getVetProfileUseCase = DependencyContainer.shared.getVetProfileUseCase()
 
@@ -33,8 +41,13 @@ final class VetDetailViewModel {
 
     func load(vetId: UUID) async {
         isLoading = true
+        errorMessage = nil
         defer { isLoading = false }
-        reviews = (try? await getVetProfileUseCase.reviews(vetId: vetId)) ?? []
+        do {
+            reviews = try await getVetProfileUseCase.reviews(vetId: vetId)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -96,7 +109,21 @@ struct VetDetailView: View {
                 if viewModel.histogram.totalCount > 0 {
                     ratingsSection
                 }
-                if !viewModel.reviews.isEmpty {
+                if viewModel.isLoading {
+                    // The screen used to render nothing at all while reviews
+                    // loaded, so a slow connection looked like a vet with no
+                    // reviews until they arrived.
+                    ShimmerView(cornerRadius: 18)
+                        .frame(height: 96)
+                        .accessibilityLabel("Loading reviews")
+                } else if let errorMessage = viewModel.errorMessage {
+                    EmptyStateView(
+                        systemImage: "wifi.exclamationmark",
+                        title: "Couldn't load reviews",
+                        message: errorMessage,
+                        actionTitle: "Try again"
+                    ) { Task { await viewModel.load(vetId: vet.id) } }
+                } else if !viewModel.reviews.isEmpty {
                     reviewsSection
                 }
             }

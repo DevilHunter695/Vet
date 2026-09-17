@@ -16,6 +16,9 @@ final class LiveTrackingViewModel {
     var isSendingSOS = false
     var sosShareText: String?
     var sosErrorMessage: String?
+    /// Set when the vet's location could not be fetched, as distinct from
+    /// there being no location yet.
+    var trackingErrorMessage: String?
 
     private let trackVetUseCase = DependencyContainer.shared.trackVetUseCase()
     private let sosUseCase = DependencyContainer.shared.sosUseCase()
@@ -42,7 +45,17 @@ final class LiveTrackingViewModel {
     }
 
     func start() async {
-        location = try? await trackVetUseCase.execute(visitId: visitId)
+        // `try?` here meant a tracking failure was rendered as "waiting for
+        // your vet's location" — indistinguishable from a vet who simply has
+        // not set off yet. On the screen that also carries the SOS button,
+        // "we cannot reach the vet's location" and "the vet is not moving
+        // yet" are not remotely the same message.
+        do {
+            location = try await trackVetUseCase.execute(visitId: visitId)
+            trackingErrorMessage = nil
+        } catch {
+            trackingErrorMessage = "We can't reach your vet's location right now."
+        }
         updateCamera()
         startLiveActivity()
         subscriptionToken = trackVetUseCase.subscribe(visitId: visitId) { [weak self] update in
@@ -146,6 +159,12 @@ struct LiveTrackingView: View {
                                 Text("Updated \(lastUpdatedText)")
                                     .font(.brandCaption)
                                     .foregroundStyle(Theme.textSecondary)
+                            } else if let trackingErrorMessage = viewModel.trackingErrorMessage {
+                                Text(trackingErrorMessage)
+                                    .font(.brandCallout)
+                                Text("Your visit is still booked.")
+                                    .font(.brandCaption)
+                                    .foregroundStyle(Theme.textSecondary)
                             } else {
                                 Text("Waiting for your vet's location…")
                                     .font(.brandCallout)
@@ -155,6 +174,22 @@ struct LiveTrackingView: View {
                             }
                         }
                         Spacer(minLength: 0)
+
+                        // A real retry rather than copy telling somebody to
+                        // "try again" with nothing to tap. An error state
+                        // without a way out is just a nicer dead end.
+                        if viewModel.trackingErrorMessage != nil {
+                            Button {
+                                Task { await viewModel.start() }
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                                    .scaledIcon(16, weight: .semibold)
+                                    .foregroundStyle(Theme.primaryLight)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel("Try again")
+                        }
                     }
                     .animation(reduceMotion ? nil : Theme.springQuick, value: viewModel.location?.etaMinutes)
 

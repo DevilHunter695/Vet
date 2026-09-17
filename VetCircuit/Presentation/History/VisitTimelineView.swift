@@ -6,6 +6,10 @@ struct VisitTimelineView: View {
     let visitId: UUID
     @State private var events: [VisitStatusEvent] = []
     @State private var isLoading = true
+    /// See `VisitChecklistView` — a swallowed failure rendered as "nothing
+    /// recorded yet", which is a different and much more reassuring claim
+    /// than the truth.
+    @State private var errorMessage: String?
 
     private let visitRepository = DependencyContainer.shared.visitRepository
 
@@ -13,6 +17,11 @@ struct VisitTimelineView: View {
         Group {
             if isLoading {
                 ProgressView()
+            } else if let errorMessage {
+                EmptyStateView(
+                    systemImage: "wifi.exclamationmark", title: "Couldn't load the timeline",
+                    message: errorMessage, actionTitle: "Try again"
+                ) { Task { await load() } }
             } else if events.isEmpty {
                 EmptyStateView(systemImage: "list.bullet.clipboard", title: "No timeline yet",
                                 message: "This visit's status history will appear here once it starts moving.")
@@ -34,9 +43,19 @@ struct VisitTimelineView: View {
         .auroraScreenBackground()
         .navigationTitle("Status timeline")
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            events = (try? await visitRepository.statusHistory(visitId: visitId)) ?? []
-            isLoading = false
+        .task { await load() }
+    }
+}
+
+private extension VisitTimelineView {
+    func load() async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            events = try await visitRepository.statusHistory(visitId: visitId)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }
