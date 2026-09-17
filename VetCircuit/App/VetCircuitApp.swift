@@ -227,11 +227,6 @@ struct MainTabView: View {
 
             if !chrome.isHiddenForDetail {
                 FloatingTabBar(selection: $router.selectedTab, items: Self.tabs, chrome: chrome)
-                    // Hugs its content. Inside a bottom-aligned ZStack the
-                    // HStack was stretching to the full width, so the glass
-                    // capsule drew a full-width slab with a small pill
-                    // floating inside it — which read as two bars.
-                    .fixedSize(horizontal: true, vertical: false)
                     // Leaves downward, the way it arrived — a bar that fades
                     // in place reads as a glitch, one that drops out reads as
                     // making room.

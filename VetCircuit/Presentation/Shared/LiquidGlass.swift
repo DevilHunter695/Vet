@@ -243,7 +243,12 @@ enum FloatingChrome {
     /// Content scrolls *under* the bar by design — that is the point of a
     /// translucent floating layer — but the final item still has to come to
     /// rest somewhere clear of it.
-    static let tabBarInset: CGFloat = 104
+    /// 56pt of tab cell + 16pt of the bar's vertical padding + 6pt bottom
+    /// float = a 78pt surface, plus clearance so the last row is not merely
+    /// uncovered but comfortably readable. The bar grew when every tab gained
+    /// a label, and this has to grow with it or the final item sits under the
+    /// glass again.
+    static let tabBarInset: CGFloat = 124
 }
 
 extension View {

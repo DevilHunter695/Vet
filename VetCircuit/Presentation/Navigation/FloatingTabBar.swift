@@ -9,11 +9,12 @@ import SwiftUI
 //
 // Three behaviours worth naming, because each is a deliberate choice:
 //
-//  1. **The label only appears on the selected tab.** Three icons plus three
-//     labels is a wide bar; three icons plus *one* label is a small one. The
-//     selected item is also the one whose name you least need — so the label
-//     is really there to confirm where you are, which is exactly the item
-//     that should carry it.
+//  1. **Every tab is labelled, with the icon stacked above the word.** An
+//     earlier version of this bar showed the label only on the selected tab,
+//     to keep it narrow. That trades away the thing a tab bar is for: an
+//     unlabelled glyph is a guess, and you should not have to tap a tab to
+//     find out what it is. The bar is wide instead, and the selected item is
+//     marked by a pill rather than by being the only one you can read.
 //  2. **It collapses when you scroll down and returns when you scroll up.**
 //     Reading is the moment you want the chrome gone; reaching for
 //     navigation is the moment you want it back, and scrolling up is what
@@ -126,7 +127,7 @@ struct FloatingTabBar: View {
     private var selectedItem: TabItem? { items.first { $0.id == selection } }
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             if chrome.isCollapsed, let selectedItem {
                 collapsedButton(for: selectedItem)
             } else {
@@ -135,22 +136,35 @@ struct FloatingTabBar: View {
                 }
             }
         }
-        .padding(.horizontal, chrome.isCollapsed ? 6 : 7)
-        .padding(.vertical, 6)
+        // Expanded, the bar is a wide slab that spreads its tabs across the
+        // display like the system bar it replaces. Collapsed, it hugs the one
+        // circle it has left — so the width is state, not a constant.
+        .frame(maxWidth: chrome.isCollapsed ? nil : CGFloat.infinity)
+        .padding(.horizontal, chrome.isCollapsed ? 6 : 8)
+        .padding(.vertical, 8)
         // A findable name for the bar as a whole. It is no longer a system
         // `tabBar` element — it is a row of buttons — so anything looking for
         // it (the UI walkthrough, VoiceOver's rotor) needs a handle that does
         // not depend on the element type.
         .accessibilityIdentifier("floatingTabBar")
-        .glassCapsule(level: .chrome)
+        .glassPanel(cornerRadius: barRadius, level: .chrome)
         // The whole bar is one glass surface, so it has to clip to the same
-        // capsule its background draws — otherwise the selection pill's
-        // corners poke through the rim.
-        .clipShape(Capsule(style: .continuous))
+        // shape its background draws — otherwise the selection pill's corners
+        // poke through the rim.
+        .clipShape(RoundedRectangle(cornerRadius: barRadius, style: .continuous))
         .animation(collapseSpring, value: chrome.isCollapsed)
         .animation(selectionSpring, value: selection)
+        // The slab's inset from the display edges. Applied outside the glass
+        // so it insets the surface itself; harmless when collapsed, because
+        // the circle hugs and is centred regardless.
+        .padding(.horizontal, 14)
         .padding(.bottom, 6)
     }
+
+    /// Nearly half the expanded height, which is what gives the reference its
+    /// almost-capsule ends without going fully capsule — a true `Capsule` on a
+    /// bar this tall bows the ends out further than the shape reads as.
+    private var barRadius: CGFloat { chrome.isCollapsed ? 26 : 32 }
 
     private func tabButton(for item: TabItem) -> some View {
         let isSelected = item.id == selection
@@ -159,9 +173,9 @@ struct FloatingTabBar: View {
             Haptics.selection()
             selection = item.id
         } label: {
-            HStack(spacing: 7) {
+            VStack(spacing: 5) {
                 Image(systemName: isSelected ? item.selectedIcon : item.icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 21, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
                     // `contentTransition` morphs the outline glyph into the
                     // filled one instead of blinking between them.
@@ -176,43 +190,47 @@ struct FloatingTabBar: View {
                     // make the selected icon the brightest, nearest thing in
                     // the bar, which is what stops three similar glyphs
                     // reading as one undifferentiated row.
-                    .scaleEffect(isSelected ? 1.08 : 1)
+                    .scaleEffect(isSelected ? 1.10 : 1)
+                    .foregroundStyle(isSelected ? Theme.primaryLight : Theme.textTertiary)
+                    .frame(height: 24)
 
-                if isSelected {
-                    Text(item.title)
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .tracking(-0.1)
-                        .fixedSize()
-                        // The label unfurls from the icon rather than fading
-                        // in over it: it scales out horizontally from its
-                        // leading edge, anchored where the icon sits, so the
-                        // bar reads as widening to make room for a word
-                        // instead of a word materialising in a gap.
-                        .transition(.asymmetric(
-                            insertion: .scale(scale: 0.4, anchor: .leading)
-                                .combined(with: .opacity),
-                            removal: .scale(scale: 0.6, anchor: .leading)
-                                .combined(with: .opacity)
-                        ))
-                }
+                Text(item.title)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    // Small text wants a touch of positive tracking to stay
+                    // legible; the old 14pt label was tightened instead,
+                    // which is the right call at that size and the wrong one
+                    // at this one.
+                    .tracking(0.1)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
             }
-            .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textTertiary)
-            .padding(.horizontal, isSelected ? 14 : 12)
-            .frame(height: 40)
+            .padding(.horizontal, 6)
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
             .background {
                 if isSelected {
-                    Capsule(style: .continuous)
-                        .fill(Color.white.opacity(0.13))
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(Color.white.opacity(0.15))
                         .overlay {
-                            Capsule(style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5)
+                            // The pill carries the same top-lit rim as every
+                            // other glass surface in the app, so it reads as
+                            // a raised pane within the bar rather than a
+                            // painted rectangle on it.
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: [.white.opacity(0.30), .white.opacity(0.04)],
+                                        startPoint: .top, endPoint: .bottom
+                                    ),
+                                    lineWidth: 0.75
+                                )
                         }
                         .matchedGeometryEffect(id: "selection", in: pill)
                 }
             }
-            // 40pt of visible height plus the bar's own 6pt vertical padding
-            // clears 44 without the bar looking chunky.
-            .contentShape(Capsule(style: .continuous))
+            // 56pt of visible height comfortably clears the 44pt minimum.
+            .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         }
         .buttonStyle(TabPressStyle())
         .accessibilityLabel(item.title)
@@ -228,7 +246,7 @@ struct FloatingTabBar: View {
                 .font(.system(size: 17, weight: .semibold))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(Theme.textPrimary)
-                .frame(width: 40, height: 40)
+                .frame(width: 46, height: 46)
                 .contentShape(Circle())
         }
         .buttonStyle(TabPressStyle())
