@@ -717,6 +717,12 @@ private struct ProfileGroup<Content: View>: View {
                 content
             }
             .glassCard()
+            // Clipping is what makes the separators work: every row draws one
+            // along its bottom edge, and the last row's falls outside the
+            // card's shape and simply disappears. The alternative — telling
+            // each row whether it is last — means every group in the app has
+            // to count its own children.
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
     }
 }
@@ -724,6 +730,18 @@ private struct ProfileGroup<Content: View>: View {
 /// One row inside a `ProfileGroup`. The whole row is the Button's label, so
 /// the entire width is tappable — the previous plain-`List` rows relied on
 /// the system's row chrome for that, which custom cards don't provide.
+/// Rows highlight rather than scale. A full-width row that shrinks inside a
+/// clipped card pulls away from the card's own edges and shows the background
+/// through the gap; a brightness change stays inside the shape and reads as
+/// the surface responding to the touch.
+private struct ProfileRowPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(Color.white.opacity(configuration.isPressed ? 0.06 : 0))
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 private struct ProfileLinkRow<Destination: View>: View {
     let title: String
     var subtitle: String? = nil
@@ -758,9 +776,20 @@ private struct ProfileLinkRow<Destination: View>: View {
             }
             .padding(.horizontal, 16)
             .frame(minHeight: 56)
+            .overlay(alignment: .bottom) {
+                // Inset to the text column, the way iOS insets its own list
+                // separators — a full-width rule cuts the icon off from its
+                // label and makes the group read as unrelated strips rather
+                // than one list.
+                Rectangle()
+                    .fill(Color.white.opacity(0.07))
+                    .frame(height: 0.5)
+                    .padding(.leading, 60)
+                    .allowsHitTesting(false)
+            }
             .contentShape(Rectangle())
         }
-        .buttonStyle(PressableStyle(scale: 0.99))
+        .buttonStyle(ProfileRowPressStyle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(subtitle.map { "\(title). \($0)" } ?? title)
     }
