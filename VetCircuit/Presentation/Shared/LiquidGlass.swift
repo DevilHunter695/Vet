@@ -1,51 +1,60 @@
 import SwiftUI
 
-// MARK: - Liquid glass
+// MARK: - Surfaces
 //
-// This was hand-rolled — `.ultraThinMaterial` under a gradient face, a
-// specular hairline and a rim stroke — because `glassEffect` needed iOS 26
-// and the project targeted 17. It now targets 26, so the imitation is gone
-// and the real material does the work.
+// Two materials, deliberately, because Apple's guidance draws a line between
+// them that this app had blurred.
 //
-// That deletes a lot more than the drawing code. The hand-rolled version had
-// to reason about colour scheme, composite its own reduced-transparency
-// fallback, and pick a shadow radius per surface size; the system material
-// handles every one of those itself, and handles them better, because it can
-// see what is actually behind the surface and we could only guess.
+// Liquid Glass is the *functional* layer — bars, floating controls, the tab
+// accessory — floating above content and letting it show through. Standard
+// materials are for the content layer, giving cards structure without
+// pretending to be chrome.
 //
-// `GlassLevel` stays, and is now a mapping rather than a set of magic
-// numbers: it says what a surface *is* in this app's hierarchy — floating
-// chrome, a card in the content, the one featured card on a screen — and
-// turns that into the system variant that suits it. Apple's rule that a light
-// translucent surface must never stack on another is still the reason the
-// distinction exists.
+// The mistake worth recording: when the real `glassEffect` became available,
+// every surface in the app was switched to it, cards included. That inverts
+// what the material is for. Liquid Glass exists to separate controls from
+// content; making the content out of it too removes the very distinction it
+// was drawing, and the guidance says so twice — "don't use Liquid Glass in
+// the content layer" and "use Liquid Glass effects sparingly… limit these
+// effects to the most important functional elements".
+//
+// So `GlassLevel` is now a decision about *which layer a surface belongs to*,
+// not how translucent it should be.
 
 enum GlassLevel {
-    /// Floating chrome — toolbar buttons, the pinned checkout bar. The
-    /// clearest of the three: this layer exists to let content pass beneath
-    /// it, and it is always the topmost surface.
+    /// Floating chrome — a pinned action bar, a toolbar button, the tab
+    /// accessory. This is the functional layer that sits *above* content, and
+    /// the only layer Liquid Glass belongs in.
     case chrome
-    /// A card in the content flow. Text sits directly on it and nothing
-    /// floats above it, so it takes the standard material.
+    /// A card in the content flow. A standard material, not glass.
     case surface
-    /// The one card on a screen that should read as the headline. Carries a
-    /// brand tint; still glass, not a filled panel.
+    /// The one card on a screen that should read as the headline. Still a
+    /// standard material; it earns its emphasis from a brand tint, not from
+    /// being made of something different.
     case featured
 
-    /// The system material this level maps to.
+    /// Whether this level is part of the floating functional layer.
     ///
-    /// `.clear` is the variant meant for chrome over content, `.regular` the
-    /// standard surface. `interactive` is reserved for surfaces a finger
-    /// actually lands on — it makes the material respond to touch, which is
-    /// wrong for a card that is only being read.
+    /// Apple's materials guidance draws a hard line here: "don't use Liquid
+    /// Glass in the content layer… including it in the content layer can
+    /// result in unnecessary complexity and a confusing visual hierarchy",
+    /// and "use Liquid Glass effects sparingly… limit these effects to the
+    /// most important functional elements".
+    ///
+    /// Applying it to every card — which is what this app did the moment the
+    /// real material became available — inverts the point of the material.
+    /// Liquid Glass exists to separate controls *from* content; making the
+    /// content out of it too removes the distinction it was there to draw.
+    var isFloatingChrome: Bool { self == .chrome }
+
+    /// The Liquid Glass variant, for `.chrome` only.
+    ///
+    /// `.regular` rather than `.clear`: clear is for components over
+    /// "visually rich backgrounds", and this app's ground is a broad gradient
+    /// wash. Regular "blurs and adjusts the luminosity of background content
+    /// to maintain legibility", which is what a bar full of labels needs.
     func glass(tint: Color? = nil, interactive: Bool = false) -> Glass {
-        let base: Glass
-        switch self {
-        case .chrome: base = .clear
-        case .surface: base = .regular
-        case .featured: base = .regular
-        }
-        return base.tint(tint).interactive(interactive)
+        Glass.regular.tint(tint).interactive(interactive)
     }
 }
 
@@ -53,18 +62,28 @@ struct LiquidGlassModifier<S: InsettableShape>: ViewModifier {
     let shape: S
     let level: GlassLevel
     var tint: Color?
-    /// Retained so existing call sites keep compiling. The system draws the
-    /// material's own edge now, and it does it better than a hand-drawn
-    /// stroke could — so this no longer has anything to set.
+    /// Retained so existing call sites keep compiling. Both materials draw
+    /// their own edge, and better than a hand-drawn stroke could.
     var strokeWidth: CGFloat = 1
-    /// True for small chips — an icon button, a control-group capsule — as
-    /// opposed to a card-sized surface. The system varies the material by
-    /// the shape it is given, so this now only decides whether the surface
-    /// should respond to touch.
+    /// True for small chips, which is now only used to decide whether a
+    /// floating surface should respond to touch.
     var compact: Bool = false
 
     func body(content: Content) -> some View {
-        content.glassEffect(level.glass(tint: tint, interactive: compact), in: shape)
+        if level.isFloatingChrome {
+            content.glassEffect(level.glass(tint: tint, interactive: compact), in: shape)
+        } else {
+            // Content layer: a standard material, which is what Apple points
+            // at for "elements in the content layer", plus the brand wash
+            // that makes a featured card the headline on its screen.
+            content
+                .background(.regularMaterial, in: shape)
+                .background {
+                    if let tint {
+                        shape.fill(tint.opacity(0.14))
+                    }
+                }
+        }
     }
 }
 
