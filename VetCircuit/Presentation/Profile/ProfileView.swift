@@ -236,6 +236,13 @@ struct ProfileView: View {
             .floatingTabBarScroll()
             .auroraScreenBackground()
             .navigationTitle("Profile")
+            // The bar keeps its large title but loses its background, so
+            // content runs to the top of the display and passes under the
+            // title rather than stopping below a hairline. Apple Music's
+            // screens read as starting at the top edge for exactly this
+            // reason — there is no reserved strip, only a title sitting on
+            // the content.
+            .toolbarBackground(.hidden, for: .navigationBar)
             .navigationDestination(for: Route.self) { route in
                 switch route {
                 case .household:

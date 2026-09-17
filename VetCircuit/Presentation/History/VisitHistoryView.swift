@@ -179,6 +179,13 @@ struct VisitHistoryView: View {
             }
             .auroraScreenBackground()
             .navigationTitle("Your visits")
+            // The bar keeps its large title but loses its background, so
+            // content runs to the top of the display and passes under the
+            // title rather than stopping below a hairline. Apple Music's
+            // screens read as starting at the top edge for exactly this
+            // reason — there is no reserved strip, only a title sitting on
+            // the content.
+            .toolbarBackground(.hidden, for: .navigationBar)
             // N7: `.chat` needs only the id (ChatView(visitId:)); `.visitDetail`
             // is resolved against the already-loaded `visits` array, same as
             // CircuitsListView already resolves `.book` against its own

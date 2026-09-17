@@ -229,11 +229,12 @@ struct SectionHeader: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.brandHeadline)
+                    .typeTitle()
+                    .foregroundStyle(Theme.textPrimary)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.brandCaption)
-                        .foregroundStyle(Theme.textSecondary)
+                        .typeMeta()
+                        .foregroundStyle(Theme.textTertiary)
                 }
             }
             Spacer(minLength: 8)

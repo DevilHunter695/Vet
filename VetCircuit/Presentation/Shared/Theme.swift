@@ -403,13 +403,18 @@ extension View {
         self.tracking(-0.6)
     }
 
+    /// Screen titles that still live in a navigation bar rather than in the
+    /// content. Kept so the two kinds of title agree on tracking even while
+    /// some screens have been converted to `LargeTitle` and some have not.
+    func brandNavTitleText() -> some View {
+        self.tracking(-0.5)
+    }
+
     /// Small all-caps section eyebrows. Uppercase text needs *positive*
     /// tracking — caps have no ascender/descender variety to separate them,
     /// so at default tracking they clump into a block.
     func brandEyebrow() -> some View {
-        self.font(.brandCaption2)
-            .textCase(.uppercase)
-            .tracking(0.8)
+        self.typeEyebrow()
             .foregroundStyle(Theme.textTertiary)
     }
 }
@@ -562,5 +567,65 @@ struct ShimmerView: View {
                     phase = 1.2
                 }
             }
+    }
+}
+
+// MARK: - The type scale
+//
+// Apple's rule is that tracking and leading are *size-specific*: large display
+// text reads too loose at default tracking, small text reads cramped without a
+// little extra. A single `letter-spacing` applied everywhere is wrong
+// somewhere — and at display sizes the wrongness is plainly visible.
+//
+// SwiftUI has no way to bake tracking into a `Font`, so the scale has to be
+// modifiers that set size, weight, tracking and leading together. Each role
+// below is one decision, made once, instead of three decisions repeated at
+// every call site and drifting apart.
+//
+// Hierarchy is built from weight and size *as a set*, not size alone —
+// emphasis via weight adds presence without taking more room, which matters
+// on a phone.
+
+extension View {
+    /// Screen titles. Tight tracking and negative leading: at 34pt the
+    /// default spacing makes a two-word title look like two separate words.
+    func typeDisplay() -> some View {
+        font(.system(size: 34, weight: .bold, design: .rounded))
+            .tracking(-0.8)
+    }
+
+    /// Section titles inside a screen.
+    func typeTitle() -> some View {
+        font(.system(.title3, design: .rounded, weight: .semibold))
+            .tracking(-0.3)
+    }
+
+    /// The name of a thing in a row — the line the eye lands on first.
+    func typeRowTitle() -> some View {
+        font(.system(.body, design: .rounded, weight: .semibold))
+            .tracking(-0.1)
+    }
+
+    /// Body copy. Tracking at zero, leading opened up: this is the only text
+    /// somebody reads in sentences rather than scans, and it is the one place
+    /// extra line spacing pays for the height it costs.
+    func typeBody() -> some View {
+        font(.system(.callout, design: .rounded))
+            .lineSpacing(2)
+    }
+
+    /// The supporting line under a row title.
+    func typeMeta() -> some View {
+        font(.system(.footnote, design: .rounded))
+            .tracking(0.05)
+    }
+
+    /// Small all-caps labels. Caps have no ascender/descender variety to
+    /// separate them, so at default tracking they clump into a block —
+    /// positive tracking is not decoration here, it is legibility.
+    func typeEyebrow() -> some View {
+        font(.system(.caption2, design: .rounded, weight: .semibold))
+            .textCase(.uppercase)
+            .tracking(0.9)
     }
 }
