@@ -15,7 +15,10 @@ jobs:
     # 25 was too tight once the suite grew: the app build takes ~6 min and the
     # test target's own build-for-testing another ~10, so the job was finishing
     # with no headroom.
-    timeout-minutes: 45
+    # Build ~10 + unit ~2 + UI walkthrough ~13 leaves this comfortable, but
+    # only just; raising the per-step build cap without raising this one
+    # would trade a build timeout for a job timeout.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -72,7 +75,14 @@ jobs:
           exit 1
 
       - name: Build
-        timeout-minutes: 10
+        # Was 10, sized when the app built in ~6 minutes on Xcode 16. On
+        # Xcode 26 with a larger codebase it now runs close enough to that
+        # cap that it trips intermittently — commit fbd99b7 died here with no
+        # compiler errors at all, swift-frontend killed mid-compile, and the
+        # very next commit containing the same code built cleanly. A timeout
+        # that reports as "Build -> failure" with an empty error list is a
+        # false red that costs a real investigation each time.
+        timeout-minutes: 25
         run: |
           # Tee'd so the verdict step below can surface the compiler errors.
           # A failed build prints its errors thousands of lines before the end
