@@ -123,18 +123,34 @@ enum Theme {
     // background they actually sit on.
     /// Adaptive so the light appearance (still a supported option in
     /// Settings) doesn't end up with white text on a near-white wash.
+    // These respond to Increase Contrast as well as to dark mode.
+    //
+    // Apple's colour guidance asks for "an increased contrast option for each
+    // variant that provides a significantly higher amount of visual
+    // differentiation". Without it the setting does nothing here, which is a
+    // strange thing for an app to do to the one group of people who went
+    // looking for it: secondary text stayed at 78% and tertiary at 58%
+    // however hard someone asked for more separation.
+    //
+    // The high-contrast steps are deliberately large rather than token. The
+    // point of the setting is that the difference is obvious.
     static let textPrimary = Color(uiColor: UIColor { trait in
-        trait.userInterfaceStyle == .dark ? UIColor.white : UIColor(white: 0.07, alpha: 1)
+        let boost = trait.accessibilityContrast == .high
+        return trait.userInterfaceStyle == .dark
+            ? UIColor.white
+            : UIColor(white: boost ? 0 : 0.07, alpha: 1)
     })
     static let textSecondary = Color(uiColor: UIColor { trait in
-        trait.userInterfaceStyle == .dark
-            ? UIColor(white: 1, alpha: 0.78)
-            : UIColor(white: 0, alpha: 0.68)
+        let boost = trait.accessibilityContrast == .high
+        return trait.userInterfaceStyle == .dark
+            ? UIColor(white: 1, alpha: boost ? 0.95 : 0.78)
+            : UIColor(white: 0, alpha: boost ? 0.90 : 0.68)
     })
     static let textTertiary = Color(uiColor: UIColor { trait in
-        trait.userInterfaceStyle == .dark
-            ? UIColor(white: 1, alpha: 0.58)
-            : UIColor(white: 0, alpha: 0.50)
+        let boost = trait.accessibilityContrast == .high
+        return trait.userInterfaceStyle == .dark
+            ? UIColor(white: 1, alpha: boost ? 0.85 : 0.58)
+            : UIColor(white: 0, alpha: boost ? 0.78 : 0.50)
     })
 
     /// The floor the aurora falls away to. Not pure black — a hair of blue

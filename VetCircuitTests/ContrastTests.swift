@@ -175,6 +175,55 @@ struct ContrastTests {
                 "White text on the aurora floor is \(String(format: "%.2f", measured)):1 — the floor was brightened past what body text can sit on")
     }
 
+    /// Increase Contrast has to actually do something.
+    ///
+    /// The text tokens are translucent whites over a near-black ground, so
+    /// "supply an increased contrast variant" is not a gesture — it is the
+    /// difference between 58% and 85% alpha on the tertiary token, which is
+    /// the one people struggle with. A variant that resolves to the same
+    /// colour as the normal one is the failure this catches: it looks like
+    /// support and does nothing.
+    @Test("turning on Increase Contrast measurably raises text contrast")
+    func increasedContrastRaisesContrast() {
+        let highContrast = UITraitCollection(traitsFrom: [
+            UITraitCollection(userInterfaceStyle: .dark),
+            UITraitCollection(accessibilityContrast: .high)
+        ])
+        let normal = UITraitCollection(traitsFrom: [
+            UITraitCollection(userInterfaceStyle: .dark),
+            UITraitCollection(accessibilityContrast: .normal)
+        ])
+
+        for (name, color) in [("textSecondary", Theme.textSecondary),
+                              ("textTertiary", Theme.textTertiary)] {
+            let boosted = Color(uiColor: UIColor(color).resolvedColor(with: highContrast))
+            let plain = Color(uiColor: UIColor(color).resolvedColor(with: normal))
+            let boostedRatio = ratio(boosted, on: ground)
+            let plainRatio = ratio(plain, on: ground)
+            #expect(boostedRatio > plainRatio,
+                    "Theme.\(name) is \(String(format: "%.2f", boostedRatio)):1 with Increase Contrast on and \(String(format: "%.2f", plainRatio)):1 with it off — the setting is doing nothing")
+        }
+    }
+
+    /// Every text token has to clear the body-text floor *with the setting
+    /// on* too — a high-contrast variant that is somehow worse would be an
+    /// odd way to fail, and cheap to rule out.
+    @Test("text tokens still clear 4.5:1 under Increase Contrast")
+    func increasedContrastStillLegible() {
+        let highContrast = UITraitCollection(traitsFrom: [
+            UITraitCollection(userInterfaceStyle: .dark),
+            UITraitCollection(accessibilityContrast: .high)
+        ])
+        for (name, color) in [("textPrimary", Theme.textPrimary),
+                              ("textSecondary", Theme.textSecondary),
+                              ("textTertiary", Theme.textTertiary)] {
+            let resolved = Color(uiColor: UIColor(color).resolvedColor(with: highContrast))
+            let measured = ratio(resolved, on: ground)
+            #expect(measured >= 4.5,
+                    "Theme.\(name) is \(String(format: "%.2f", measured)):1 with Increase Contrast on — below the body-text floor")
+        }
+    }
+
     @Test("the ground really is near-black, not a mid-tone wash")
     func groundIsDark() {
         let luminance = relativeLuminance(ground, dark: true)
