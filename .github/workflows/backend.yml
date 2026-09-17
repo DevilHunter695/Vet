@@ -1,4 +1,4 @@
-name: Backend migrations
+name: Backend
 
 # 61 migrations were written, reviewed and never once executed. Nothing in this
 # repository could apply them, so "the schema is fine" was an assumption that
@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  apply-migrations:
+  migrations-and-functions:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -56,3 +56,42 @@ jobs:
       # at 2am.
       - name: Apply every migration, then exercise D6's trigger
         run: ./backend/test/apply_migrations.sh
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      # Eleven edge functions — the payment webhook, the signed-quote
+      # generator, refunds, account export — have been written, reviewed and
+      # never once type-checked, exactly as the migrations had never been
+      # applied. `deno check` resolves their imports and type-checks them,
+      # which is the whole of what can be verified without deploying them.
+      #
+      # Also not continue-on-error: a webhook handler that does not compile is
+      # a payment that never gets confirmed.
+      - name: Lint the edge functions
+        working-directory: backend/supabase/functions
+        run: deno lint
+
+      - name: Type-check every edge function
+        working-directory: backend/supabase/functions
+        run: |
+          set -euo pipefail
+          failed=0
+          for f in */index.ts; do
+            if deno check --quiet "$f"; then
+              echo "ok    $(dirname "$f")"
+            else
+              echo "FAIL  $(dirname "$f")"
+              failed=1
+            fi
+          done
+          echo
+          echo "=========== EDGE FUNCTION VERDICT ==========="
+          if [ "$failed" -eq 0 ]; then
+            echo "  $(ls -d */ | wc -l | tr -d ' ') functions type-check clean"
+          else
+            echo "  at least one function failed to type-check (see above)"
+          fi
+          echo "============================================="
+          exit "$failed"

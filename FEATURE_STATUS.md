@@ -104,7 +104,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | ID | Feature | Status | Evidence |
 |---|---|---|---|
 | G1 | Hosted checkout, no raw card data | ⚪ | Architecturally correct — the app only ever holds a URL. Unverifiable without a gateway, and `SupabasePaymentRepository` now refuses rather than handing back a fake one |
-| G2 | Webhook-only confirmation | ⚪ | Same. The webhook handler is server-side and does not exist here |
+| G2 | Webhook-only confirmation | 🟠 | The handler **does** exist — `backend/supabase/functions/payment-webhook`, which I had reported as absent. CI now type-checks it along with the other ten edge functions. Whether it behaves correctly against a real gateway callback is still unverified |
 | G3 | Payment retry | 🟡 | `PaymentRetryPolicy` + `RetryPaymentUseCase` suites |
 | G4 | Refunds | 🟡 | `G4 refunds` suite — issuance, per-visit scoping, and that an ops-initiated refund stays attributable while a policy-driven one does not |
 | G5 | GST invoice PDF | 🟡 | `G5 GST invoice` suite covers itemisation and inclusive totals; `InvoicePDFRenderer` renders and the screen previews it via PDFKit |
