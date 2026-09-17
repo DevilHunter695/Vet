@@ -3310,3 +3310,119 @@ final class SupabaseReferralRepository: ReferralRepository {
         return "VC" + String(raw.prefix(6))
     }
 }
+
+/// E6/E8/G3/G6: payments.
+///
+/// This exists primarily as a safety measure, and that is worth stating
+/// plainly. `MockPaymentRepository` returns a plausible-looking
+/// `https://checkout.example.com/...` URL and reports `paymentStatus` as
+/// `.succeeded`. In a *credentialed* build — one a tester would reasonably
+/// believe is connected to something real — that means a booking would be
+/// shown as paid when no money moved and no gateway was ever contacted. Of
+/// every way this app could fail, that is the worst, and leaving payments on
+/// the mock was the single most dangerous item on the mock-only list.
+///
+/// So the split is deliberate. Four of these methods are ordinary database
+/// work that the `payments` table fully supports, and they are real. The four
+/// `createCheckout`-shaped ones require a hosted-checkout session from a
+/// payment gateway, created server-side by an Edge Function that does not
+/// exist in this repository. Those refuse, with a message a customer can
+/// read. A checkout that fails honestly is recoverable; a booking that claims
+/// to be paid and is not, is not.
+final class SupabasePaymentRepository: PaymentRepository {
+    private let client: SupabaseClient
+    init(client: SupabaseClient) { self.client = client }
+
+    private struct Row: Decodable {
+        let id: UUID
+        let status: String
+        let createdAt: Date
+        enum CodingKeys: String, CodingKey { case id, status, createdAt = "created_at" }
+    }
+
+    private struct PayAfterVisitInsert: Encodable {
+        let visitId: UUID
+        let quoteId: UUID
+        let amountMinorUnits: Int
+        let status: String
+        let kind: String
+        enum CodingKeys: String, CodingKey {
+            case visitId = "visit_id", quoteId = "quote_id"
+            case amountMinorUnits = "amount_minor_units", status, kind
+        }
+    }
+
+    private struct StatusUpdate: Encodable { let status: String }
+
+    private static let noGateway = DomainError.validation(
+        "Online payment isn't available on this build yet. Choose \"pay after visit\" to book, and settle with the vet on-site."
+    )
+
+    func createCheckout(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> URL {
+        throw Self.noGateway
+    }
+
+    func createCheckout(forVisit visitId: UUID, retryingPaymentId: UUID, amountMinorUnits: Int) async throws -> URL {
+        throw Self.noGateway
+    }
+
+    func createCheckout(forSubscription plan: Subscription.PlanType, seatCount: Int) async throws -> URL {
+        throw Self.noGateway
+    }
+
+    func createTipCheckout(forVisit visitId: UUID, amountMinorUnits: Int) async throws -> URL {
+        throw Self.noGateway
+    }
+
+    func paymentStatus(paymentId: UUID) async throws -> Payment.Status {
+        let rows: [Row] = try await client
+            .from("payments").select("id,status,created_at").eq("id", value: paymentId)
+            .limit(1).execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Payment") }
+        // An unrecognised status must never read as success. Anything the app
+        // does not understand is treated as still pending, which keeps the
+        // booking pipeline waiting rather than confirming on a guess.
+        return Payment.Status(rawValue: row.status) ?? .pending
+    }
+
+    func latestPaymentId(forVisit visitId: UUID) async throws -> UUID? {
+        let rows: [Row] = try await client
+            .from("payments").select("id,status,created_at").eq("visit_id", value: visitId)
+            .order("created_at", ascending: false)
+            .limit(1).execute().value
+        return rows.first?.id
+    }
+
+    /// E8: no money moves here and there is no gateway reference — the row is
+    /// written straight into `pay_after_visit`, which is exactly what that
+    /// status exists for. This is why the refusals above still leave a
+    /// working booking path.
+    func bookPayAfterVisit(forVisit visitId: UUID, quoteId: UUID, amountMinorUnits: Int) async throws -> UUID {
+        let rows: [Row] = try await client
+            .from("payments")
+            .insert(PayAfterVisitInsert(
+                visitId: visitId, quoteId: quoteId, amountMinorUnits: amountMinorUnits,
+                status: Payment.Status.payAfterVisit.rawValue, kind: "charge"
+            ))
+            .select("id,status,created_at").execute().value
+        guard let row = rows.first else { throw DomainError.notFound("Payment") }
+        return row.id
+    }
+
+    /// Only ever moves a payment that is actually in `pay_after_visit`. The
+    /// `eq` on status is the guard: without it this would be a client-callable
+    /// way to mark *any* payment succeeded, including a prepaid one whose
+    /// gateway charge failed.
+    func markPayAfterVisitCollected(paymentId: UUID) async throws -> Payment.Status {
+        let rows: [Row] = try await client
+            .from("payments")
+            .update(StatusUpdate(status: Payment.Status.succeeded.rawValue))
+            .eq("id", value: paymentId)
+            .eq("status", value: Payment.Status.payAfterVisit.rawValue)
+            .select("id,status,created_at").execute().value
+        guard let row = rows.first else {
+            throw DomainError.validation("This payment isn't awaiting on-site collection.")
+        }
+        return Payment.Status(rawValue: row.status) ?? .pending
+    }
+}

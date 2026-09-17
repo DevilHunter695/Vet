@@ -119,7 +119,7 @@ final class DependencyContainer {
     /// unimportant. Chat and live tracking are the two that would be noticed
     /// first by a customer.
     static let mockOnlyRepositories = [
-        "LiveTrackingRepository", "NoShowDetectionRepository", "PaymentRepository",
+        "LiveTrackingRepository", "NoShowDetectionRepository",
         "PostVisitSummaryRepository", "RenewalReminderDedupeRepository", "TriageRepository",
     ]
 
@@ -128,6 +128,12 @@ final class DependencyContainer {
     /// implementation has a hole in it" fail differently, and collapsing them
     /// into one number is how a gap stops being visible.
     static let partialSupabaseRepositories = [
+        "PaymentRepository — status, lookup and the whole pay-after-visit path are "
+        + "real; the four hosted-checkout methods refuse, because creating a gateway "
+        + "session needs a server-side function this repository does not contain. "
+        + "Refusing is deliberate: the mock returns a fake checkout URL and reports "
+        + "success, so a credentialed build on the mock would show a booking as paid "
+        + "when no money moved",
         "ChatRepository — messages persist and read receipts work, but there is no "
         + "Realtime channel yet, so a thread refreshes on load rather than pushing; "
         + "photo attachments need a storage bucket and an attachment_url column and "
@@ -158,7 +164,7 @@ final class DependencyContainer {
         self.visitRepository = client.map(SupabaseVisitRepository.init)
             ?? MockVisitRepository(packageRepository: mockPackageRepository, seed: MockData.visits)
         self.subscriptionRepository = client.map(SupabaseSubscriptionRepository.init) ?? MockSubscriptionRepository()
-        self.paymentRepository = MockPaymentRepository()
+        self.paymentRepository = client.map(SupabasePaymentRepository.init) ?? MockPaymentRepository()
         self.chatRepository = client.map(SupabaseChatRepository.init) ?? MockChatRepository()
         self.reviewRepository = client.map(SupabaseReviewRepository.init) ?? MockReviewRepository()
         self.petRepository = client.map(SupabasePetRepository.init) ?? MockPetRepository()

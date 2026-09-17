@@ -215,10 +215,16 @@ struct BackendSelectionTests {
     /// Supabase conformer is written for one of them, this fails and the list
     /// gets corrected rather than quietly going stale.
     @MainActor
-    @Test("the mock-only repositories are still the six that have no Supabase conformer")
+    @Test("the mock-only repositories are still the five that have no Supabase conformer")
     func mockOnlyListIsCurrent() {
-        #expect(DependencyContainer.mockOnlyRepositories.count == 6)
-        #expect(DependencyContainer.mockOnlyRepositories.contains("PaymentRepository"))
+        #expect(DependencyContainer.mockOnlyRepositories.count == 5)
+        #expect(DependencyContainer.mockOnlyRepositories.contains("LiveTrackingRepository"))
+        // Payments left the mock-only list, but only into the partial one —
+        // and that distinction is the whole point, because the mock's
+        // behaviour in a credentialed build is to report money taken when
+        // none was.
+        #expect(!DependencyContainer.mockOnlyRepositories.contains("PaymentRepository"))
+        #expect(DependencyContainer.partialSupabaseRepositories.contains { $0.hasPrefix("PaymentRepository") })
         // Chat moved off this list when it got a conformer; it must not be
         // silently dropped from the record altogether, because that conformer
         // still has a named hole in it.
