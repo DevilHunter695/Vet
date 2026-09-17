@@ -203,15 +203,15 @@ struct MainTabView: View {
         @Bindable var router = router
         ZStack(alignment: .bottom) {
             TabView(selection: $router.selectedTab) {
-                CircuitsListView().tag(0)
-                VisitHistoryView().tag(1)
-                ProfileView().tag(2)
+                // `.toolbar(.hidden, for: .tabBar)` has to be applied to each
+                // tab's *content*, not to the TabView. Applied to the
+                // container it does nothing, which is why the system bar was
+                // still drawing its background underneath the floating one
+                // and the bar appeared doubled.
+                CircuitsListView().tag(0).toolbar(.hidden, for: .tabBar)
+                VisitHistoryView().tag(1).toolbar(.hidden, for: .tabBar)
+                ProfileView().tag(2).toolbar(.hidden, for: .tabBar)
             }
-            // The system bar is hidden rather than styled: it cannot be made
-            // this transparent, it cannot collapse, and it permanently
-            // reserves a strip that content is then not allowed to scroll
-            // under. `FloatingTabBar` below replaces it.
-            .toolbar(.hidden, for: .tabBar)
             // Each tab root reports its scroll offset through this key (see
             // `tracksScrollOffset`), which is what drives the collapse.
             // `chrome` is captured explicitly: `onPreferenceChange`'s action
@@ -227,7 +227,11 @@ struct MainTabView: View {
 
             if !chrome.isHiddenForDetail {
                 FloatingTabBar(selection: $router.selectedTab, items: Self.tabs, chrome: chrome)
-                    .padding(.horizontal, 16)
+                    // Hugs its content. Inside a bottom-aligned ZStack the
+                    // HStack was stretching to the full width, so the glass
+                    // capsule drew a full-width slab with a small pill
+                    // floating inside it — which read as two bars.
+                    .fixedSize(horizontal: true, vertical: false)
                     // Leaves downward, the way it arrived — a bar that fades
                     // in place reads as a glitch, one that drops out reads as
                     // making room.
