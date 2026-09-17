@@ -143,6 +143,7 @@ struct ProfileView: View {
         NavigationStack(path: Bindable(router).profilePath) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
+                    ScrollOffsetProbe()
                     if let user = session.currentUser {
                         ProfileHeroCard(
                             user: user,
@@ -229,9 +230,10 @@ struct ProfileView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
-                .padding(.bottom, 32)
+                .padding(.bottom, 8)
             }
             .scrollContentBackground(.hidden)
+            .floatingTabBarScroll()
             .auroraScreenBackground()
             .navigationTitle("Profile")
             .navigationDestination(for: Route.self) { route in

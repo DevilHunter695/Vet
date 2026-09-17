@@ -189,29 +189,49 @@ struct RootView: View {
 struct MainTabView: View {
     @Environment(PendingDeepLinkStore.self) private var pendingDeepLink
     @Environment(Router.self) private var router
+    @State private var chrome = TabBarChrome()
+
+    private static let tabs = [
+        // Named for their contents, not as vague umbrellas — "Book" says what
+        // happens when you tap it in a way "Home" never would.
+        TabItem(id: 0, title: "Book", icon: "calendar", selectedIcon: "calendar.badge.plus"),
+        TabItem(id: 1, title: "Visits", icon: "clock.arrow.circlepath", selectedIcon: "clock.fill"),
+        TabItem(id: 2, title: "Profile", icon: "person.circle", selectedIcon: "person.crop.circle.fill"),
+    ]
 
     var body: some View {
         @Bindable var router = router
-        TabView(selection: $router.selectedTab) {
-            CircuitsListView()
-                .tabItem { Label("Book", systemImage: router.selectedTab == 0 ? "calendar.badge.plus" : "calendar") }
-                .tag(0)
+        ZStack(alignment: .bottom) {
+            TabView(selection: $router.selectedTab) {
+                CircuitsListView().tag(0)
+                VisitHistoryView().tag(1)
+                ProfileView().tag(2)
+            }
+            // The system bar is hidden rather than styled: it cannot be made
+            // this transparent, it cannot collapse, and it permanently
+            // reserves a strip that content is then not allowed to scroll
+            // under. `FloatingTabBar` below replaces it.
+            .toolbar(.hidden, for: .tabBar)
+            // Each tab root reports its scroll offset through this key (see
+            // `tracksScrollOffset`), which is what drives the collapse.
+            .onPreferenceChange(ScrollOffsetKey.self) { offset in
+                Task { @MainActor in
+                    chrome.scrollOffsetChanged(offset)
+                    chrome.resetIfAtTop(offset)
+                }
+            }
 
-            VisitHistoryView()
-                .tabItem { Label("Visits", systemImage: router.selectedTab == 1 ? "clock.fill" : "clock.arrow.circlepath") }
-                .tag(1)
-
-            ProfileView()
-                .tabItem { Label("Profile", systemImage: router.selectedTab == 2 ? "person.crop.circle.fill" : "person.circle") }
-                .tag(2)
+            FloatingTabBar(selection: $router.selectedTab, items: Self.tabs, chrome: chrome)
+                .padding(.horizontal, 16)
         }
-        .onChange(of: router.selectedTab) { _, _ in Haptics.selection() }
-        // N7: `.book` is the one DeepLink case Router.handle(_:) doesn't act
-        // on — CircuitsListView resolves it itself against its own loaded
-        // circuits (unchanged from before this Router existed). Every other
-        // case (`.visit`, `.chat`, `.household`) now switches tab *and*
-        // pushes its Route via `router.handle(_:)` in `.onOpenURL`, so
-        // nothing else needs handling here.
+        .environment(chrome)
+        .onChange(of: router.selectedTab) { _, _ in
+            Haptics.selection()
+            // Switching tabs is a navigation moment, so the bar should be
+            // whole when you arrive — landing on a new screen with collapsed
+            // chrome reads as broken.
+            chrome.expand()
+        }
         .onChange(of: pendingDeepLink.pending) { _, link in
             if case .book = link { router.selectedTab = 0 }
         }

@@ -1,0 +1,176 @@
+import SwiftUI
+
+// MARK: - The floating tab bar
+//
+// Replaces `TabView`'s system bar, which is an opaque strip that permanently
+// eats ~83pt of every screen and cannot be made translucent beyond what the
+// system decides. This one floats, is mostly transparent, and gets out of the
+// way while you read.
+//
+// Three behaviours worth naming, because each is a deliberate choice:
+//
+//  1. **The label only appears on the selected tab.** Three icons plus three
+//     labels is a wide bar; three icons plus *one* label is a small one. The
+//     selected item is also the one whose name you least need — so the label
+//     is really there to confirm where you are, which is exactly the item
+//     that should carry it.
+//  2. **It collapses when you scroll down and returns when you scroll up.**
+//     Reading is the moment you want the chrome gone; reaching for
+//     navigation is the moment you want it back, and scrolling up is what
+//     people do just before they navigate. Same behaviour as Apple Music's.
+//  3. **Content scrolls under it, not around it.** A translucent layer that
+//     reserves its own strip is just an opaque bar with extra steps.
+
+struct TabItem: Identifiable, Equatable {
+    let id: Int
+    let title: String
+    let icon: String
+    let selectedIcon: String
+}
+
+@MainActor
+@Observable
+final class TabBarChrome {
+    /// Collapsed to a single circle. Driven by scroll direction, and by the
+    /// user tapping the collapsed circle to bring it back.
+    var isCollapsed = false
+
+    private var lastOffset: CGFloat = 0
+    /// Movement under this is noise — a finger resting on a list, a bounce at
+    /// the top. Without hysteresis the bar flickers between states while
+    /// somebody is just holding still.
+    private let threshold: CGFloat = 12
+
+    func scrollOffsetChanged(_ offset: CGFloat) {
+        let delta = offset - lastOffset
+        guard abs(delta) > threshold else { return }
+        lastOffset = offset
+        // `offset` decreases as content moves up, so a negative delta is
+        // scrolling *down* into the content.
+        let shouldCollapse = delta < 0
+        guard shouldCollapse != isCollapsed else { return }
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+            isCollapsed = shouldCollapse
+        }
+    }
+
+    /// Near the top of a list the bar should always be available — there is
+    /// nothing to read up there and a collapsed bar just looks broken.
+    func resetIfAtTop(_ offset: CGFloat) {
+        guard offset > -40, isCollapsed else { return }
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { isCollapsed = false }
+    }
+
+    func expand() {
+        guard isCollapsed else { return }
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) { isCollapsed = false }
+    }
+}
+
+struct FloatingTabBar: View {
+    @Binding var selection: Int
+    let items: [TabItem]
+    var chrome: TabBarChrome
+
+    @Namespace private var pill
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var selectedItem: TabItem? { items.first { $0.id == selection } }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            if chrome.isCollapsed, let selectedItem {
+                collapsedButton(for: selectedItem)
+            } else {
+                ForEach(items) { item in
+                    tabButton(for: item)
+                }
+            }
+        }
+        .padding(.horizontal, chrome.isCollapsed ? 6 : 7)
+        .padding(.vertical, 6)
+        .glassCapsule(level: .chrome)
+        // The whole bar is one glass surface, so it has to clip to the same
+        // capsule its background draws — otherwise the selection pill's
+        // corners poke through the rim.
+        .clipShape(Capsule(style: .continuous))
+        .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.38, dampingFraction: 0.82), value: chrome.isCollapsed)
+        .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.34, dampingFraction: 0.8), value: selection)
+        .padding(.bottom, 6)
+    }
+
+    private func tabButton(for item: TabItem) -> some View {
+        let isSelected = item.id == selection
+        return Button {
+            guard !isSelected else { return }
+            Haptics.selection()
+            selection = item.id
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: isSelected ? item.selectedIcon : item.icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    // `contentTransition` cross-fades the glyph instead of
+                    // popping it, so switching tabs morphs rather than blinks.
+                    .contentTransition(.symbolEffect(.replace))
+
+                if isSelected {
+                    Text(item.title)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .tracking(-0.1)
+                        .fixedSize()
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .offset(x: -6)),
+                            removal: .opacity
+                        ))
+                }
+            }
+            .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textTertiary)
+            .padding(.horizontal, isSelected ? 14 : 12)
+            .frame(height: 40)
+            .background {
+                if isSelected {
+                    Capsule(style: .continuous)
+                        .fill(Color.white.opacity(0.13))
+                        .overlay {
+                            Capsule(style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5)
+                        }
+                        .matchedGeometryEffect(id: "selection", in: pill)
+                }
+            }
+            // 40pt of visible height plus the bar's own 6pt vertical padding
+            // clears 44 without the bar looking chunky.
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(TabPressStyle())
+        .accessibilityLabel(item.title)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private func collapsedButton(for item: TabItem) -> some View {
+        Button {
+            Haptics.tap()
+            chrome.expand()
+        } label: {
+            Image(systemName: item.selectedIcon)
+                .font(.system(size: 17, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Theme.textPrimary)
+                .frame(width: 40, height: 40)
+                .contentShape(Circle())
+        }
+        .buttonStyle(TabPressStyle())
+        .accessibilityLabel("\(item.title) tab. Double tap to show all tabs.")
+    }
+}
+
+/// Press feedback on touch-down, not on release — the interface should
+/// acknowledge the finger before it knows what the finger wants.
+private struct TabPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .animation(.spring(response: 0.22, dampingFraction: 1.0), value: configuration.isPressed)
+    }
+}

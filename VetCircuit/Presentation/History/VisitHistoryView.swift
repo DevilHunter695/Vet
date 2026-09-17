@@ -239,6 +239,7 @@ struct VisitHistoryView: View {
     private var visitList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
+                ScrollOffsetProbe()
                 if let activeVisit {
                     VStack(alignment: .leading, spacing: 12) {
                         SectionHeader(
@@ -300,9 +301,10 @@ struct VisitHistoryView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            .padding(.bottom, 32)
+            .padding(.bottom, 8)
         }
         .scrollContentBackground(.hidden)
+        .floatingTabBarScroll()
         .animation(Theme.springQuick, value: viewModel.visits.count)
     }
 }

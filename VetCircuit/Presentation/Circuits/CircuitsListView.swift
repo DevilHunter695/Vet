@@ -165,6 +165,7 @@ struct CircuitsListView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 14) {
+                            ScrollOffsetProbe()
                             // C11: an explicit, always-visible emergency entry
                             // point — plan §C11 calls this safety-critical,
                             // not something to bury behind "Not sure?".
@@ -219,6 +220,7 @@ struct CircuitsListView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
                     }
+                    .floatingTabBarScroll()
                     .auroraScreenBackground()
                 }
             }
