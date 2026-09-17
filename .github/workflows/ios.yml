@@ -182,7 +182,11 @@ jobs:
               return
             fi
             local summary
-            summary=$(grep -E "Test run with [0-9]+ tests (passed|failed)" "$log" | tail -1 || true)
+            # Xcode 26's Swift Testing writes "Test run with 453 tests in 125
+            # suites passed"; older toolchains wrote "…453 tests passed". The
+            # optional middle clause matches both — without it this reported a
+            # passing 453-test suite as possibly never having run.
+            summary=$(grep -E "Test run with [0-9]+ tests( in [0-9]+ suites)? (passed|failed)" "$log" | tail -1 || true)
             local marker
             marker=$(grep -Eo "\*\* TEST (SUCCEEDED|FAILED) \*\*" "$log" | tail -1 || true)
             local xctest
@@ -200,8 +204,13 @@ jobs:
             # passed from a suite that never ran — "** TEST SUCCEEDED **"
             # prints for both, and a silently empty run is the exact failure
             # this whole step exists to stop. So show the tail and say so.
-            if [ -z "$summary" ]; then
-              echo "  NOTE   : no 'Test run with N tests' line — this suite may not have executed."
+            # Only a real alarm when nothing ran under *either* framework:
+            # an XCTest-only suite (the UI walkthrough) never emits a Swift
+            # Testing summary, and saying it might not have executed while it
+            # reports 21 passing tests is noise that trains you to ignore the
+            # warning.
+            if [ -z "$summary" ] && echo "$xctest" | grep -q "Executed 0 tests"; then
+              echo "  NOTE   : no test-count line from either framework — this suite may not have executed."
               echo "  tail   :"
               grep -vE '^\s*$' "$log" | tail -8 | sed 's/^/    /'
             fi
