@@ -92,7 +92,7 @@ struct TicketDetailView: View {
                         Text("No refunds or credits issued for this ticket yet.").foregroundStyle(Theme.textSecondary)
                     } else {
                         ForEach(viewModel.auditTrail) { audit in
-                            VStack(alignment: .leading, spacing: 3) {
+                            VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     Text(audit.kind == .refund ? "Refund" : "Wallet credit").font(.brandBody.weight(.semibold))
                                     Spacer()

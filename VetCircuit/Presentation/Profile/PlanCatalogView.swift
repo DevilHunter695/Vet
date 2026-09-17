@@ -112,7 +112,7 @@ private struct PlanCatalogCard: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(entry.inclusions, id: \.self) { inclusion in
-                    HStack(alignment: .top, spacing: 9) {
+                    HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
                             .scaledIcon(13, weight: .regular)
                             .foregroundStyle(Theme.success)
@@ -131,7 +131,7 @@ private struct PlanCatalogCard: View {
             PrimaryButton(title: "Subscribe", isLoading: isSubscribing, action: onSubscribe)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
+        .padding(16)
         .featuredGlassCard()
     }
 }

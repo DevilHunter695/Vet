@@ -241,6 +241,37 @@ enum Theme {
         startPoint: .topLeading, endPoint: .bottomTrailing
     )
 
+    // MARK: Spacing
+    //
+    // One scale, so the app has a rhythm rather than a collection of
+    // individually reasonable numbers. Apple's layout guidance is that
+    // alignment and consistent grouping are what let people scan a screen —
+    // "people assume that aligned items are related to each other" — and a
+    // stack spaced 3 next to one spaced 5 next to one spaced 9 quietly denies
+    // them that signal.
+    //
+    // A 4pt grid with two half-steps for the places where 4 is genuinely too
+    // much: the gap between a title and the caption directly under it, and
+    // the inside of a small chip.
+    enum Space {
+        /// Between a label and the line that belongs to it.
+        static let hairline: CGFloat = 2
+        /// Inside a chip or badge.
+        static let tight: CGFloat = 4
+        /// Between closely related lines in a stack.
+        static let snug: CGFloat = 6
+        /// The default gap between elements in a group.
+        static let regular: CGFloat = 8
+        /// Between groups inside a card.
+        static let comfortable: CGFloat = 12
+        /// A card's inner padding, and the gap between cards.
+        static let card: CGFloat = 16
+        /// Between sections of a screen.
+        static let section: CGFloat = 20
+        /// Around a screen's most prominent block.
+        static let generous: CGFloat = 28
+    }
+
     // MARK: Elevation
 
     static let cardShadow = Color.black.opacity(0.08)

@@ -126,7 +126,7 @@ private struct AddressRow: View {
                 Image(systemName: address.isDefault ? "star.fill" : "mappin.circle")
                     .foregroundStyle(address.isDefault ? Theme.warning : Theme.primary)
                     .frame(width: 20)
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(address.label).font(.brandHeadline).foregroundStyle(.primary)
                         if !address.isServed {

@@ -654,7 +654,7 @@ struct CircuitRow: View {
                 .allowsHitTesting(false)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 6) {
                         Text(circuit.vet?.name ?? "Veterinarian")
                             .font(.brandHeadline)
                             .foregroundStyle(.primary)
@@ -679,7 +679,7 @@ struct CircuitRow: View {
                         .minimumScaleFactor(0.85)
 
                     if let vet = circuit.vet {
-                        HStack(spacing: 5) {
+                        HStack(spacing: 6) {
                             Image(systemName: "star.fill")
                                 .font(.caption)
                                 .foregroundStyle(Theme.goldTier)

@@ -7,7 +7,7 @@ struct StatStripCell: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 6) {
             Image(systemName: item.systemImage)
                 .scaledIcon(15, weight: .semibold)
                 .foregroundStyle(item.tint)

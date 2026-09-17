@@ -60,7 +60,7 @@ struct RecurringBookingsView: View {
                         Spacer()
                         Text(rule.isActive ? "Active" : "Paused")
                             .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
                             .background((rule.isActive ? Theme.success : Theme.warning).opacity(0.15))
                             .foregroundStyle(rule.isActive ? Theme.success : Theme.warning)
                             .clipShape(Capsule())

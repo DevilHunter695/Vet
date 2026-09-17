@@ -104,7 +104,7 @@ struct TabBarAccessoryInline: View {
 
     var body: some View {
         Button(action: model.action) {
-            HStack(spacing: 7) {
+            HStack(spacing: 8) {
                 LivePulse(tint: model.tint, isAnimating: !reduceMotion)
 
                 Text(model.detail ?? model.title)

@@ -953,7 +953,7 @@ struct BookingConfirmedView: View {
             AuroraBackground(intensity: 1.4)
             ConfettiView().allowsHitTesting(false)
 
-            VStack(spacing: 18) {
+            VStack(spacing: 16) {
                 ZStack {
                     Circle()
                         .stroke(Theme.success.opacity(0.3), lineWidth: 8)

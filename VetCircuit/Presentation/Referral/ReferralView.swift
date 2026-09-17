@@ -61,7 +61,7 @@ struct ReferralView: View {
                     } else {
                         Text(viewModel.code)
                             .font(.system(.title2, design: .monospaced, weight: .bold))
-                            .padding(.horizontal, 18).padding(.vertical, 10)
+                            .padding(.horizontal, 16).padding(.vertical, 10)
                             .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
                             .textSelection(.enabled)
                     }

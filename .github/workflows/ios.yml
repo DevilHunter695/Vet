@@ -196,6 +196,15 @@ jobs:
             # learn *which* test failed is to download the full log, and the
             # artifact/log download host is not reachable from every
             # environment that needs to read this verdict.
+            # When the summary line is missing we cannot tell a suite that
+            # passed from a suite that never ran — "** TEST SUCCEEDED **"
+            # prints for both, and a silently empty run is the exact failure
+            # this whole step exists to stop. So show the tail and say so.
+            if [ -z "$summary" ]; then
+              echo "  NOTE   : no 'Test run with N tests' line — this suite may not have executed."
+              echo "  tail   :"
+              grep -vE '^\s*$' "$log" | tail -8 | sed 's/^/    /'
+            fi
             local failing
             failing=$(sed -n '/^Failing tests:/,/^$/p' "$log" | sed '1d;/^$/d' || true)
             if [ -n "$failing" ]; then

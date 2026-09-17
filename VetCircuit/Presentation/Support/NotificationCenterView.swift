@@ -53,7 +53,7 @@ struct NotificationCenterView: View {
                         Circle()
                             .fill(notification.isRead ? Color.clear : Theme.primary)
                             .frame(width: 8, height: 8)
-                            .padding(.top, 5)
+                            .padding(.top, 6)
                             .accessibilityHidden(true)
                             .animation(.easeOut(duration: 0.2), value: notification.isRead)
                         VStack(alignment: .leading, spacing: 2) {

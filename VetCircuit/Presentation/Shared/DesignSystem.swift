@@ -306,8 +306,8 @@ struct TagChip: View {
             }
             Text(text).font(.brandCaption2)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
         .background(tint.opacity(0.14), in: Capsule())
         .foregroundStyle(tint)
         .accessibilityElement(children: .combine)
@@ -378,7 +378,7 @@ struct StatusBadge: View {
     var body: some View {
         Label(status.displayText, systemImage: icon)
             .font(.brandCaption)
-            .padding(.horizontal, 10).padding(.vertical, 5)
+            .padding(.horizontal, 10).padding(.vertical, 6)
             .background {
                 ZStack {
                     Capsule().fill(color.opacity(0.16))

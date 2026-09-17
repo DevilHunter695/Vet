@@ -42,7 +42,7 @@ struct StatStrip: View {
                 // single-row look this strip otherwise has.
                 LazyVGrid(
                     columns: [GridItem(.flexible()), GridItem(.flexible())],
-                    spacing: 18
+                    spacing: 16
                 ) {
                     ForEach(items) { item in
                         StatStripCell(item: item)

@@ -120,7 +120,7 @@ struct PrivacyConsentView: View {
                         .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 } else {
                     ForEach(viewModel.consents) { consent in
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text(consentDisplayName(consent.purpose)).font(.brandHeadline)
                             Text("Granted \(consent.grantedAt.formatted(date: .abbreviated, time: .omitted)) · version \(consent.version)")
                                 .font(.brandCaption).foregroundStyle(Theme.textSecondary)

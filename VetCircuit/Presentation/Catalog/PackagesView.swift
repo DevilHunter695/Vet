@@ -236,7 +236,7 @@ private struct PackageCard: View {
                     if discount > 0 {
                         Text("Save \(CurrencyFormatter.rupees(discount))")
                             .font(.brandCaption)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
                             .background(Theme.success.opacity(0.15), in: Capsule())
                             .foregroundStyle(Theme.success)
                     }

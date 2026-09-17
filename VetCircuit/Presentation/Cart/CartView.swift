@@ -547,7 +547,7 @@ private struct CartItemRow: View {
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(name).font(.brandHeadline)
                 Text(variantName).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 Stepper("Qty: \(quantity)", value: $quantity, in: 1...20)

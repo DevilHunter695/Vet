@@ -461,7 +461,7 @@ private struct ActiveVisitCard: View {
                 }
             }
         }
-        .padding(18)
+        .padding(16)
         .featuredGlassCard(tint: visit.status.isLive ? Theme.inProgress : Theme.emerald)
     }
 }

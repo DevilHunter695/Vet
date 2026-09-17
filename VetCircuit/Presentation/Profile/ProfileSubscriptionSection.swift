@@ -58,7 +58,7 @@ struct ProfileSubscriptionSection: View {
                         Image(systemName: "sparkles")
                             .font(.title2)
                             .foregroundStyle(Theme.emeraldLight)
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text("Join VetCircuit Care").font(.brandHeadline)
                             Text("Free visits, priority slots and member pricing from \(CurrencyFormatter.rupees(PlanCatalogEntry.lowestHeadlineMonthlyMinorUnits))/month.")
                                 .font(.brandCaption)

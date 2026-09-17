@@ -78,7 +78,7 @@ private struct WalletEntryRow: View {
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(entry.reason).font(.brandBody)
                 Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.brandCaption).foregroundStyle(Theme.textSecondary)

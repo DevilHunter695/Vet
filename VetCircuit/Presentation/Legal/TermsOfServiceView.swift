@@ -6,7 +6,7 @@ import SwiftUI
 struct TermsOfServiceView: View {
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 Text("Terms of Service").font(.brandLargeTitle)
                 Text("Last updated: September 2026").font(.brandCaption).foregroundStyle(Theme.textSecondary)
 

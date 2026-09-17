@@ -662,7 +662,7 @@ private struct ActionRow: View {
                 Text("\(badgeCount)")
                     .font(.brandCaption.bold())
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Theme.danger, in: Capsule())
                     .contentTransition(.numericText())
                     .accessibilityLabel("\(badgeCount) unread messages")

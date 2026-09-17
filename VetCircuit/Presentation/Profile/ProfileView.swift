@@ -343,7 +343,7 @@ struct ProfileView: View {
                         Image(systemName: "sparkles")
                             .font(.title2)
                             .foregroundStyle(Theme.emeraldLight)
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text("Join VetCircuit Care").font(.brandHeadline)
                             Text("Free visits, priority slots and member pricing from \(CurrencyFormatter.rupees(PlanCatalogEntry.lowestHeadlineMonthlyMinorUnits))/month.")
                                 .font(.brandCaption)
@@ -723,7 +723,7 @@ private struct NextVisitCard: View {
                     StatusBadge(status: visit.status)
                 }
                 HStack(alignment: .center, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(visit.scheduledAt.formatted(date: .abbreviated, time: .shortened))
                             .font(.brandTitle3)
                         Text(countdownText)
@@ -890,7 +890,7 @@ struct PetCard: View {
             .allowsHitTesting(false)
             .opacity(pet.isArchived ? 0.45 : 1)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(pet.name)
                     .font(.brandHeadline)
                     .foregroundStyle(.primary)

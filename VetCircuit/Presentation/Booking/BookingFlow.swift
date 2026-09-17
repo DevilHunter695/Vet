@@ -96,7 +96,7 @@ struct BookingProgressBar: View {
     let current: BookingStep
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             ForEach(steps, id: \.self) { step in
                 Capsule(style: .continuous)
                     .fill(step <= current ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color.white.opacity(0.12)))
