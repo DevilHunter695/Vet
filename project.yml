@@ -21,6 +21,10 @@ targets:
       # The App Group payload, compiled into the app as well as the widget.
       # Declaring it once in each target is how the two copies drifted.
       - path: VetCircuitWidget/SharedVisitSummary.swift
+      # Same reasoning for the Live Activity contract — ActivityKit only
+      # needs both targets' types to be structurally identical, and the
+      # surest way to guarantee that is for there to be only one of them.
+      - path: VetCircuitWidget/VetEnRouteAttributes.swift
     resources:
       - path: VetCircuit/Resources
         excludes:

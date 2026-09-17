@@ -218,13 +218,23 @@ struct FloatingTabBar: View {
                 // At accessibility sizes even a `minimumScaleFactor(0.85)`
                 // word does not fit under a 24pt glyph inside a fixed 56pt
                 // cell — it clips. Rather than let the cell grow (see the
-                // note on `dynamicTypeSize` above), the word drops out at
-                // that point and the icon alone stands for the tab, exactly
-                // as the collapsed single-tab button already does elsewhere
-                // in this bar. VoiceOver is unaffected: `accessibilityLabel`
-                // below still carries the title regardless of this layout.
+                // note on `dynamicTypeSize` above), the word drops out and
+                // the icon alone stands for the tab.
+                //
+                // This is what UIKit's own tab bar does at these sizes, and
+                // it is only half of what it does: the system pairs the
+                // dropped title with the large content viewer, so a press
+                // and hold puts the icon and the full label up in a HUD in
+                // the middle of the screen. Without that half, somebody at
+                // AX5 — the person most likely to need the word — is the one
+                // person who cannot get at it. Apple's own guidance is
+                // "include tab labels to help with navigation"; the viewer
+                // is how that promise is kept when the label will not fit.
                 if dynamicTypeSize.isAccessibilitySize {
                     glyph
+                        .accessibilityShowsLargeContentViewer {
+                            Label(item.title, systemImage: isSelected ? item.selectedIcon : item.icon)
+                        }
                 } else {
                     VStack(spacing: 5) {
                         glyph

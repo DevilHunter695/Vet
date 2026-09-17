@@ -6,40 +6,19 @@ import Foundation
 // MARK: - I3 Live Activity / Dynamic Island for "vet en route" (plan §3 I3,
 // P1 — "iOS-native differentiator, huge perceived-quality win").
 //
-// `VetEnRouteAttributes` is defined identically here and in
-// VetCircuitWidget/VetEnRouteAttributes.swift — there's no shared-framework
-// target in this project, so (mirroring `SharedVisitSummary`'s existing
-// app/widget duplication for N6) each target keeps its own copy of the same
-// Codable layout, which is all ActivityKit needs to agree on the wire
-// format. VetCircuitWidget/VetEnRouteLiveActivity.swift supplies the actual
-// Lock Screen/Dynamic Island `ActivityConfiguration` views, now that a
-// widget extension target exists (it didn't when this row was last audited).
+// VetCircuitWidget/VetEnRouteLiveActivity.swift supplies the Lock Screen and
+// Dynamic Island views; this file owns starting, updating and ending the
+// Activity from the app side.
 #if canImport(ActivityKit)
-@available(iOS 16.1, *)
-struct VetEnRouteAttributes: ActivityAttributes {
-    /// Mirrors `Visit.VisitStatus`'s en-route-adjacent cases only — kept
-    /// separate rather than reusing that enum directly since the widget
-    /// extension's copy of this file can't import the main app's Domain layer.
-    enum LiveStatus: String, Codable, Hashable {
-        case enRoute, arrived, inProgress
-
-        var displayText: String {
-            switch self {
-            case .enRoute: return "Vet en route"
-            case .arrived: return "Vet has arrived"
-            case .inProgress: return "Visit in progress"
-            }
-        }
-    }
-
-    struct ContentState: Codable, Hashable {
-        var etaMinutes: Int?
-        var status: LiveStatus
-    }
-
-    var visitId: UUID
-    var vetName: String
-}
+// `VetEnRouteAttributes` itself lives in
+// VetCircuitWidget/VetEnRouteAttributes.swift and is compiled into BOTH
+// targets (see project.yml), exactly like `SharedVisitSummary`.
+//
+// It used to be declared twice, and the comment here cited the other
+// duplicate as precedent for doing so. ActivityKit only requires the two
+// types to be structurally identical Codable layouts — which is precisely
+// the kind of requirement that holds until somebody edits one side. The
+// surest way to keep two definitions identical is to have one.
 
 /// Thin wrapper so call sites (LiveTrackingViewModel) don't touch
 /// `Activity<T>` directly — keeps ActivityKit usage in one place, and gives
@@ -61,15 +40,38 @@ enum VetEnRouteActivityManager {
         }
     }
 
+    /// Turns "N minutes away" into the clock time that means, so the widget
+    /// can render a figure that keeps itself honest between pushes.
+    private static func arrival(in minutes: Int?, from now: Date = .now) -> Date? {
+        guard let minutes, minutes >= 0 else { return nil }
+        return now.addingTimeInterval(TimeInterval(minutes * 60))
+    }
+
+    /// When to let the system mark the Activity stale.
+    ///
+    /// Without this the Lock Screen shows the last known ETA forever, with
+    /// nothing to say it stopped being updated — which is worse than showing
+    /// nothing, because it looks current. A little past the expected arrival
+    /// is the point after which this Activity is no longer telling the truth.
+    private static func staleDate(for arrival: Date?, from now: Date = .now) -> Date {
+        (arrival ?? now).addingTimeInterval(10 * 60)
+    }
+
     static func start(visitId: UUID, vetName: String, etaMinutes: Int?, status: Visit.VisitStatus) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled, let liveStatus = liveStatus(for: status) else { return }
         // A visit can only have one live tracking session at a time; ending
         // any stale activity first avoids the Island showing two vets.
         end()
         let attributes = VetEnRouteAttributes(visitId: visitId, vetName: vetName)
-        let state = VetEnRouteAttributes.ContentState(etaMinutes: etaMinutes, status: liveStatus)
+        let expected = arrival(in: etaMinutes)
+        let state = VetEnRouteAttributes.ContentState(
+            etaMinutes: etaMinutes, expectedArrival: expected, status: liveStatus
+        )
         do {
-            currentActivity = try Activity.request(attributes: attributes, content: .init(state: state, staleDate: nil))
+            currentActivity = try Activity.request(
+                attributes: attributes,
+                content: .init(state: state, staleDate: staleDate(for: expected))
+            )
         } catch {
             // Live Activities are additive reassurance (like LiveTrackingView's
             // map, per its own doc comment) — a failure to start one must
@@ -79,8 +81,12 @@ enum VetEnRouteActivityManager {
 
     static func update(etaMinutes: Int?, status: Visit.VisitStatus) {
         guard let currentActivity, let liveStatus = liveStatus(for: status) else { return }
-        let state = VetEnRouteAttributes.ContentState(etaMinutes: etaMinutes, status: liveStatus)
-        Task { await currentActivity.update(.init(state: state, staleDate: nil)) }
+        let expected = arrival(in: etaMinutes)
+        let state = VetEnRouteAttributes.ContentState(
+            etaMinutes: etaMinutes, expectedArrival: expected, status: liveStatus
+        )
+        let stale = staleDate(for: expected)
+        Task { await currentActivity.update(.init(state: state, staleDate: stale)) }
     }
 
     static func end() {

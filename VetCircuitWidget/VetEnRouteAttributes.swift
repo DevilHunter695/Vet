@@ -33,8 +33,27 @@ struct VetEnRouteAttributes: ActivityAttributes {
     }
 
     struct ContentState: Codable, Hashable {
+        /// Kept for compatibility with any Activity already running when the
+        /// app updates — a live Activity's state is decoded by the *new*
+        /// binary, so removing a field would break one mid-flight.
         var etaMinutes: Int?
+        /// When the vet is actually expected, rather than how many minutes
+        /// away they were at the moment of the last push.
+        ///
+        /// This is the difference between a Live Activity that stays true and
+        /// one that lies. `etaMinutes` is frozen the instant it is sent: the
+        /// Island shows "5 min" and keeps showing "5 min" until the next
+        /// push, so a gap in updates leaves a confidently wrong number on the
+        /// Lock Screen. A date lets the view render `Text(_, style:)`, which
+        /// the system re-renders continuously with no push at all.
+        var expectedArrival: Date?
         var status: LiveStatus
+
+        init(etaMinutes: Int? = nil, expectedArrival: Date? = nil, status: LiveStatus) {
+            self.etaMinutes = etaMinutes
+            self.expectedArrival = expectedArrival
+            self.status = status
+        }
     }
 
     var visitId: UUID
