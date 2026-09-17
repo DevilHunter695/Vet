@@ -2,7 +2,7 @@ name: VetCircuit
 options:
   bundleIdPrefix: com.vetcircuit
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "26.0"
   createIntermediateGroups: true
 settings:
   SWIFT_VERSION: "6.0"

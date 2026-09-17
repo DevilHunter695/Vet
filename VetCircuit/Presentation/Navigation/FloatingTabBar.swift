@@ -98,6 +98,9 @@ struct FloatingTabBar: View {
     @Binding var selection: Int
     let items: [TabItem]
     var chrome: TabBarChrome
+    /// What the bar minimizes *around* — see `TabBarAccessoryModel`. Nil most
+    /// of the time; present while a visit is actually happening.
+    var accessory: TabBarAccessoryModel?
 
     @Namespace private var pill
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -147,21 +150,54 @@ struct FloatingTabBar: View {
 
     private var selectedItem: TabItem? { items.first { $0.id == selection } }
 
+    /// Minimized *with something to inline*, which is the state Apple's
+    /// guidance actually describes. Without an accessory there is nothing to
+    /// move inline, and the bar falls back to the single-circle collapse.
+    private var isMinimizedWithAccessory: Bool {
+        chrome.isCollapsed && accessory != nil
+    }
+
+    private var hugsContent: Bool {
+        chrome.isCollapsed && accessory == nil
+    }
+
     var body: some View {
-        HStack(spacing: 4) {
-            if chrome.isCollapsed, let selectedItem {
-                collapsedButton(for: selectedItem)
-            } else {
-                ForEach(items) { item in
-                    tabButton(for: item)
+        VStack(spacing: 0) {
+            // Expanded: the accessory is a full-width strip above the tabs,
+            // inside the same pane — one surface, two decks.
+            if let accessory, !chrome.isCollapsed {
+                TabBarAccessoryStrip(model: accessory)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                GlassSeam()
+            }
+
+            HStack(spacing: 4) {
+                if isMinimizedWithAccessory, let accessory {
+                    // Minimized: the accessory rides inline with the tabs,
+                    // and the tabs stay tappable — Apple's own wording is
+                    // that a person "can exit the minimized state by tapping
+                    // a tab", which a bar collapsed to one circle makes
+                    // impossible. Icons only, so the row still fits.
+                    TabBarAccessoryInline(model: accessory)
+                    Spacer(minLength: 0)
+                    ForEach(items) { item in
+                        minimizedTabButton(for: item)
+                    }
+                } else if chrome.isCollapsed, let selectedItem {
+                    collapsedButton(for: selectedItem)
+                } else {
+                    ForEach(items) { item in
+                        tabButton(for: item)
+                    }
                 }
             }
         }
         // Expanded, the bar is a wide slab that spreads its tabs across the
-        // display like the system bar it replaces. Collapsed, it hugs the one
-        // circle it has left — so the width is state, not a constant.
-        .frame(maxWidth: chrome.isCollapsed ? nil : CGFloat.infinity)
-        .padding(.horizontal, chrome.isCollapsed ? 6 : 8)
+        // display like the system bar it replaces. Collapsed with nothing to
+        // inline, it hugs the one circle it has left — so the width is state,
+        // not a constant.
+        .frame(maxWidth: hugsContent ? nil : CGFloat.infinity)
+        .padding(.horizontal, hugsContent ? 6 : 8)
         .padding(.vertical, 8)
         // A findable name for the bar as a whole. It is no longer a system
         // `tabBar` element — it is a row of buttons — so anything looking for
@@ -174,6 +210,7 @@ struct FloatingTabBar: View {
         // poke through the rim.
         .clipShape(RoundedRectangle(cornerRadius: barRadius, style: .continuous))
         .animation(collapseSpring, value: chrome.isCollapsed)
+        .animation(collapseSpring, value: accessory)
         .animation(selectionSpring, value: selection)
         // The slab's inset from the display edges. Applied outside the glass
         // so it insets the surface itself; harmless when collapsed, because
@@ -185,7 +222,30 @@ struct FloatingTabBar: View {
     /// Nearly half the expanded height, which is what gives the reference its
     /// almost-capsule ends without going fully capsule — a true `Capsule` on a
     /// bar this tall bows the ends out further than the shape reads as.
-    private var barRadius: CGFloat { chrome.isCollapsed ? 26 : 32 }
+    private var barRadius: CGFloat { hugsContent ? 26 : 32 }
+
+    /// The minimized row's tab: the glyph alone, at a full 44pt target.
+    /// Tapping one both switches tab and restores the bar, which is the
+    /// escape route the guidance requires.
+    private func minimizedTabButton(for item: TabItem) -> some View {
+        let isSelected = item.id == selection
+        return Button {
+            Haptics.selection()
+            if !isSelected { selection = item.id }
+            chrome.expand()
+        } label: {
+            Image(systemName: isSelected ? item.selectedIcon : item.icon)
+                .font(.system(size: 17, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .contentTransition(.symbolEffect(.replace))
+                .foregroundStyle(isSelected ? Theme.primaryLight : Theme.textTertiary)
+                .frame(width: 44, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(TabPressStyle())
+        .accessibilityLabel(item.title)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
 
     private func tabButton(for item: TabItem) -> some View {
         let isSelected = item.id == selection

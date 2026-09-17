@@ -7,7 +7,11 @@ on:
 
 jobs:
   build-test-and-run:
-    runs-on: macos-15
+    # iOS 26 needs an Xcode that ships that SDK. macos-15 images top out
+    # below that, so the job asks for the newest image and falls back is not
+    # possible in Actions — if this label is unavailable the job will not
+    # start, which is a clearer signal than a build failing on a missing SDK.
+    runs-on: macos-26
     # 25 was too tight once the suite grew: the app build takes ~6 min and the
     # test target's own build-for-testing another ~10, so the job was finishing
     # with no headroom.
@@ -15,10 +19,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Select the newest Xcode available
+        # The project targets iOS 26, which needs an Xcode that ships that
+        # SDK. Runner images carry several Xcodes and default to one that may
+        # not be the newest, so pick the highest-versioned one explicitly
+        # rather than inheriting whatever the image happens to select.
+        run: |
+          set -euo pipefail
+          newest=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -n "$newest" ]; then
+            echo "Selecting $newest"
+            sudo xcode-select -s "$newest/Contents/Developer"
+          fi
+          xcodebuild -version
+
       - name: Show available Xcode versions and simulators
         run: |
           ls /Applications | grep Xcode || true
           xcodebuild -version
+          echo "--- SDKs ---"
+          xcodebuild -showsdks || true
           xcrun simctl list devices available
 
       - name: Install XcodeGen
@@ -183,6 +203,11 @@ jobs:
               echo "$failing" | sed 's/^[[:space:]]*/    - /'
             fi
           }
+          echo "=============== TOOLCHAIN ==============="
+          xcodebuild -version 2>&1 | tr '\n' ' ' || true
+          echo ""
+          xcodebuild -showsdks 2>/dev/null | grep -iE "iphoneos|iphonesimulator" | head -6 || true
+          echo "========================================"
           # Compiler errors first: if the build failed, nothing below ran and
           # this is the only thing worth reading.
           if [ -f build.log ]; then
