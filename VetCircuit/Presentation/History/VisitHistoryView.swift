@@ -415,7 +415,7 @@ private struct ActiveVisitCard: View {
                 Spacer(minLength: 0)
             }
 
-            Divider().opacity(0.35)
+            GlassSeam()
 
             HStack(spacing: 10) {
                 NavigationLink {

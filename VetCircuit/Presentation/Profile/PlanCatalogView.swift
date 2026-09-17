@@ -108,7 +108,7 @@ private struct PlanCatalogCard: View {
                 }
             }
 
-            Divider().opacity(0.4)
+            GlassSeam()
 
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(entry.inclusions, id: \.self) { inclusion in

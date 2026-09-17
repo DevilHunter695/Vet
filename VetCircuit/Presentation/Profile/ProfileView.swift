@@ -324,7 +324,7 @@ struct ProfileView: View {
                         )
                     }
                     if subscription.planType.isBulk {
-                        Divider().opacity(0.4)
+                        GlassSeam()
                         InfoRow(label: "Seats", value: "\(subscription.seatCount)", systemImage: "person.3", isMonospaced: true)
                     }
                     NavigationLink {
@@ -448,7 +448,7 @@ struct ProfileView: View {
                         .foregroundStyle(Theme.textSecondary)
                 }
 
-                Divider().opacity(0.4)
+                GlassSeam()
 
                 Toggle(isOn: $biometricLockEnabled) {
                     VStack(alignment: .leading, spacing: 2) {

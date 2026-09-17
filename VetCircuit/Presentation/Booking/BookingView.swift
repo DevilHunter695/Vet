@@ -709,7 +709,7 @@ struct BookingView: View {
                             isMonospaced: true
                         )
                     }
-                    Divider().opacity(0.4)
+                    GlassSeam()
                     HStack {
                         Text("Total").font(.brandHeadline)
                         Spacer()

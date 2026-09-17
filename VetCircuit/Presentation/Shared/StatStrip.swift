@@ -27,19 +27,9 @@ struct StatStrip: View {
         HStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                 if index > 0 {
-                    // A hairline that fades at both ends, so the division
-                    // reads as a seam in one surface rather than a hard rule
-                    // chopping it into separate boxes.
-                    LinearGradient(
-                        stops: [
-                            .init(color: .white.opacity(0.0), location: 0.0),
-                            .init(color: .white.opacity(0.16), location: 0.5),
-                            .init(color: .white.opacity(0.0), location: 1.0)
-                        ],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                    .frame(width: 1)
-                    .padding(.vertical, 10)
+                    // A seam within one pane, not a rule chopping the strip
+                    // into separate boxes — see `GlassSeam`.
+                    GlassSeam(axis: .vertical, inset: 10)
                 }
 
                 StatStripCell(item: item)

@@ -692,7 +692,7 @@ struct CircuitRow: View {
                 }
             }
 
-            Divider().opacity(0.35)
+            GlassSeam()
 
             HStack(spacing: 10) {
                 Label(slotText, systemImage: "clock.fill")
