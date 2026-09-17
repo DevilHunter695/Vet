@@ -449,6 +449,7 @@ struct CartView: View {
                     .padding(.bottom, 120)
                 }
                 .scrollContentBackground(.hidden)
+        .floatingTabBarInset()
                 .animation(Theme.crossFade, value: viewModel.quote)
                 .safeAreaInset(edge: .bottom) { checkoutBar }
             } else {
@@ -469,6 +470,7 @@ struct CartView: View {
             }
         }
         .auroraScreenBackground()
+        .hidesFloatingTabBar()
         .navigationTitle("Cart")
         .navigationBarTitleDisplayMode(.inline)
         .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }

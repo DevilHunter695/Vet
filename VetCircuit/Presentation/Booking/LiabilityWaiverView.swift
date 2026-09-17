@@ -39,6 +39,7 @@ struct LiabilityWaiverView: View {
                 .padding()
             }
             .auroraScreenBackground()
+        .floatingTabBarInset()
             .navigationTitle("Consent")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {

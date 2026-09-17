@@ -95,6 +95,7 @@ struct RescheduleVisitView: View {
                 }
             }
             .auroraScreenBackground()
+        .floatingTabBarInset()
             .navigationTitle("Reschedule")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -210,12 +210,25 @@ enum FloatingChrome {
 extension View {
     /// Everything a tab-root scroll view needs to cooperate with the floating
     /// bar: a named coordinate space for the offset reader, and enough bottom
-    /// room that the last row is reachable.
+    /// room that the last row comes to rest above the bar.
+    ///
+    /// `contentMargins` rather than `safeAreaInset`, deliberately. An inset
+    /// *reserves* the strip, which is exactly the opaque-bar behaviour the
+    /// floating bar exists to avoid — content would stop dead above it
+    /// instead of passing beneath the glass. Content margins pad the
+    /// scrollable content while leaving the scroll view itself full-bleed, so
+    /// rows still travel under the bar and only the last one is guaranteed
+    /// clear of it.
     func floatingTabBarScroll() -> some View {
         coordinateSpace(name: "scroll")
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                Color.clear.frame(height: FloatingChrome.tabBarInset)
-            }
+            .contentMargins(.bottom, FloatingChrome.tabBarInset, for: .scrollContent)
+    }
+
+    /// For the many pushed screens that are not tab roots. The bar floats over
+    /// them too — it lives above the whole `TabView` — so they need the same
+    /// bottom room, but none of them drive the collapse.
+    func floatingTabBarInset() -> some View {
+        contentMargins(.bottom, FloatingChrome.tabBarInset, for: .scrollContent)
     }
 }
 

@@ -198,6 +198,7 @@ struct PetDetailView: View {
             .padding()
         }
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle(viewModel.pet.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load() }

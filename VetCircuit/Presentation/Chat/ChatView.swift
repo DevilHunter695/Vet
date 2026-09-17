@@ -134,6 +134,7 @@ struct ChatView: View {
                     .animation(Theme.springQuick, value: viewModel.messages.count)
                 }
                 .auroraScreenBackground()
+        .floatingTabBarInset()
                 .onChange(of: viewModel.messages.count) {
                     if let last = viewModel.messages.last {
                         withAnimation(Theme.springQuick) { proxy.scrollTo(last.id, anchor: .bottom) }
@@ -207,6 +208,7 @@ struct ChatView: View {
             .padding()
             .background(.regularMaterial)
         }
+        .hidesFloatingTabBar()
         .navigationTitle("Chat")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load(currentUserId: session.currentUser?.id ?? UUID()) }

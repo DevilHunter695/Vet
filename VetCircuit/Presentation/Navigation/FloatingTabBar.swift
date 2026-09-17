@@ -65,6 +65,21 @@ final class TabBarChrome {
         guard isCollapsed else { return }
         withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) { isCollapsed = false }
     }
+
+    /// A count, not a flag. Two screens that both hide the bar can overlap
+    /// during a push transition, and with a boolean the one disappearing
+    /// turns the bar back on over the one that just asked for it gone.
+    private(set) var hiddenRequestCount = 0
+
+    func beginHiding() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) { hiddenRequestCount += 1 }
+    }
+
+    func endHiding() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+            hiddenRequestCount = max(0, hiddenRequestCount - 1)
+        }
+    }
 }
 
 struct FloatingTabBar: View {
@@ -172,5 +187,42 @@ private struct TabPressStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.92 : 1)
             .animation(.spring(response: 0.22, dampingFraction: 1.0), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Getting out of the way on detail screens
+//
+// The bar floats above the whole `TabView`, so it is over pushed screens too.
+// That is right for a list you drilled into — the tabs stay reachable — and
+// wrong for any screen that owns a primary action bar of its own, because two
+// floating bars stacked at the bottom is one too many and the tab bar wins the
+// position that belongs to the commit button.
+//
+// Apple's own answer is the same: a detail screen with its own bottom chrome
+// hides the tab bar. This is opt-in per screen rather than automatic on push,
+// because "did the user drill in" is not the question — "does this screen
+// already have a bottom bar" is.
+
+extension TabBarChrome {
+    /// Hidden entirely, for screens that own the bottom of the display.
+    /// Separate from `isCollapsed`, which is about reading; this is about
+    /// there being no room to share.
+    var isHiddenForDetail: Bool { hiddenRequestCount > 0 }
+}
+
+private struct HidesFloatingTabBar: ViewModifier {
+    @Environment(TabBarChrome.self) private var chrome: TabBarChrome?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { chrome?.beginHiding() }
+            .onDisappear { chrome?.endHiding() }
+    }
+}
+
+extension View {
+    /// Apply to any pushed screen with its own pinned bottom action bar.
+    func hidesFloatingTabBar() -> some View {
+        modifier(HidesFloatingTabBar())
     }
 }

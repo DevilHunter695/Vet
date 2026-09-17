@@ -161,6 +161,7 @@ struct PackagesView: View {
             }
         }
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Packages")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $isShowingCart) { CartView() }

@@ -198,6 +198,7 @@ struct ServiceDetailView: View {
             .padding()
         }
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $isShowingCart) { CartView() }
         .onAppear { selectedVariantId = preselectedVariantId ?? service.variants.first?.id }

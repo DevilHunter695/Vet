@@ -80,6 +80,7 @@ struct ServiceCatalogView: View {
             }
         }
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Services")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

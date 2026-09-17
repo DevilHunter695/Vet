@@ -475,6 +475,7 @@ struct VisitDetailView: View {
             .padding()
         }
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .confirmationDialog(
             "Cancel this visit?",
             isPresented: Binding(get: { pendingCancellation != nil }, set: { if !$0 { pendingCancellation = nil } }),

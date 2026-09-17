@@ -53,6 +53,7 @@ struct CorporatePlanView: View {
             .padding()
         }
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Corporate plan")
         .navigationBarTitleDisplayMode(.inline)
     }

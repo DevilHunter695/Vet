@@ -101,6 +101,7 @@ struct VetDetailView: View {
             .padding()
         }
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle(vet.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load(vetId: vet.id) }

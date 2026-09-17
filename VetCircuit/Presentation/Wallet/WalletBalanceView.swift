@@ -65,6 +65,7 @@ struct WalletBalanceView: View {
             .padding()
         }
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Wallet")
         .navigationBarTitleDisplayMode(.inline)
         .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }

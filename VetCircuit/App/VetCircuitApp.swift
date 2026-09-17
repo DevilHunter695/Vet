@@ -225,8 +225,14 @@ struct MainTabView: View {
                 }
             }
 
-            FloatingTabBar(selection: $router.selectedTab, items: Self.tabs, chrome: chrome)
-                .padding(.horizontal, 16)
+            if !chrome.isHiddenForDetail {
+                FloatingTabBar(selection: $router.selectedTab, items: Self.tabs, chrome: chrome)
+                    .padding(.horizontal, 16)
+                    // Leaves downward, the way it arrived — a bar that fades
+                    // in place reads as a glitch, one that drops out reads as
+                    // making room.
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         .environment(chrome)
         .onChange(of: router.selectedTab) { _, _ in

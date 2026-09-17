@@ -41,6 +41,7 @@ struct LabTestReportsView: View {
             .padding()
         }
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Lab test reports")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }

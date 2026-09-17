@@ -66,6 +66,7 @@ struct EmergencyView: View {
             .padding()
         }
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Emergency")
         .navigationBarTitleDisplayMode(.inline)
         .task { await viewModel.load() }

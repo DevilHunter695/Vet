@@ -584,6 +584,7 @@ struct BookingView: View {
             .padding(.bottom, 108)
         }
         .scrollContentBackground(.hidden)
+        .floatingTabBarInset()
         .auroraScreenBackground()
         .safeAreaInset(edge: .bottom) {
             // The primary action is pinned rather than living at the end of a
@@ -591,6 +592,7 @@ struct BookingView: View {
             // commit step should never require hunting for it.
             confirmBar
         }
+        .hidesFloatingTabBar()
         .navigationTitle("Book visit")
         .navigationBarTitleDisplayMode(.inline)
         .task {

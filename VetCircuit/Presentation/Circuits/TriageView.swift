@@ -92,6 +92,7 @@ struct TriageView: View {
             .padding()
         }
         .auroraScreenBackground()
+        .floatingTabBarInset()
         .navigationTitle("Symptom check")
         .navigationBarTitleDisplayMode(.inline)
     }
