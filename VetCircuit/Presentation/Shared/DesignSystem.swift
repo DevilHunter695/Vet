@@ -260,42 +260,6 @@ struct SectionHeader: View {
     }
 }
 
-/// A single headline number with a label underneath — the building block for
-/// the summary rows that make a screen informative at a glance instead of
-/// making the user read a list to work out how they're doing.
-struct StatTile: View {
-    let value: String
-    let label: String
-    var systemImage: String? = nil
-    var tint: Color = Theme.primary
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let systemImage {
-                Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(tint)
-            }
-            Text(value)
-                .font(.brandMono(.title3, weight: .bold))
-                .foregroundStyle(.primary)
-                .brandDisplayText()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(label)
-                .font(.brandCaption2)
-                .foregroundStyle(Theme.textSecondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .glassCard(cornerRadius: 16)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label): \(value)")
-    }
-}
-
 /// A label/value row — the workhorse of every detail screen. Right-aligned
 /// value, monospaced digits when it's a figure, so a column of them lines up.
 struct InfoRow: View {

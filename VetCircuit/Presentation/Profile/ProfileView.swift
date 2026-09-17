@@ -274,29 +274,31 @@ struct ProfileView: View {
     /// user open four screens. A prototype shows navigation; a finished
     /// product shows state.
     private var summaryTiles: some View {
-        // Two columns, not four: four tiles across a phone leaves each figure
-        // ~55pt of room, which forces "₹1,250" to shrink until it stops
-        // reading as a headline number.
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-            StatTile(
+        // One divided strip rather than four separate cards: see `StatStrip`
+        // for why. Four figures share the width comfortably here because the
+        // strip is shallow and the value font is a callout, not a title — the
+        // old two-column grid needed the extra room only because each figure
+        // was trying to be a headline.
+        StatStrip(items: [
+            .init(
                 value: CurrencyFormatter.rupees(viewModel.walletBalanceMinorUnits),
                 label: "Wallet", systemImage: "indianrupeesign.circle.fill", tint: Theme.emerald
-            )
-            StatTile(
+            ),
+            .init(
                 value: "\(viewModel.loyaltyAccount?.points ?? 0)",
                 label: "Points", systemImage: "star.fill",
                 tint: viewModel.loyaltyAccount.map { tierColor($0.tier) } ?? Theme.goldTier
-            )
-            StatTile(
+            ),
+            .init(
                 value: "\(viewModel.activePets.count)",
                 label: viewModel.activePets.count == 1 ? "Pet" : "Pets",
                 systemImage: "pawprint.fill", tint: Theme.primary
-            )
-            StatTile(
+            ),
+            .init(
                 value: "\(viewModel.completedVisitCount)",
-                label: "Visits done", systemImage: "checkmark.seal.fill", tint: Theme.primaryLight
+                label: "Visits", systemImage: "checkmark.seal.fill", tint: Theme.primaryLight
             )
-        }
+        ])
     }
 
     @ViewBuilder
