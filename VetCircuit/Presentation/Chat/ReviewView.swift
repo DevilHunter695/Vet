@@ -27,7 +27,7 @@ final class ReviewViewModel {
             _ = try? await loyaltyRepository.awardPoints(userId: userId, points: 20)
             didSubmit = true
             if rating >= 4 { Haptics.success() } else { Haptics.tap() }
-            if rating == 5 { requestAppStoreReviewIfDue() }
+            requestAppStoreReviewIfDue()
         } catch {
             Haptics.error()
             errorMessage = error.localizedDescription
@@ -41,7 +41,12 @@ final class ReviewViewModel {
     private func requestAppStoreReviewIfDue() {
         let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         let key = "vc.review_prompt_shown_version"
-        guard UserDefaults.standard.string(forKey: key) != currentVersion else { return }
+        // The decision lives in `AppStoreReviewPromptPolicy` so it can be
+        // tested without StoreKit, which does nothing in a test environment.
+        guard AppStoreReviewPromptPolicy.shouldPrompt(
+            rating: rating, currentVersion: currentVersion,
+            lastPromptedVersion: UserDefaults.standard.string(forKey: key)
+        ) else { return }
         UserDefaults.standard.set(currentVersion, forKey: key)
         guard let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene else { return }
         SKStoreReviewController.requestReview(in: scene)

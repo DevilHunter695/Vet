@@ -41,12 +41,20 @@ final class BiometricLockGateModel {
         }
         let context = LAContext()
         var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
-            // Graceful fallback: never strand the user behind a lock the
-            // device can't satisfy (no enrolled Face ID, simulator, etc.).
-            unavailableNote = "Face ID isn't set up on this device — app lock is off until it is."
+        let isAvailable = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+        // The decision is `BiometricLockPolicy`'s, so the fail-open path — the
+        // one that must never strand somebody behind a lock their device
+        // cannot open — is testable without biometric hardware.
+        switch BiometricLockPolicy.decide(isEnabled: true, isAvailable: isAvailable) {
+        case .unlock:
             isUnlocked = true
             return
+        case .unlockUnavailable(let note):
+            unavailableNote = note
+            isUnlocked = true
+            return
+        case .challenge:
+            break
         }
         context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "Unlock VetCircuit") { [weak self] success, _ in
             Task { @MainActor in

@@ -302,3 +302,73 @@ struct MultiPetVisitTests {
         #expect(visit.additionalPetIds.isEmpty)
     }
 }
+
+/// A10 and N5 were both marked "built, nothing tests it" because their system
+/// calls — `LAContext` and `SKStoreReviewController` — cannot run in CI. That
+/// was true of the calls and false of the decisions around them, which is
+/// where the behaviour worth protecting actually lives.
+@Suite("A10 biometric lock policy")
+struct BiometricLockPolicyTests {
+    @Test("with the lock off, the app opens without a prompt")
+    func lockOffOpens() {
+        #expect(BiometricLockPolicy.decide(isEnabled: false, isAvailable: true) == .unlock)
+    }
+
+    @Test("with the lock on and biometrics available, the customer is challenged")
+    func lockOnChallenges() {
+        #expect(BiometricLockPolicy.decide(isEnabled: true, isAvailable: true) == .challenge)
+    }
+
+    /// The one that matters. A device with no enrolled Face ID must not leave
+    /// somebody staring at a lock nothing can open — there is no password
+    /// fallback here, so failing closed would mean the app is simply gone.
+    @Test("with the lock on but biometrics unavailable, it fails OPEN and explains")
+    func failsOpen() {
+        let decision = BiometricLockPolicy.decide(isEnabled: true, isAvailable: false)
+        #expect(decision == .unlockUnavailable(note: BiometricLockPolicy.unavailableNote))
+        if case .unlockUnavailable(let note) = decision {
+            #expect(note.localizedCaseInsensitiveContains("Face ID"))
+        }
+    }
+
+    /// Order of checks: the setting is read before availability, so somebody
+    /// who never turned the lock on is never told about Face ID.
+    @Test("a device with no biometrics and the lock off gets no misleading note")
+    func noNoteWhenLockIsOff() {
+        #expect(BiometricLockPolicy.decide(isEnabled: false, isAvailable: false) == .unlock)
+    }
+}
+
+@Suite("N5 App Store review prompt policy")
+struct AppStoreReviewPromptPolicyTests {
+    @Test("a 5-star review on a version never prompted before asks")
+    func promptsOnFiveStars() {
+        #expect(AppStoreReviewPromptPolicy.shouldPrompt(rating: 5, currentVersion: "1.2", lastPromptedVersion: nil))
+    }
+
+    @Test("anything below five stars never asks")
+    func neverBelowFive() {
+        for rating in 1...4 {
+            #expect(!AppStoreReviewPromptPolicy.shouldPrompt(rating: rating, currentVersion: "1.2", lastPromptedVersion: nil),
+                    "A \(rating)-star review should never trigger an App Store prompt")
+        }
+    }
+
+    /// Three 5★ visits in a month should be three thank-yous and one prompt.
+    @Test("the same version never asks twice, however many 5-star reviews")
+    func oncePerVersion() {
+        #expect(!AppStoreReviewPromptPolicy.shouldPrompt(rating: 5, currentVersion: "1.2", lastPromptedVersion: "1.2"))
+    }
+
+    @Test("a new version may ask again")
+    func newVersionMayAsk() {
+        #expect(AppStoreReviewPromptPolicy.shouldPrompt(rating: 5, currentVersion: "1.3", lastPromptedVersion: "1.2"))
+    }
+
+    /// `Bundle.main` returning nothing useful must not become a prompt on
+    /// every single review — an unknown version is not a new version.
+    @Test("an empty version string never asks")
+    func emptyVersionNeverAsks() {
+        #expect(!AppStoreReviewPromptPolicy.shouldPrompt(rating: 5, currentVersion: "", lastPromptedVersion: nil))
+    }
+}

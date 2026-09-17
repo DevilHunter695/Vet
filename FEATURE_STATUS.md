@@ -30,7 +30,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | A7 | Export my data | 🟡 | `ExportDataUseCase` suite; JSON and PDF both real, PDF output asserted by `PDF rendering` suite |
 | A8 | Multiple addresses + geofence | 🟢 | Driven; `ManageAddressesUseCase` suite covers the served/unserved split. Demo data now includes an address deliberately outside coverage |
 | A9 | Household invite | 🟢 | Screen driven; `ManageHouseholdUseCase` suite |
-| A10 | Face ID app lock | 🟠 | Toggle renders on Profile. `LAContext` cannot be exercised in CI |
+| A10 | Face ID app lock | 🟡 | `A10 biometric lock policy` suite covers the gate's decisions, including the fail-open path when no biometrics are enrolled — the case that would otherwise lock somebody out of the app entirely. `LAContext` itself still needs a device |
 | A11 | Blocked/deactivated handling | 🟡 | `A11 blocked/deactivated account gate` suite, including a test that fails loudly if a new status is added without deciding whether it locks the user out |
 
 ## Pets & Records
@@ -181,7 +181,7 @@ no touch region under what was painted. `exists` was true for all of them.
 | N2 | Coupon campaigns | 🟡 | `N2 coupon campaign discounts` suite |
 | N3 | Lifecycle pushes | 🟡 | `DrainLifecycleNotificationQueueUseCase` + `NotificationDeliveryPolicy` suites. Actual delivery is ⚪ |
 | N4 | Loyalty points/tiers | 🟡 | `LoyaltyAccount.Tier.forPoints (N4)` suite. Demo account seeded at silver |
-| N5 | In-app rating prompt | 🟠 | `SKStoreReviewController` cannot be exercised in CI |
+| N5 | In-app rating prompt | 🟡 | `N5 App Store review prompt policy` suite — 5★ only, once per app version, and never on an unknown version. `SKStoreReviewController` itself does nothing in a test environment by Apple's design |
 | N7 | Deep links | 🟡 | `DeepLinkParser` + `Router.handle` suites, including nested-screen routing |
 
 ## Settings
@@ -201,24 +201,24 @@ no touch region under what was painted. `exists` was true for all of them.
 | Status | Count |
 |---|---|
 | 🟢 Driven through the running app | 34 |
-| 🟡 Domain logic unit-tested, screen reachable | 58 |
-| 🟠 Built, nothing tests it | 3 |
+| 🟡 Domain logic unit-tested, screen reachable | 60 |
+| 🟠 Built, nothing tests it | 1 |
 | ⚪ Mock-bound, unverifiable without a real backend | 3 |
 | — Excluded at your request | 1 |
 
-**92 of 99 have real evidence behind them. 3 have none. 3 cannot be tested in
+**94 of 99 have real evidence behind them. 1 has none. 3 cannot be tested in
 this environment at any level, and saying otherwise would be a lie.**
 
-The 🟠 three, and why each is genuinely stuck rather than merely neglected:
+A10 and N5 moved up from 🟠 by separating the decision from the system call.
+`LAContext` and `SKStoreReviewController` still need a device; the logic
+around them — fail open when no biometrics are enrolled, ask at most once per
+version — does not, and that logic is where the behaviour worth protecting
+lives.
 
-- **A10 Face ID lock** — `LAContext` has no biometric hardware to talk to in a
-  simulator, and no way to simulate a successful or failed match.
-- **C7 coverage map** — MapKit draws into a surface XCUITest cannot
-  introspect.
-- **N5 rating prompt** — `SKStoreReviewController` deliberately does nothing
-  in a test environment, by Apple's design.
-
-Each needs a person holding a device. None can be closed from here.
+The one remaining 🟠 is **C7 coverage map**: MapKit draws into a surface
+XCUITest cannot introspect, and unlike the other two there is no decision
+wrapped around it to test — the data it renders is already covered by A8's
+suite. It needs a person looking at a screen.
 
 The ⚪ three: G1 hosted checkout, G2 webhook-only confirmation, I3 Live Activity.
 All three need something this environment cannot provide — a payment gateway, a
