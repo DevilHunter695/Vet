@@ -47,49 +47,72 @@ private extension SharedVisitSummary {
 struct NextVisitWidgetView: View {
     let entry: NextVisitEntry
 
+    /// The main app's `DeepLinkParser` only understands
+    /// `vetcircuit://visit/<uuid>` (plus `/chat`), `book/<uuid>` and
+    /// `household` — there's no generic "open the app" link, so a summary
+    /// without a `visitId` (data written before that field existed, or the
+    /// "no upcoming visits" empty state) gets no `widgetURL` and the tap
+    /// falls back to the system default of just launching the app.
+    private var deepLink: URL? {
+        guard let visitId = entry.summary.visitId else { return nil }
+        return URL(string: "vetcircuit://visit/\(visitId.uuidString)")
+    }
+
     var body: some View {
-        switch entry.summary.kind {
-        case .upcomingVisit:
-            VStack(alignment: .leading, spacing: 4) {
-                Label("Next visit", systemImage: "calendar")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text(entry.summary.petName ?? "Your pet")
-                    .font(.headline)
-                if let date = entry.summary.date {
-                    Text(date, style: .date) + Text(" · ") + Text(date, style: .time)
+        Group {
+            switch entry.summary.kind {
+            case .upcomingVisit:
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Next visit", systemImage: "calendar")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(entry.summary.petName ?? "Your pet")
+                        .font(.headline)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let date = entry.summary.date {
+                        // `.relative` keeps "in 2 hours" / "3 days ago" current
+                        // without waiting on the next 30-minute timeline entry.
+                        Text(date, style: .relative)
+                    }
+                    if let subtitle = entry.summary.subtitle {
+                        Text(subtitle).font(.footnote).foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                 }
-                if let subtitle = entry.summary.subtitle {
-                    Text(subtitle).font(.caption2).foregroundStyle(.secondary)
-                }
-            }
-            .font(.subheadline)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
+                .font(.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
 
-        case .vaccinationDue:
-            VStack(alignment: .leading, spacing: 4) {
-                Label("Vaccination due", systemImage: "syringe")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text(entry.summary.vaccineName.map { "\(entry.summary.petName ?? "Your pet") · \($0)" } ?? entry.summary.petName ?? "Your pet")
-                    .font(.headline)
-                if let date = entry.summary.date {
-                    Text(date, style: .date)
+            case .vaccinationDue:
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Vaccination due", systemImage: "syringe")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(entry.summary.vaccineName.map { "\(entry.summary.petName ?? "Your pet") · \($0)" } ?? entry.summary.petName ?? "Your pet")
+                        .font(.headline)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let date = entry.summary.date {
+                        Text(date, style: .relative)
+                    }
                 }
-            }
-            .font(.subheadline)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
+                .font(.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
 
-        case .none:
-            VStack(alignment: .leading, spacing: 4) {
-                Text("No upcoming visits")
-                    .font(.headline)
-                Text("Book a vet, elder care, or physio visit to see it here.")
-                    .font(.caption2).foregroundStyle(.secondary)
+            case .none:
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("No upcoming visits")
+                        .font(.headline)
+                    Text("Book a vet, elder care, or physio visit to see it here.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
         }
+        .widgetURL(deepLink)
     }
 }
 

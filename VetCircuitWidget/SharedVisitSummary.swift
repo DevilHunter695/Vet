@@ -25,8 +25,16 @@ struct SharedVisitSummary: Codable, Equatable {
     var subtitle: String?
     var vaccineName: String?
     var generatedAt: Date
+    /// Optional so decoding stays backward-compatible with data the main app
+    /// wrote before this field existed (missing key decodes to `nil` for an
+    /// `Optional`, unlike a non-optional field which would fail the whole
+    /// decode). Used to build the widget's tap target
+    /// (`vetcircuit://visit/<uuid>`, see `DeepLinkParser`); until the main
+    /// app's `WidgetDataBridge` write side is updated to populate it, the
+    /// widget falls back to opening the app without a specific route.
+    var visitId: UUID? = nil
 
-    static let empty = SharedVisitSummary(kind: .none, petName: nil, vetName: nil, date: nil, subtitle: nil, vaccineName: nil, generatedAt: .now)
+    static let empty = SharedVisitSummary(kind: .none, petName: nil, vetName: nil, date: nil, subtitle: nil, vaccineName: nil, generatedAt: .now, visitId: nil)
 }
 
 enum WidgetDataBridge {

@@ -405,7 +405,12 @@ extension Font {
     static let brandBody = Font.system(.body, design: .rounded)
     static let brandCallout = Font.system(.callout, design: .rounded)
     static let brandCaption = Font.system(.caption, design: .rounded, weight: .medium)
-    static let brandCaption2 = Font.system(.caption2, design: .rounded, weight: .medium)
+    /// Kept as `.caption` rather than the true `.caption2` text style: at
+    /// caption2's ~11pt the type is below what Apple's HIG recommends for
+    /// legible UI text, and Dynamic Type scales it into near-illegibility at
+    /// larger accessibility sizes. The name is unchanged (many call sites
+    /// reference it), only the underlying style is bumped up one step.
+    static let brandCaption2 = Font.system(.caption, design: .rounded, weight: .medium)
 
     /// Numerals that should line up in a column (prices, balances, counts).
     /// Proportional digits make a changing figure jitter horizontally.
@@ -631,18 +636,30 @@ extension View {
             .lineSpacing(2)
     }
 
-    /// The supporting line under a row title.
+    /// The supporting line under a row title. Small text wants a touch more
+    /// relative leading than body copy, the same size/leading inverse
+    /// relationship as the tracking rule above — without it, wrapped two-line
+    /// captions feel cramped against the row title sitting above them.
     func typeMeta() -> some View {
         font(.system(.footnote, design: .rounded))
             .tracking(0.05)
+            .lineSpacing(1)
     }
 
     /// Small all-caps labels. Caps have no ascender/descender variety to
     /// separate them, so at default tracking they clump into a block —
     /// positive tracking is not decoration here, it is legibility.
+    ///
+    /// Uses `.caption`, not `.caption2`: caption2 is the smallest text style
+    /// system-wide and reads as illegible fine print, especially once
+    /// uppercased (uppercasing already removes the ascender/descender shapes
+    /// that help small text stay readable). Leading opened slightly too —
+    /// the smaller the text, the more relative line spacing it needs to
+    /// avoid feeling cramped, the inverse of the display-size rule above.
     func typeEyebrow() -> some View {
-        font(.system(.caption2, design: .rounded, weight: .semibold))
+        font(.system(.caption, design: .rounded, weight: .semibold))
             .textCase(.uppercase)
             .tracking(0.9)
+            .lineSpacing(1)
     }
 }

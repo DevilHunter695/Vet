@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Luma's image-led detail header.
 ///
@@ -25,6 +26,16 @@ struct PosterHeader<Overlay: View>: View {
 
     private let posterHeight: CGFloat = 260
     private let bleedHeight: CGFloat = 460
+
+    // One fetch feeds both the poster and the bleed, decoded once into two
+    // sizes (see `decode(data:)`). Two independent `AsyncImage`s hitting the
+    // same URL usually converge thanks to `URLCache`, but "usually" is how a
+    // poster ends up with no matching bleed the one time the cache is cold
+    // and the two requests race — this makes that impossible by construction.
+    @State private var posterImage: Image?
+    @State private var bleedImage: Image?
+    @State private var loadFailed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -61,35 +72,90 @@ struct PosterHeader<Overlay: View>: View {
 
                 overlay
             }
+            .accessibilityElement(children: .combine)
         }
         .background(alignment: .top) {
             bleed
                 .frame(height: bleedHeight)
                 .allowsHitTesting(false)
         }
+        .task(id: imageURL) { await load() }
+    }
+
+    /// Fetches the URL once and decodes it into the two sizes the poster and
+    /// the bleed actually need, instead of asking two `AsyncImage`s to each
+    /// fetch and decode the full-resolution photograph independently. That
+    /// also means the 460pt bleed is never blurring a full-size source.
+    private func load() async {
+        posterImage = nil
+        bleedImage = nil
+        loadFailed = false
+        guard let imageURL else { return }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: imageURL)
+            guard let decoded = await Task.detached(priority: .userInitiated, operation: {
+                Self.decode(data: data)
+            }).value else {
+                loadFailed = true
+                return
+            }
+            if Task.isCancelled { return }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+                posterImage = decoded.poster
+                bleedImage = decoded.bleed
+            }
+        } catch {
+            if !Task.isCancelled { loadFailed = true }
+        }
+    }
+
+    /// Decodes the poster at display size and the bleed at a small size the
+    /// heavy blur will erase the detail of anyway — cheaper to decode, and
+    /// far cheaper to blur and to keep resident while the header scrolls.
+    private static func decode(data: Data) -> (poster: Image, bleed: Image)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let posterOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: 900,
+            kCGImageSourceCreateThumbnailWithTransform: true
+        ]
+        let bleedOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: 160,
+            kCGImageSourceCreateThumbnailWithTransform: true
+        ]
+        guard
+            let posterCG = CGImageSourceCreateThumbnailAtIndex(source, 0, posterOptions as CFDictionary),
+            let bleedCG = CGImageSourceCreateThumbnailAtIndex(source, 0, bleedOptions as CFDictionary)
+        else { return nil }
+        return (
+            Image(uiImage: UIImage(cgImage: posterCG)),
+            Image(uiImage: UIImage(cgImage: bleedCG))
+        )
     }
 
     // MARK: Pieces
 
     @ViewBuilder
     private var poster: some View {
-        if let imageURL {
-            AsyncImage(url: imageURL) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                case .failure:
-                    fallbackPoster
-                default:
-                    // Not a spinner: a spinner on a 260pt block is a flashing
-                    // hole in the layout. The brand surface is already the
-                    // right shape, so the photograph simply arrives into it.
-                    fallbackPoster
-                }
-            }
-        } else {
+        ZStack {
+            // The fallback stays mounted underneath and crossfades out, so
+            // the swap reads as the photograph arriving rather than an
+            // instant pop from one flat colour to another.
             fallbackPoster
+                .opacity(posterImage == nil ? 1 : 0)
+            if let posterImage {
+                posterImage
+                    .resizable()
+                    .scaledToFill()
+                    .transition(reduceMotion ? .identity : .opacity)
+                    // Decorative: the title and subtitle already say what
+                    // this record is, so VoiceOver does not need to visit an
+                    // image with nothing more to tell it.
+                    .accessibilityHidden(true)
+            }
         }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: posterImage == nil)
     }
 
     private var fallbackPoster: some View {
@@ -105,6 +171,9 @@ struct PosterHeader<Overlay: View>: View {
                 .font(.system(size: 56, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.92))
         }
+        // Purely decorative brand fill — the record's title already carries
+        // the meaning, so this should not read as an unlabeled image.
+        .accessibilityHidden(true)
     }
 
     /// The image again, huge and blurred, fading out downward — this is what

@@ -95,6 +95,14 @@ struct LiquidGlassModifier<S: InsettableShape>: ViewModifier {
     let level: GlassLevel
     var tint: Color?
     var strokeWidth: CGFloat = 1
+    /// True for small chips — an icon button, a control-group capsule —
+    /// as opposed to a card-sized surface. Apple's rule is that bigger
+    /// surfaces should read as *thicker* than small chips: a deeper shadow
+    /// on a card, a lighter one on a 44pt button. `GlassLevel` encodes
+    /// floating-vs-in-content hierarchy, not size, so this scales the
+    /// shadow down independently rather than adding more `GlassLevel`
+    /// cases for the same chrome tier.
+    var compact: Bool = false
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -150,18 +158,25 @@ struct LiquidGlassModifier<S: InsettableShape>: ViewModifier {
                 // rim; this is the bright catch where the light source is,
                 // and it is the difference between an outlined box and
                 // something that looks lit.
+                // `.plusLighter` adds straight onto whatever is beneath it,
+                // uncapped — on a dark background that reads as a bright
+                // catch-light, but the same opacity on a light background
+                // is adding white onto near-white and clips to a flat,
+                // blown-out line instead of a highlight. Light mode gets a
+                // lower opacity so the hairline stays a highlight rather
+                // than a smear.
                 shape
                     .strokeBorder(
                         LinearGradient(
                             stops: [
-                                .init(color: .white.opacity(reduceTransparency ? 0 : (isDark ? 0.55 : 0.75)), location: 0.0),
+                                .init(color: .white.opacity(reduceTransparency ? 0 : (isDark ? 0.55 : 0.38)), location: 0.0),
                                 .init(color: .white.opacity(0.0), location: 0.28)
                             ],
                             startPoint: .top, endPoint: .bottom
                         ),
                         lineWidth: strokeWidth
                     )
-                    .blendMode(.plusLighter)
+                    .blendMode(reduceTransparency ? .normal : .plusLighter)
                     .allowsHitTesting(false)
             }
             .overlay {
@@ -176,8 +191,8 @@ struct LiquidGlassModifier<S: InsettableShape>: ViewModifier {
             }
             .shadow(
                 color: .black.opacity(isDark ? level.shadowOpacity : level.shadowOpacity * 0.35),
-                radius: level.shadowRadius,
-                y: level.shadowRadius * 0.35
+                radius: compact ? level.shadowRadius * 0.5 : level.shadowRadius,
+                y: (compact ? level.shadowRadius * 0.5 : level.shadowRadius) * 0.35
             )
     }
 }
@@ -186,23 +201,31 @@ extension View {
     /// Glass in an arbitrary shape — use the capsule/rounded helpers below
     /// unless the shape is genuinely custom.
     func liquidGlass<S: InsettableShape>(
-        _ shape: S, level: GlassLevel = .surface, tint: Color? = nil, strokeWidth: CGFloat = 1
+        _ shape: S, level: GlassLevel = .surface, tint: Color? = nil, strokeWidth: CGFloat = 1, compact: Bool = false
     ) -> some View {
-        modifier(LiquidGlassModifier(shape: shape, level: level, tint: tint, strokeWidth: strokeWidth))
+        modifier(LiquidGlassModifier(shape: shape, level: level, tint: tint, strokeWidth: strokeWidth, compact: compact))
     }
 
-    func glassCapsule(level: GlassLevel = .chrome, tint: Color? = nil) -> some View {
-        liquidGlass(Capsule(style: .continuous), level: level, tint: tint)
+    /// `compact` defaults to true: a capsule is almost always a small
+    /// control (a chip, a segmented group) rather than a card-sized
+    /// surface, so it should carry the lighter, chip-weight shadow unless
+    /// told otherwise.
+    func glassCapsule(level: GlassLevel = .chrome, tint: Color? = nil, compact: Bool = true) -> some View {
+        liquidGlass(Capsule(style: .continuous), level: level, tint: tint, compact: compact)
     }
 
     /// The standard card. `cornerRadius` is continuous (a squircle) rather
-    /// than circular, matching every rounded rectangle Apple draws.
+    /// than circular, matching every rounded rectangle Apple draws. Cards
+    /// are the "bigger surface" end of the hierarchy, so this keeps the
+    /// full-weight shadow.
     func glassPanel(cornerRadius: CGFloat = 22, level: GlassLevel = .surface, tint: Color? = nil) -> some View {
         liquidGlass(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous), level: level, tint: tint)
     }
 
-    func glassCircle(level: GlassLevel = .chrome, tint: Color? = nil) -> some View {
-        liquidGlass(Circle(), level: level, tint: tint)
+    /// `compact` defaults to true for the same reason as `glassCapsule` —
+    /// a glass circle is almost always an icon-sized control.
+    func glassCircle(level: GlassLevel = .chrome, tint: Color? = nil, compact: Bool = true) -> some View {
+        liquidGlass(Circle(), level: level, tint: tint, compact: compact)
     }
 }
 

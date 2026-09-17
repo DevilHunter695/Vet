@@ -241,7 +241,14 @@ struct MainTabView: View {
             // chrome reads as broken.
             chrome.expand()
         }
-        .onChange(of: pendingDeepLink.pending) { _, link in
+        // `initial: true` so a `.book` deep link that arrived while the
+        // session was still bootstrapping (before MainTabView existed to
+        // subscribe) is still picked up the moment this view appears —
+        // otherwise `pending` is already set by the time this `onChange`
+        // starts observing it, no further *change* ever happens, and the
+        // link is silently dropped. `CircuitsListView`'s own consumption of
+        // `.book` is outside this file's scope; see the report for that half.
+        .onChange(of: pendingDeepLink.pending, initial: true) { _, link in
             if case .book = link { router.selectedTab = 0 }
         }
     }

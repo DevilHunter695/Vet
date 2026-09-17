@@ -19,18 +19,24 @@ struct VetEnRouteLiveActivity: Widget {
                     .foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(context.attributes.vetName).font(.headline)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                     Text(context.state.status.displayText).font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if let etaMinutes = context.state.etaMinutes {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("\(etaMinutes) min").font(.headline)
-                        Text("ETA").font(.caption2).foregroundStyle(.secondary)
+                        Text("ETA").font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
             .padding()
             .activityBackgroundTint(Color(.systemBackground))
+            // Tapping the Lock Screen/banner presentation opens straight to
+            // this visit's detail screen, matching `DeepLinkParser`'s
+            // `vetcircuit://visit/<uuid>` route.
+            .widgetURL(URL(string: "vetcircuit://visit/\(context.attributes.visitId.uuidString)"))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -44,6 +50,8 @@ struct VetEnRouteLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.bottom) {
                     Text("\(context.attributes.vetName) · \(context.state.status.displayText)")
                         .font(.caption)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             } compactLeading: {
                 Image(systemName: "stethoscope")

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - The floating tab bar
 //
@@ -42,6 +43,16 @@ final class TabBarChrome {
     /// somebody is just holding still.
     private let threshold: CGFloat = 12
 
+    /// `TabBarChrome` is a plain `@Observable` object, not a `View`, so it has
+    /// no `\.accessibilityReduceMotion` environment value to read. Reduce
+    /// Motion is a system-wide setting, so asking UIKit directly here is the
+    /// straightforward way for non-view code to still honor it.
+    private var chromeSpring: Animation {
+        UIAccessibility.isReduceMotionEnabled
+            ? .easeOut(duration: 0.2)
+            : .spring(response: 0.38, dampingFraction: 0.82)
+    }
+
     func scrollOffsetChanged(_ offset: CGFloat) {
         let delta = offset - lastOffset
         guard abs(delta) > threshold else { return }
@@ -50,7 +61,7 @@ final class TabBarChrome {
         // scrolling *down* into the content.
         let shouldCollapse = delta < 0
         guard shouldCollapse != isCollapsed else { return }
-        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+        withAnimation(chromeSpring) {
             isCollapsed = shouldCollapse
         }
     }
@@ -59,12 +70,12 @@ final class TabBarChrome {
     /// nothing to read up there and a collapsed bar just looks broken.
     func resetIfAtTop(_ offset: CGFloat) {
         guard offset > -40, isCollapsed else { return }
-        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { isCollapsed = false }
+        withAnimation(chromeSpring) { isCollapsed = false }
     }
 
     func expand() {
         guard isCollapsed else { return }
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) { isCollapsed = false }
+        withAnimation(chromeSpring) { isCollapsed = false }
     }
 
     /// A count, not a flag. Two screens that both hide the bar can overlap
@@ -73,11 +84,11 @@ final class TabBarChrome {
     private(set) var hiddenRequestCount = 0
 
     func beginHiding() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) { hiddenRequestCount += 1 }
+        withAnimation(chromeSpring) { hiddenRequestCount += 1 }
     }
 
     func endHiding() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 1.0)) {
+        withAnimation(chromeSpring) {
             hiddenRequestCount = max(0, hiddenRequestCount - 1)
         }
     }
@@ -257,10 +268,15 @@ struct FloatingTabBar: View {
 /// Press feedback on touch-down, not on release — the interface should
 /// acknowledge the finger before it knows what the finger wants.
 private struct TabPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.92 : 1)
-            .animation(.spring(response: 0.22, dampingFraction: 1.0), value: configuration.isPressed)
+            .animation(
+                reduceMotion ? .easeOut(duration: 0.1) : .spring(response: 0.22, dampingFraction: 1.0),
+                value: configuration.isPressed
+            )
     }
 }
 
@@ -287,10 +303,31 @@ extension TabBarChrome {
 private struct HidesFloatingTabBar: ViewModifier {
     @Environment(TabBarChrome.self) private var chrome: TabBarChrome?
 
+    // `hiddenRequestCount` only stays correct if every `beginHiding()` this
+    // modifier fires is matched by exactly one `endHiding()`. `onAppear`/
+    // `onDisappear` are normally paired one-to-one by `NavigationStack`, but
+    // this guard makes the pairing a property of the modifier itself rather
+    // than an assumption about the transition: if `onAppear` were ever to
+    // fire twice in a row (an interactive swipe-back that redrives the
+    // transition, a view identity quirk) without a disappear between, the
+    // second call is a no-op instead of a second increment — and the one
+    // `onDisappear` that does eventually arrive still balances the single
+    // increment that was actually made. An unmatched increment is otherwise
+    // unrecoverable short of relaunching the app.
+    @State private var isHiding = false
+
     func body(content: Content) -> some View {
         content
-            .onAppear { chrome?.beginHiding() }
-            .onDisappear { chrome?.endHiding() }
+            .onAppear {
+                guard !isHiding else { return }
+                isHiding = true
+                chrome?.beginHiding()
+            }
+            .onDisappear {
+                guard isHiding else { return }
+                isHiding = false
+                chrome?.endHiding()
+            }
     }
 }
 
