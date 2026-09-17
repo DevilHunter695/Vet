@@ -70,6 +70,7 @@ struct CorporateSeatAssignmentView: View {
                 HStack {
                     TextField("Phone number", text: $viewModel.phoneInput)
                         .keyboardType(.phonePad)
+                        .textContentType(.telephoneNumber)
                     Button("Assign") {
                         Haptics.tap()
                         Task { await viewModel.assign(subscriptionId: subscription.id, seatCount: subscription.seatCount) }

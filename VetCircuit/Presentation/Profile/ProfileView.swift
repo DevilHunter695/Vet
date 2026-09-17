@@ -939,6 +939,8 @@ struct AddPetField: View {
                 Image(systemName: "plus.circle.fill")
                     .foregroundStyle(Theme.primary)
                 TextField("Add a pet's name", text: $name)
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled()
                     .font(.brandCallout)
                     .focused($isFocused)
                     .submitLabel(.done)

@@ -108,9 +108,15 @@ struct EditProfileView: View {
             Section("Name & email") {
                 TextField("Name", text: $viewModel.name)
                     .textContentType(.name)
+                    .textInputAutocapitalization(.words)
                 TextField("Email", text: $viewModel.email)
                     .textContentType(.emailAddress)
                     .keyboardType(.emailAddress)
+                    // An address is never a sentence: capitalising the first
+                    // letter and autocorrecting the domain are both ways to
+                    // hand back something the person did not type.
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
             }

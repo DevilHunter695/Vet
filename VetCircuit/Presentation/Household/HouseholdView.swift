@@ -188,6 +188,10 @@ struct HouseholdView: View {
                     HStack {
                         TextField("Phone number", text: $viewModel.invitePhone)
                             .keyboardType(.phonePad)
+                            // Lets the system offer a number from Contacts
+                            // rather than making somebody read it off another
+                            // screen and retype it.
+                            .textContentType(.telephoneNumber)
                         Button("Invite") {
                             Haptics.confirm()
                             Task { if let user = session.currentUser { await viewModel.invite(userId: user.id) } }
@@ -223,6 +227,7 @@ struct HouseholdView: View {
                         .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                     HStack {
                         TextField("Household name (e.g. \"The Sharmas\")", text: $newHouseholdName)
+                            .textInputAutocapitalization(.words)
                         Button("Create") {
                             Haptics.confirm()
                             Task { if let user = session.currentUser { await viewModel.createHousehold(name: newHouseholdName, ownerId: user.id) } }

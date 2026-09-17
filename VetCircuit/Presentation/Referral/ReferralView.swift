@@ -87,6 +87,7 @@ struct ReferralView: View {
                 HStack {
                     TextField("Friend's phone number", text: $viewModel.invitePhone)
                         .keyboardType(.phonePad)
+                        .textContentType(.telephoneNumber)
                     Button("Invite") {
                         Haptics.tap()
                         Task { if let user = session.currentUser { await viewModel.sendInvite(userId: user.id, referrerPhone: user.phone) } }
