@@ -43,14 +43,32 @@ enum IdentityPalette {
         hues[Int(hash(seed) % UInt64(hues.count))]
     }
 
+    /// HSB "brightness" is not perceived brightness: a warm, yellow-leaning
+    /// hue like the amber entry above reads noticeably lighter than a blue
+    /// at the identical brightness value, because yellow itself carries far
+    /// more luminance than blue does. Left at the same 0.46, amber's white
+    /// overlay content sits at roughly a 2.6:1 contrast ratio — under even
+    /// the 3:1 floor for large text. Pull just that warm band down so every
+    /// hue on the wheel clears it.
+    private static func posterTopBrightness(for hue: Double) -> Double {
+        (0.02...0.16).contains(hue) ? 0.34 : 0.46
+    }
+
     /// The poster fill: deep enough that white type sits on it comfortably,
     /// saturated enough to actually read as a colour.
     static func poster(for seed: String) -> LinearGradient {
         let h = hue(for: seed)
+        let topBrightness = posterTopBrightness(for: h)
         return LinearGradient(
             colors: [
-                Color(hue: h, saturation: 0.62, brightness: 0.46),
-                Color(hue: (h + 0.06).truncatingRemainder(dividingBy: 1.0), saturation: 0.74, brightness: 0.22)
+                Color(hue: h, saturation: 0.62, brightness: topBrightness),
+                Color(
+                    hue: (h + 0.06).truncatingRemainder(dividingBy: 1.0),
+                    saturation: 0.74,
+                    // Keeps the same ~2:1 ratio between the two stops that
+                    // the original 0.46 → 0.22 pairing had.
+                    brightness: topBrightness * (0.22 / 0.46)
+                )
             ],
             startPoint: .topLeading, endPoint: .bottomTrailing
         )

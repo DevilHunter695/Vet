@@ -507,6 +507,19 @@ struct PlanCatalogEntry: Identifiable, Equatable {
             : "\(credits) free visit credit per month, resets monthly — unused credits don't roll over"
     }
 
+    /// The cheapest headline monthly rate across the plans people can
+    /// actually buy, for the "membership from ₹X/month" line.
+    ///
+    /// This was a hardcoded ₹499 that matched no plan in this catalogue — the
+    /// cheapest monthly rate is ₹599 and the annual plan works out to ₹458 a
+    /// month, so the figure quoted to customers was one no one could pay.
+    /// Deriving it means the copy cannot drift away from the price list again.
+    /// Corporate is excluded: it is priced per seat on application, so it has
+    /// no headline rate to advertise.
+    static var lowestHeadlineMonthlyMinorUnits: Int {
+        all.filter { $0.planType == .monthly }.map(\.priceMinorUnits).min() ?? 0
+    }
+
     static let all: [PlanCatalogEntry] = [
         PlanCatalogEntry(planType: .monthly, priceMinorUnits: 59_900, billingPeriodLabel: "per month", inclusions: [
             "1 free routine visit credit every month", "10% off all other services", "Priority slot access",

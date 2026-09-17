@@ -4,6 +4,8 @@ import SwiftUI
 struct StatStripCell: View {
     let item: StatStrip.Item
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
         VStack(spacing: 5) {
             Image(systemName: item.systemImage)
@@ -21,8 +23,12 @@ struct StatStripCell: View {
             Text(item.label)
                 .font(.brandCaption)
                 .foregroundStyle(Theme.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .multilineTextAlignment(.center)
+                // `StatStrip` reflows into two columns at accessibility
+                // sizes, which gives the label room to wrap instead of
+                // needing to be shrunk into unreadability.
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.8)
         }
         .padding(.horizontal, 6)
         .frame(maxWidth: .infinity)

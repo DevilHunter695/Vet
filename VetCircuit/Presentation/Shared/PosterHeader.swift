@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import ImageIO
 
 /// Luma's image-led detail header.
 ///
@@ -34,7 +35,6 @@ struct PosterHeader<Overlay: View>: View {
     // and the two requests race — this makes that impossible by construction.
     @State private var posterImage: Image?
     @State private var bleedImage: Image?
-    @State private var loadFailed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -89,30 +89,28 @@ struct PosterHeader<Overlay: View>: View {
     private func load() async {
         posterImage = nil
         bleedImage = nil
-        loadFailed = false
         guard let imageURL else { return }
         do {
             let (data, _) = try await URLSession.shared.data(from: imageURL)
             guard let decoded = await Task.detached(priority: .userInitiated, operation: {
                 Self.decode(data: data)
-            }).value else {
-                loadFailed = true
-                return
-            }
+            }).value else { return }
             if Task.isCancelled { return }
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
                 posterImage = decoded.poster
                 bleedImage = decoded.bleed
             }
         } catch {
-            if !Task.isCancelled { loadFailed = true }
+            // Cancellation (e.g. the URL changed) and genuine failures both
+            // land here; either way the identity-coloured fallback already
+            // on screen is the right thing to keep showing.
         }
     }
 
     /// Decodes the poster at display size and the bleed at a small size the
     /// heavy blur will erase the detail of anyway — cheaper to decode, and
     /// far cheaper to blur and to keep resident while the header scrolls.
-    private static func decode(data: Data) -> (poster: Image, bleed: Image)? {
+    private nonisolated static func decode(data: Data) -> (poster: Image, bleed: Image)? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         let posterOptions: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -192,22 +190,24 @@ struct PosterHeader<Overlay: View>: View {
     @ViewBuilder
     private var bleed: some View {
         Group {
-            if let imageURL {
-                AsyncImage(url: imageURL) { phase in
-                    if let image = phase.image {
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .blur(radius: 70, opaque: true)
-                            .opacity(0.5)
-                    } else {
-                        colourBleed
-                    }
-                }
+            if let bleedImage {
+                bleedImage
+                    .resizable()
+                    .scaledToFill()
+                    // A ~160px source blurred at radius 70 loses no visible
+                    // detail versus blurring the full-resolution photograph
+                    // — the blur destroys that detail either way — but is far
+                    // cheaper to keep rasterised while this scrolls.
+                    .blur(radius: 70, opaque: true)
+                    .opacity(0.5)
+                    .accessibilityHidden(true)
             } else {
                 colourBleed
             }
         }
+        // Flattens the blur + gradient mask into one bitmap instead of
+        // recompositing them every frame the scroll view moves this layer.
+        .drawingGroup()
         .mask { bleedMask }
         .clipped()
         .ignoresSafeArea(edges: .top)

@@ -101,6 +101,16 @@ struct FloatingTabBar: View {
 
     @Namespace private var pill
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // The cell below is a *fixed* 56pt tall — deliberately, because this bar
+    // floats over content and `FloatingChrome.tabBarInset` (Presentation/
+    // Shared/LiquidGlass.swift) reserves exactly that much room for it. Letting
+    // the cell grow with type size would either clip against that fixed inset
+    // or, if the inset grew to match, push every screen's content down for
+    // everyone, not just accessibility-size users. So at accessibility sizes
+    // the icon-and-word layout gives way to icon-only instead of growing: the
+    // label is still there for VoiceOver (`accessibilityLabel` is unchanged),
+    // it's just not drawn under the glyph.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     // MARK: Motion
     //
@@ -184,37 +194,52 @@ struct FloatingTabBar: View {
             Haptics.selection()
             selection = item.id
         } label: {
-            VStack(spacing: 5) {
-                Image(systemName: isSelected ? item.selectedIcon : item.icon)
-                    .font(.system(size: 21, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    // `contentTransition` morphs the outline glyph into the
-                    // filled one instead of blinking between them.
-                    .contentTransition(.symbolEffect(.replace))
-                    // …and the glyph gives a little kick as it lands. This is
-                    // the part that most reads as Apple Music: the symbol
-                    // itself acknowledges the tap, so the feedback comes from
-                    // the thing you pressed rather than only from the
-                    // highlight sliding over to it.
-                    .symbolEffect(.bounce, options: .speed(1.5), value: isSelected)
-                    // A small size pop on top of the bounce. Together they
-                    // make the selected icon the brightest, nearest thing in
-                    // the bar, which is what stops three similar glyphs
-                    // reading as one undifferentiated row.
-                    .scaleEffect(isSelected ? 1.10 : 1)
-                    .foregroundStyle(isSelected ? Theme.primaryLight : Theme.textTertiary)
-                    .frame(height: 24)
+            let glyph = Image(systemName: isSelected ? item.selectedIcon : item.icon)
+                .font(.system(size: 21, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                // `contentTransition` morphs the outline glyph into the
+                // filled one instead of blinking between them.
+                .contentTransition(.symbolEffect(.replace))
+                // …and the glyph gives a little kick as it lands. This is
+                // the part that most reads as Apple Music: the symbol
+                // itself acknowledges the tap, so the feedback comes from
+                // the thing you pressed rather than only from the
+                // highlight sliding over to it.
+                .symbolEffect(.bounce, options: .speed(1.5), value: isSelected)
+                // A small size pop on top of the bounce. Together they
+                // make the selected icon the brightest, nearest thing in
+                // the bar, which is what stops three similar glyphs
+                // reading as one undifferentiated row.
+                .scaleEffect(isSelected ? 1.10 : 1)
+                .foregroundStyle(isSelected ? Theme.primaryLight : Theme.textTertiary)
+                .frame(height: 24)
 
-                Text(item.title)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    // Small text wants a touch of positive tracking to stay
-                    // legible; the old 14pt label was tightened instead,
-                    // which is the right call at that size and the wrong one
-                    // at this one.
-                    .tracking(0.1)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                    .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
+            Group {
+                // At accessibility sizes even a `minimumScaleFactor(0.85)`
+                // word does not fit under a 24pt glyph inside a fixed 56pt
+                // cell — it clips. Rather than let the cell grow (see the
+                // note on `dynamicTypeSize` above), the word drops out at
+                // that point and the icon alone stands for the tab, exactly
+                // as the collapsed single-tab button already does elsewhere
+                // in this bar. VoiceOver is unaffected: `accessibilityLabel`
+                // below still carries the title regardless of this layout.
+                if dynamicTypeSize.isAccessibilitySize {
+                    glyph
+                } else {
+                    VStack(spacing: 5) {
+                        glyph
+                        Text(item.title)
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            // Small text wants a touch of positive tracking to
+                            // stay legible; the old 14pt label was tightened
+                            // instead, which is the right call at that size
+                            // and the wrong one at this one.
+                            .tracking(0.1)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                            .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
+                    }
+                }
             }
             .padding(.horizontal, 6)
             .frame(maxWidth: .infinity)

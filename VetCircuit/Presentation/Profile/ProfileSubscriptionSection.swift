@@ -60,7 +60,7 @@ struct ProfileSubscriptionSection: View {
                             .foregroundStyle(Theme.emeraldLight)
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Join VetCircuit Care").font(.brandHeadline)
-                            Text("Free visits, priority slots and member pricing from ₹499/month.")
+                            Text("Free visits, priority slots and member pricing from \(CurrencyFormatter.rupees(PlanCatalogEntry.lowestHeadlineMonthlyMinorUnits))/month.")
                                 .font(.brandCaption)
                                 .foregroundStyle(Theme.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)

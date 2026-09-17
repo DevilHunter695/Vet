@@ -151,7 +151,7 @@ struct VisitDetailView: View {
                     .padding(16)
                     .glassCard()
                 } else if cancelledStatus == .cancelledByUser {
-                    CalloutNote(text: "This visit is cancelled. Any refund due will land in your wallet shortly.", systemImage: "checkmark.circle.fill")
+                    CalloutNote(text: "This visit is cancelled. Any refund due goes back to your original payment method, usually within 5–7 business days.", systemImage: "checkmark.circle.fill")
                 }
 
                 if let cancelErrorMessage {

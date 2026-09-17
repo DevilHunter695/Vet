@@ -18,6 +18,9 @@ targets:
       - path: VetCircuit
         excludes:
           - Resources/Info.plist
+      # The App Group payload, compiled into the app as well as the widget.
+      # Declaring it once in each target is how the two copies drifted.
+      - path: VetCircuitWidget/SharedVisitSummary.swift
     resources:
       - path: VetCircuit/Resources
         excludes:

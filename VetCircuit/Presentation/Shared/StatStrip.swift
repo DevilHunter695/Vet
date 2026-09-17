@@ -29,19 +29,42 @@ struct StatStrip: View {
 
     let items: [Item]
 
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                if index > 0 {
-                    // A seam within one pane, not a rule chopping the strip
-                    // into separate boxes — see `GlassSeam`.
-                    GlassSeam(axis: .vertical, inset: 10)
-                }
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-                StatStripCell(item: item)
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // Four figures squeezed into one row is what breaks at
+                // accessibility sizes — `minimumScaleFactor` alone would
+                // still end up shrinking the numbers to the point of
+                // illegibility. A two-column grid gives each figure enough
+                // width to actually set its type at, at the cost of the
+                // single-row look this strip otherwise has.
+                LazyVGrid(
+                    columns: [GridItem(.flexible()), GridItem(.flexible())],
+                    spacing: 18
+                ) {
+                    ForEach(items) { item in
+                        StatStripCell(item: item)
+                    }
+                }
+                .padding(.vertical, 16)
+                .padding(.horizontal, 8)
+            } else {
+                HStack(spacing: 0) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        if index > 0 {
+                            // A seam within one pane, not a rule chopping the
+                            // strip into separate boxes — see `GlassSeam`.
+                            GlassSeam(axis: .vertical, inset: 10)
+                        }
+
+                        StatStripCell(item: item)
+                    }
+                }
+                .padding(.vertical, 14)
             }
         }
-        .padding(.vertical, 14)
         .glassCard(cornerRadius: 22)
     }
 }

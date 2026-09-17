@@ -10,27 +10,15 @@ import Foundation
 /// repositories), so this is the whole contract between the two targets:
 /// the main app is the only writer, the widget is a read-only consumer via
 /// the shared App Group container.
-struct SharedVisitSummary: Codable, Equatable {
-    enum Kind: String, Codable {
-        case upcomingVisit
-        case vaccinationDue
-        case none
-    }
-
-    var kind: Kind
-    var petName: String?
-    var vetName: String?
-    /// For `.upcomingVisit`: the visit's scheduled time. For
-    /// `.vaccinationDue`: the vaccine's next-due date.
-    var date: Date?
-    /// e.g. the circuit's area/vet name, shown as a subtitle for a visit.
-    var subtitle: String?
-    /// For `.vaccinationDue`, the vaccine name (e.g. "Rabies").
-    var vaccineName: String?
-    var generatedAt: Date
-
-    static let empty = SharedVisitSummary(kind: .none, petName: nil, vetName: nil, date: nil, subtitle: nil, vaccineName: nil, generatedAt: .now)
-}
+// `SharedVisitSummary` itself lives in VetCircuitWidget/SharedVisitSummary.swift
+// and is compiled into BOTH targets (see project.yml).
+//
+// It used to be declared twice — once here and once in the widget — which
+// compiles fine, because they are separate targets, and is exactly the kind of
+// duplication that rots silently: the widget's copy gained a `visitId` field
+// for deep links and this one did not, so the widget decoded a value the app
+// never encoded and every tap opened nothing. A serialisation contract with
+// two hand-maintained definitions has no contract at all.
 
 /// Writes `SharedVisitSummary` to the shared App Group `UserDefaults` suite
 /// so `VetCircuitWidget`'s `TimelineProvider` can read it. This is the only
@@ -84,7 +72,8 @@ enum WidgetDataBridge {
                 date: nextVisit.scheduledAt,
                 subtitle: nextVisit.status.displayText,
                 vaccineName: nil,
-                generatedAt: now
+                generatedAt: now,
+                visitId: nextVisit.id
             )
         }
 
