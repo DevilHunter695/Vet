@@ -54,12 +54,18 @@ jobs:
       - name: Build
         timeout-minutes: 10
         run: |
+          # Tee'd so the verdict step below can surface the compiler errors.
+          # A failed build prints its errors thousands of lines before the end
+          # of the job log, and the log API only returns the tail — so the one
+          # thing you need after a red build was the one thing you could not
+          # read without downloading the whole log.
+          set -o pipefail
           xcodebuild build \
             -project VetCircuit.xcodeproj \
             -scheme VetCircuit \
             -destination "id=${{ steps.destination.outputs.id }}" \
             -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee build.log
 
       - name: Install and launch app on the booted simulator
         run: |
@@ -177,6 +183,16 @@ jobs:
               echo "$failing" | sed 's/^[[:space:]]*/    - /'
             fi
           }
+          # Compiler errors first: if the build failed, nothing below ran and
+          # this is the only thing worth reading.
+          if [ -f build.log ]; then
+            build_errors=$(grep -E "error:" build.log | sed 's/^ *//' | sort -u | head -40 || true)
+            if [ -n "$build_errors" ]; then
+              echo "=============== BUILD ERRORS ==============="
+              echo "$build_errors"
+              echo "==========================================="
+            fi
+          fi
           echo "=============== TEST VERDICT ==============="
           verdict "Unit tests" unit-tests.log
           verdict "UI walkthrough" ui-tests.log
