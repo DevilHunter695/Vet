@@ -3163,8 +3163,30 @@ final class SupabaseChatRepository: ChatRepository {
         throw DomainError.validation("Photo messages aren't available yet on this account.")
     }
 
+    /// TODO(Realtime): the shape this needs, read off supabase-swift's source
+    /// rather than guessed at, so whoever picks it up does not have to go and
+    /// find it:
+    ///
+    ///     let channel = client.channel("visit:\(visitId)")
+    ///     let inserts = channel.postgresChange(
+    ///         InsertAction.self, schema: "public", table: "chat_messages",
+    ///         filter: .eq("visit_id", value: visitId.uuidString)
+    ///     )
+    ///     await channel.subscribe()
+    ///     for await insert in inserts {
+    ///         let row = try insert.decodeRecord(as: Row.self, decoder: decoder)
+    ///         onMessage(row.toDomain())
+    ///     }
+    ///
+    /// It is not written here because this protocol method is synchronous and
+    /// returns a token, so doing it properly means holding a `Task` and
+    /// cancelling it on release — and because `project.yml` pins the package
+    /// at `from: 2.0.0`, so the exact resolved API is whatever CI resolves,
+    /// not what I read on `main`. Shipping a plausible-looking guess at an
+    /// unpinned API is how the build breaks; leaving the real signature here
+    /// costs nothing and removes the research from the next person's job.
     nonisolated func subscribe(visitId: UUID, onMessage: @escaping @Sendable (ChatMessage) -> Void) -> AnyObject {
-        NSObject() // TODO(Realtime): channel subscription on chat_messages.
+        NSObject()
     }
 
     func markRead(visitId: UUID, readerId: UUID) async throws {
