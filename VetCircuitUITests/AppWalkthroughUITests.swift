@@ -43,6 +43,39 @@ final class AppWalkthroughUITests: XCTestCase {
         return found
     }
 
+
+    /// Finds a tab button in the floating bar.
+    ///
+    /// The app no longer uses a system `TabView` bar, so `app.tabBars` finds
+    /// nothing — the bar is a row of buttons in a glass capsule. This is the
+    /// one place that knowledge lives, rather than sixteen call sites each
+    /// encoding it.
+    ///
+    /// The bar also collapses to a single button while scrolling, so a tab
+    /// that is not currently drawn has to be brought back first: tapping the
+    /// collapsed button expands it.
+    @MainActor
+    private func tabButton(_ title: String, in app: XCUIApplication) -> XCUIElement {
+        let direct = app.buttons[title]
+        if direct.waitForExistence(timeout: 3), direct.isHittable { return direct }
+        // Collapsed: the only visible bar button is the current tab. Tapping
+        // it expands the bar, after which the wanted tab exists.
+        let bar = app.otherElements["floatingTabBar"]
+        if bar.exists {
+            let firstButton = bar.buttons.element(boundBy: 0)
+            if firstButton.exists, firstButton.isHittable { firstButton.tap() }
+        }
+        return app.buttons[title]
+    }
+
+    @MainActor
+    private func goToTab(_ title: String, in app: XCUIApplication) {
+        let button = tabButton(title, in: app)
+        XCTAssertTrue(button.waitForExistence(timeout: 10), "The \(title) tab was not reachable")
+        XCTAssertTrue(button.isHittable, "The \(title) tab is drawn but not hittable")
+        button.tap()
+    }
+
     @MainActor
     private func snapshot(_ app: XCUIApplication, _ name: String) {
         let shot = XCTAttachment(screenshot: app.screenshot())
@@ -103,11 +136,13 @@ final class AppWalkthroughUITests: XCTestCase {
     @MainActor
     func testTabsAreReachableOnASingleTap() throws {
         let app = launchApp()
-        let tabBar = app.tabBars.firstMatch
-        require(tabBar, "the main tab bar")
+        // The bar is a row of buttons in a glass capsule, not a system
+        // `tabBar` element — so this asserts on the container by identifier
+        // and on each tab by name.
+        require(app.otherElements["floatingTabBar"], "the floating tab bar")
 
         for label in ["Book", "Visits", "Profile"] {
-            let tab = tabBar.buttons[label]
+            let tab = tabButton(label, in: app)
             require(tab, "the \(label) tab")
             XCTAssertTrue(tab.isHittable, "The \(label) tab is not hittable")
             tab.tap()
@@ -115,12 +150,36 @@ final class AppWalkthroughUITests: XCTestCase {
         }
     }
 
+    /// The bar's headline behaviour: it should get out of the way while
+    /// reading and come back when you scroll up to navigate. If the collapse
+    /// ever stops reversing, the tabs become unreachable without a reload —
+    /// which is a far worse bug than the bar simply never collapsing.
+    @MainActor
+    func testTheTabBarCollapsesOnScrollAndComesBack() throws {
+        let app = launchApp()
+        goToTab("Visits", in: app)
+        require(app.otherElements["floatingTabBar"], "the floating tab bar")
+
+        app.swipeUp()
+        app.swipeUp()
+        snapshot(app, "Tab bar — collapsed while reading")
+
+        app.swipeDown()
+        app.swipeDown()
+
+        let profile = tabButton("Profile", in: app)
+        XCTAssertTrue(profile.waitForExistence(timeout: 10),
+                      "The tab bar did not come back after scrolling up — tabs are now unreachable")
+        XCTAssertTrue(profile.isHittable, "The tab bar returned but its tabs are not hittable")
+        snapshot(app, "Tab bar — restored")
+    }
+
     // MARK: - Book tab (C1, C2, C11, L8)
 
     @MainActor
     func testBookTabShowsCircuitsWithSlotPriceAndRating() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Book"].tap()
+        goToTab("Book", in: app)
 
         // C11 + L8: the emergency path and the "not an emergency" disclaimer
         // are safety-critical and must be present without scrolling.
@@ -146,7 +205,7 @@ final class AppWalkthroughUITests: XCTestCase {
     @MainActor
     func testTappingACircuitOpensBookingOnTheFirstTap() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Book"].tap()
+        goToTab("Book", in: app)
         let rows = app.buttons.containing(NSPredicate(format: "label CONTAINS[c] 'rated'"))
         guard rows.count > 0 else { throw XCTSkip("No circuits in the mock data to open") }
 
@@ -160,7 +219,7 @@ final class AppWalkthroughUITests: XCTestCase {
     @MainActor
     func testSlotPickerOffersTappableTimesAndTheCTAGatesOnSelection() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Book"].tap()
+        goToTab("Book", in: app)
         let rows = app.buttons.containing(NSPredicate(format: "label CONTAINS[c] 'rated'"))
         guard rows.count > 0 else { throw XCTSkip("No circuits in the mock data to open") }
         rows.element(boundBy: 0).tap()
@@ -187,7 +246,7 @@ final class AppWalkthroughUITests: XCTestCase {
     @MainActor
     func testProfileShowsSummaryFiguresAndReachableSettings() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Profile"].tap()
+        goToTab("Profile", in: app)
         require(app.navigationBars["Profile"], "the Profile screen")
 
         // The four summary tiles are the difference between the redesigned
@@ -211,7 +270,7 @@ final class AppWalkthroughUITests: XCTestCase {
     @MainActor
     func testAddressesScreenHasAContentStateNotABlankScreen() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Profile"].tap()
+        goToTab("Profile", in: app)
         let addresses = app.buttons.containing(NSPredicate(format: "label BEGINSWITH[c] 'Addresses'")).element(boundBy: 0)
         guard scrollToVisible(addresses, in: app) else { throw XCTSkip("Addresses row not reachable") }
         addresses.tap()
@@ -232,7 +291,7 @@ final class AppWalkthroughUITests: XCTestCase {
     @MainActor
     func testVisitsTabShowsEitherVisitsOrAnExplainedEmptyState() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Visits"].tap()
+        goToTab("Visits", in: app)
         require(app.navigationBars["Your visits"], "the Visits screen")
 
         let hasVisitRows = app.buttons.containing(NSPredicate(format: "label CONTAINS[c] 'status'")).count > 0
@@ -247,7 +306,7 @@ final class AppWalkthroughUITests: XCTestCase {
     @MainActor
     func testBothAppearancesRenderWithoutLosingContent() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Profile"].tap()
+        goToTab("Profile", in: app)
         require(app.navigationBars["Profile"], "the Profile screen")
 
         for mode in ["Light", "Dark"] {

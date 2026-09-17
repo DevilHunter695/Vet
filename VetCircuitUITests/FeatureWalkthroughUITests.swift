@@ -27,6 +27,39 @@ final class FeatureWalkthroughUITests: XCTestCase {
         return app
     }
 
+
+    /// Finds a tab button in the floating bar.
+    ///
+    /// The app no longer uses a system `TabView` bar, so `app.tabBars` finds
+    /// nothing — the bar is a row of buttons in a glass capsule. This is the
+    /// one place that knowledge lives, rather than sixteen call sites each
+    /// encoding it.
+    ///
+    /// The bar also collapses to a single button while scrolling, so a tab
+    /// that is not currently drawn has to be brought back first: tapping the
+    /// collapsed button expands it.
+    @MainActor
+    private func tabButton(_ title: String, in app: XCUIApplication) -> XCUIElement {
+        let direct = app.buttons[title]
+        if direct.waitForExistence(timeout: 3), direct.isHittable { return direct }
+        // Collapsed: the only visible bar button is the current tab. Tapping
+        // it expands the bar, after which the wanted tab exists.
+        let bar = app.otherElements["floatingTabBar"]
+        if bar.exists {
+            let firstButton = bar.buttons.element(boundBy: 0)
+            if firstButton.exists, firstButton.isHittable { firstButton.tap() }
+        }
+        return app.buttons[title]
+    }
+
+    @MainActor
+    private func goToTab(_ title: String, in app: XCUIApplication) {
+        let button = tabButton(title, in: app)
+        XCTAssertTrue(button.waitForExistence(timeout: 10), "The \(title) tab was not reachable")
+        XCTAssertTrue(button.isHittable, "The \(title) tab is drawn but not hittable")
+        button.tap()
+    }
+
     @MainActor
     private func snapshot(_ app: XCUIApplication, _ name: String) {
         let shot = XCTAttachment(screenshot: app.screenshot())
@@ -85,7 +118,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
 
     @MainActor
     private func goToProfile(_ app: XCUIApplication) {
-        app.tabBars.firstMatch.buttons["Profile"].tap()
+        goToTab("Profile", in: app)
         XCTAssertTrue(app.navigationBars["Profile"].waitForExistence(timeout: 10), "Profile never opened")
     }
 
@@ -177,7 +210,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
     @MainActor
     func testCatalogOpensAServiceWithVariantsAndAddons() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Book"].tap()
+        goToTab("Book", in: app)
 
         let services = row("Services", in: app)
         guard scrollToVisible(services, in: app) else {
@@ -210,7 +243,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
     @MainActor
     func testPackagesScreenOpensAndListsWhatIsInEachBundle() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Book"].tap()
+        goToTab("Book", in: app)
         let services = row("Services", in: app)
         guard scrollToVisible(services, in: app) else { throw XCTSkip("No route into the catalog") }
         services.tap()
@@ -236,7 +269,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
     @MainActor
     func testCartIsReachableAndNeverRendersBlank() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Book"].tap()
+        goToTab("Book", in: app)
         let services = row("Services", in: app)
         guard scrollToVisible(services, in: app) else { throw XCTSkip("No route into the catalog") }
         services.tap()
@@ -260,7 +293,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
     @MainActor
     func testVisitsTabCarriesRealVisitsAndOpensOneOnTheFirstTap() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Visits"].tap()
+        goToTab("Visits", in: app)
         XCTAssertTrue(app.navigationBars["Your visits"].waitForExistence(timeout: 10), "Visits tab did not open")
 
         // The seeded account has fourteen visits across the state machine, so
@@ -283,7 +316,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
     @MainActor
     func testAVisitDetailOffersItsTimelineAndACancelPath() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Visits"].tap()
+        goToTab("Visits", in: app)
         _ = app.navigationBars["Your visits"].waitForExistence(timeout: 10)
 
         let visit = app.buttons.containing(NSPredicate(format: "label CONTAINS[c] 'Bruno'")).element(boundBy: 0)
@@ -328,7 +361,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
     @MainActor
     func testDiscoveryControlsAreReachableFromTheBookTab() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Book"].tap()
+        goToTab("Book", in: app)
 
         // C11: the emergency path is safety-critical and must be present
         // without scrolling.
@@ -349,7 +382,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
     @MainActor
     func testEmergencyPathOpensAndCarriesItsDisclaimer() throws {
         let app = launchApp()
-        app.tabBars.firstMatch.buttons["Book"].tap()
+        goToTab("Book", in: app)
         let emergency = app.buttons.containing(NSPredicate(format: "label CONTAINS[c] 'emergency'")).element(boundBy: 0)
         guard scrollToVisible(emergency, in: app) else { throw XCTSkip("No emergency control found") }
         emergency.tap()

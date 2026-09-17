@@ -104,6 +104,11 @@ struct FloatingTabBar: View {
         }
         .padding(.horizontal, chrome.isCollapsed ? 6 : 7)
         .padding(.vertical, 6)
+        // A findable name for the bar as a whole. It is no longer a system
+        // `tabBar` element — it is a row of buttons — so anything looking for
+        // it (the UI walkthrough, VoiceOver's rotor) needs a handle that does
+        // not depend on the element type.
+        .accessibilityIdentifier("floatingTabBar")
         .glassCapsule(level: .chrome)
         // The whole bar is one glass surface, so it has to clip to the same
         // capsule its background draws — otherwise the selection pill's
