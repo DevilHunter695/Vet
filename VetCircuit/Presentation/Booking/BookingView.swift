@@ -35,6 +35,9 @@ final class BookingViewModel {
     var isLoading = false
     var errorMessage: String?
     var bookedVisit: Visit?
+    /// True while the app is asking the server whether a payment went
+    /// through — see `resolveCheckout()`.
+    var isResolvingPayment = false
     /// E6-E10/G6: set once `confirmBooking` has started a real, quote-gated
     /// checkout — presented as a sheet; `resolveCheckout` runs when it's
     /// dismissed (success, failure, or the customer just backing out).
@@ -246,6 +249,15 @@ final class BookingViewModel {
     /// finishing payment, the payment failing, or them just backing out.
     func resolveCheckout() async {
         guard let visit = pendingVisit else { return }
+        // The one moment in this app where somebody has just handed over
+        // money and does not yet know whether it worked. This call asks the
+        // server exactly that, and it used to run with no visible state at
+        // all: the sheet closed and the booking screen sat there looking
+        // untouched while the answer was in flight. Silence there reads as
+        // "nothing happened", which is the worst of the three things that
+        // could have happened.
+        isResolvingPayment = true
+        defer { isResolvingPayment = false }
         do {
             let (updatedVisit, outcome) = try await bookingCheckoutUseCase.resolve(visitId: visit.id, priorAttempts: retryAttempts)
             switch outcome {
@@ -577,6 +589,12 @@ struct BookingView: View {
         .navigationDestination(item: $viewModel.bookedVisit) { visit in
             BookingConfirmedView(visit: visit)
         }
+        .overlay {
+            if viewModel.isResolvingPayment {
+                PaymentResolvingOverlay()
+            }
+        }
+        .animation(Theme.crossFade, value: viewModel.isResolvingPayment)
         .sheet(item: $viewModel.checkoutURL, onDismiss: { Task { await viewModel.resolveCheckout() } }) { url in
             CheckoutWebView(url: url)
         }
