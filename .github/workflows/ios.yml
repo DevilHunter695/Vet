@@ -166,6 +166,16 @@ jobs:
             echo "  summary: ${summary:-none}"
             echo "  xctest : ${xctest:-none}"
             grep -c "✘" "$log" 2>/dev/null | sed 's/^/  failures (✘ lines): /' || true
+            # The names, not just the count. Without these the only way to
+            # learn *which* test failed is to download the full log, and the
+            # artifact/log download host is not reachable from every
+            # environment that needs to read this verdict.
+            local failing
+            failing=$(sed -n '/^Failing tests:/,/^$/p' "$log" | sed '1d;/^$/d' || true)
+            if [ -n "$failing" ]; then
+              echo "  failing:"
+              echo "$failing" | sed 's/^[[:space:]]*/    - /'
+            fi
           }
           echo "=============== TEST VERDICT ==============="
           verdict "Unit tests" unit-tests.log
