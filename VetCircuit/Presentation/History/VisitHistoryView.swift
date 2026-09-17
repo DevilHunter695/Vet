@@ -489,6 +489,10 @@ private struct VisitProgressBar: View {
 }
 
 private struct VisitRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// The time column's width, scaled with the text in it.
+    @ScaledMetric(relativeTo: .footnote) private var timeColumnWidth: CGFloat = 62
+
     let visit: Visit
     let pet: Pet?
     let vet: Vet?
@@ -522,7 +526,12 @@ private struct VisitRow: View {
                     .font(.system(.footnote, design: .rounded, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(Theme.textSecondary)
-                    .frame(width: 62, alignment: .leading)
+                    // Scaled, not a flat 62pt. A fixed column holding text is
+                    // a truncation waiting to happen: turn text up and the
+                    // time clips while everything around it grows. `minWidth`
+                    // so the column can still take the room it needs.
+                    .frame(minWidth: timeColumnWidth, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
 
                 // A thin rule rather than a box: it separates the time from
                 // the content without drawing a second card inside the card.
@@ -536,6 +545,11 @@ private struct VisitRow: View {
                         .font(.system(.body, design: .rounded, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
+                        // The pet's name is the thing this row is *about*.
+                        // Truncating it to an ellipsis at large text sizes
+                        // loses the one word that identifies the row, so let
+                        // it shrink a little before it gives up.
+                        .minimumScaleFactor(0.8)
 
                     // One meta line, assembled from whatever is actually
                     // known — rather than a fixed template with "—" holes in
@@ -543,7 +557,11 @@ private struct VisitRow: View {
                     Text(metaLine)
                         .font(.brandCaption)
                         .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
+                        // Two lines at accessibility sizes rather than an
+                        // ellipsis: the vet's name lives here, and a row that
+                        // grows is better than one that hides who is coming.
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                        .minimumScaleFactor(0.85)
                 }
 
                 Spacer(minLength: 4)

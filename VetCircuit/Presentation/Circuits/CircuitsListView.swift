@@ -577,8 +577,11 @@ private struct RecentlyViewedSection: View {
                     ForEach(circuits) { circuit in
                         Button { onSelect(circuit) } label: {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(circuit.vet?.name ?? "Veterinarian").font(.brandBody).lineLimit(1)
-                                Text(circuit.clusterArea).font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                                Text(circuit.vet?.name ?? "Veterinarian")
+                                    .font(.brandBody).lineLimit(1).minimumScaleFactor(0.8)
+                                Text(circuit.clusterArea)
+                                    .font(.caption).foregroundStyle(Theme.textSecondary)
+                                    .lineLimit(1).minimumScaleFactor(0.85)
                             }
                             .padding(12)
                             .frame(width: 160, alignment: .leading)
@@ -656,6 +659,10 @@ struct CircuitRow: View {
                             .font(.brandHeadline)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
+                            // This is the name somebody chooses a vet by.
+                            // Shrinking slightly beats an ellipsis through
+                            // the middle of it.
+                            .minimumScaleFactor(0.8)
                         // L3: the verified badge sits with the name, where a
                         // customer decides whether to trust the row.
                         if circuit.vet?.verificationStatus == .verified {
@@ -669,6 +676,7 @@ struct CircuitRow: View {
                         .font(.brandCaption)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.85)
 
                     if let vet = circuit.vet {
                         HStack(spacing: 5) {
@@ -712,6 +720,11 @@ struct CircuitRow: View {
                     .font(.brandCaption)
                     .foregroundStyle(nextSlot == nil ? Color.secondary : Theme.emeraldLight)
                     .lineLimit(1)
+                    // "Tomorrow, 4:30 PM" is the answer the screen exists to
+                    // give. Losing its tail to an ellipsis makes the row
+                    // useless at exactly the sizes where it is hardest to
+                    // read anyway.
+                    .minimumScaleFactor(0.75)
 
                 Spacer(minLength: 4)
 
