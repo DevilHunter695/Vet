@@ -263,13 +263,22 @@ struct VisitHistoryView: View {
                             subtitle: "\(viewModel.upcomingVisits.count) more booked",
                             systemImage: "calendar.badge.clock"
                         )
-                        ForEach(viewModel.upcomingVisits) { visit in
-                            VisitRow(
-                                visit: visit,
-                                pet: viewModel.pet(for: visit),
-                                vet: viewModel.vet(for: visit),
-                                onCancel: { Task { await viewModel.requestCancellation(visit) } }
-                            )
+                        // Grouped by day rather than listed flat: the date
+                        // moves out of every row and into the structure, so a
+                        // row carries only what makes it different from the
+                        // one above it.
+                        ForEach(VisitGrouping.byDay(viewModel.upcomingVisits, ascending: true)) { group in
+                            VStack(alignment: .leading, spacing: 10) {
+                                VisitDayHeader(date: group.date)
+                                ForEach(group.visits) { visit in
+                                    VisitRow(
+                                        visit: visit,
+                                        pet: viewModel.pet(for: visit),
+                                        vet: viewModel.vet(for: visit),
+                                        onCancel: { Task { await viewModel.requestCancellation(visit) } }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -283,13 +292,18 @@ struct VisitHistoryView: View {
                                 : "\(viewModel.completedCount) visit\(viewModel.completedCount == 1 ? "" : "s") completed",
                             systemImage: "clock.arrow.circlepath"
                         )
-                        ForEach(Array(viewModel.pastVisits.enumerated()), id: \.element.id) { index, visit in
-                            VisitRow(
-                                visit: visit,
-                                pet: viewModel.pet(for: visit),
-                                vet: viewModel.vet(for: visit),
-                                onCancel: { Task { await viewModel.requestCancellation(visit) } }
-                            )
+                        ForEach(Array(VisitGrouping.byDay(viewModel.pastVisits, ascending: false).enumerated()), id: \.element.id) { index, group in
+                            VStack(alignment: .leading, spacing: 10) {
+                                VisitDayHeader(date: group.date)
+                                ForEach(group.visits) { visit in
+                                    VisitRow(
+                                        visit: visit,
+                                        pet: viewModel.pet(for: visit),
+                                        vet: viewModel.vet(for: visit),
+                                        onCancel: { Task { await viewModel.requestCancellation(visit) } }
+                                    )
+                                }
+                            }
                             .appearAnimation(delay: Theme.staggerDelay(index))
                         }
                     }
@@ -477,35 +491,52 @@ private struct VisitRow: View {
         visit.status == .requested || visit.status == .confirmed
     }
 
+    /// Whatever is genuinely known about this visit, joined. A row for a
+    /// just-requested visit has no vet yet, and printing an em dash where the
+    /// name goes tells the customer nothing except that the app expected
+    /// something it does not have.
+    private var metaLine: String {
+        var parts: [String] = []
+        if let vet { parts.append(vet.name) }
+        if let breed = pet?.breed, !breed.isEmpty { parts.append(breed) }
+        if parts.isEmpty { parts.append(visit.status.displayText) }
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
         NavigationLink {
             VisitDetailView(visit: visit)
         } label: {
             HStack(spacing: 14) {
-                // A calendar block reads faster than a sentence-cased date
-                // when scanning a column of past visits.
-                VStack(spacing: 1) {
-                    Text(visit.scheduledAt.formatted(.dateTime.month(.abbreviated)))
-                        .font(.brandCaption2)
-                        .foregroundStyle(Theme.primary)
-                    Text(visit.scheduledAt.formatted(.dateTime.day()))
-                        .font(.brandMono(.title3, weight: .bold))
-                }
-                .frame(width: 46, height: 46)
-                .background(Theme.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                // Time, not date. The day is already the header this row sits
+                // under, and repeating it in every row is the thing that made
+                // the old list read as a wall of near-identical strings.
+                Text(visit.scheduledAt.formatted(date: .omitted, time: .shortened))
+                    .font(.system(.footnote, design: .rounded, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 62, alignment: .leading)
+
+                // A thin rule rather than a box: it separates the time from
+                // the content without drawing a second card inside the card.
+                Capsule()
+                    .fill(visit.status.isLive ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color.white.opacity(0.10)))
+                    .frame(width: 2)
+                    .frame(maxHeight: .infinity)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(pet?.name ?? "Visit")
-                        .font(.brandHeadline)
-                        .foregroundStyle(.primary)
+                        .font(.system(.body, design: .rounded, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
-                    Text(
-                        [vet?.name, visit.scheduledAt.formatted(date: .omitted, time: .shortened)]
-                            .compactMap { $0 }.joined(separator: " · ")
-                    )
-                    .font(.brandCaption)
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
+
+                    // One meta line, assembled from whatever is actually
+                    // known — rather than a fixed template with "—" holes in
+                    // it where a vet has not been assigned yet.
+                    Text(metaLine)
+                        .font(.brandCaption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
                 }
 
                 Spacer(minLength: 4)
@@ -517,6 +548,7 @@ private struct VisitRow: View {
                     }
                 }
             }
+            .frame(minHeight: 56)
             .padding(14)
             .glassCard(cornerRadius: 18)
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))

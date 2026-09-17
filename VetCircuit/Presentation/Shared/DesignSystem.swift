@@ -178,54 +178,22 @@ extension View {
     }
 }
 
+/// Kept as the app's card entry point, but the material now comes from
+/// `LiquidGlass` so every surface in the app — cards, chrome, the tab bar,
+/// toolbar buttons — is lit from the same direction and made of the same
+/// stuff. Before this, cards drew their own flat white border while the new
+/// chrome refracted at its rim, and two surfaces on the same screen looked
+/// like they came from different apps.
 private struct GlassCardModifier: ViewModifier {
     let cornerRadius: CGFloat
     let tint: Color?
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var isDark: Bool { colorScheme == .dark }
-
-    private var borderGradient: LinearGradient {
-        let top = isDark ? Color.white.opacity(0.26) : Color.white.opacity(0.85)
-        let bottom = isDark ? Color.white.opacity(0.08) : Color.white.opacity(0.20)
-        return LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom)
-    }
 
     func body(content: Content) -> some View {
-        content
-            .background {
-                ZStack {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                    // In dark mode the system material over an already-dark
-                    // aurora is nearly invisible; a hair of extra fill gives
-                    // the card an edge to be read against.
-                    if isDark {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(Color.white.opacity(0.09))
-                    }
-                    if let tint {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [tint.opacity(isDark ? 0.24 : 0.14), .clear],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                )
-                            )
-                    }
-                }
-                .allowsHitTesting(false)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(borderGradient, lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
-            .shadow(
-                color: isDark ? .black.opacity(0.5) : Theme.cardShadow,
-                radius: isDark ? 20 : 14,
-                y: isDark ? 10 : 6
-            )
+        content.glassPanel(
+            cornerRadius: cornerRadius,
+            level: tint == nil ? .surface : .featured,
+            tint: tint
+        )
     }
 }
 
