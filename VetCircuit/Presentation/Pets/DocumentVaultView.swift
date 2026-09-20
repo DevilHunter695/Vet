@@ -27,7 +27,7 @@ final class DocumentVaultViewModel {
         do {
             documents = try await useCase.list(petId: pet.id)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -43,7 +43,7 @@ final class DocumentVaultViewModel {
             withAnimation(Theme.springSoft) { documents.insert(document, at: 0) }
             Haptics.success()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -52,7 +52,7 @@ final class DocumentVaultViewModel {
             try await useCase.delete(id: document.id)
             withAnimation(Theme.springSoft) { documents.removeAll { $0.id == document.id } }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }
@@ -125,7 +125,7 @@ struct DocumentVaultView: View {
                 guard let url = urls.first else { return }
                 loadPickedFile(url)
             case .failure(let error):
-                viewModel.errorMessage = error.localizedDescription
+                viewModel.errorMessage = UserFacingError.message(for: error)
             }
         }
         .alert("Name this document", isPresented: $showingTitlePrompt) {

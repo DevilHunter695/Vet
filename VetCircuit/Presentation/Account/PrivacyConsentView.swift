@@ -27,7 +27,7 @@ final class PrivacyConsentViewModel {
             pendingDeletion = try await pending
             consents = try await activeConsents
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -39,7 +39,7 @@ final class PrivacyConsentViewModel {
             consents.removeAll { $0.id == consent.id }
             Haptics.tap()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -50,7 +50,7 @@ final class PrivacyConsentViewModel {
             deletionRequested = true
         } catch {
             Haptics.error()
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -60,7 +60,7 @@ final class PrivacyConsentViewModel {
             pendingDeletion = nil
             Haptics.success()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -81,7 +81,7 @@ final class PrivacyConsentViewModel {
             Haptics.success()
         } catch {
             Haptics.error()
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -98,7 +98,7 @@ final class PrivacyConsentViewModel {
             Haptics.success()
         } catch {
             Haptics.error()
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

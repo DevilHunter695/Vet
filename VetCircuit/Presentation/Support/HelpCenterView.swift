@@ -23,7 +23,7 @@ final class HelpCenterViewModel {
         do {
             articles = try await getHelpArticlesUseCase.execute()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 

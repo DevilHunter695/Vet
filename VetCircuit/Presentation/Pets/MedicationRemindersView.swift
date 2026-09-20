@@ -27,7 +27,7 @@ final class MedicationRemindersViewModel {
         do {
             reminders = try await manageMedicationRemindersUseCase.list(petId: pet.id)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -42,7 +42,7 @@ final class MedicationRemindersViewModel {
             PushNotificationManager.shared.scheduleMedicationReminders(reminder, petName: pet.name)
             Haptics.success()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -58,7 +58,7 @@ final class MedicationRemindersViewModel {
                 PushNotificationManager.shared.cancelMedicationReminders(reminderId: updated.id)
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -68,7 +68,7 @@ final class MedicationRemindersViewModel {
             reminders.removeAll { $0.id == reminder.id }
             PushNotificationManager.shared.cancelMedicationReminders(reminderId: reminder.id)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

@@ -79,7 +79,7 @@ final class InvoiceViewModel {
             try data.write(to: url, options: .atomic)
             shareURL = url
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

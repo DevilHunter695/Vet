@@ -113,7 +113,7 @@ struct LabTestReportsView: View {
                 reports = try await getLabTestReportsUseCase.forPet(petId)
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

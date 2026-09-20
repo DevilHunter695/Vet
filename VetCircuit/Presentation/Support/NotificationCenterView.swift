@@ -22,7 +22,7 @@ final class NotificationCenterViewModel {
         do {
             notifications = try await getNotificationCenterUseCase.execute(userId: userId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 

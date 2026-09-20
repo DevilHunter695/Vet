@@ -21,7 +21,7 @@ final class CoverageMapViewModel {
         do {
             clusters = try await getServedClustersUseCase.execute()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

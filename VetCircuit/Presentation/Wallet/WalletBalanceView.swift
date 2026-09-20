@@ -20,7 +20,7 @@ final class WalletBalanceViewModel {
             balanceMinorUnits = try await balanceResult
             entries = try await entriesResult
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

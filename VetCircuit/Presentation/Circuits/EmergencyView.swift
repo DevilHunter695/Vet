@@ -16,7 +16,7 @@ final class EmergencyViewModel {
         do {
             clinics = try await listEmergencyClinicsUseCase.execute()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

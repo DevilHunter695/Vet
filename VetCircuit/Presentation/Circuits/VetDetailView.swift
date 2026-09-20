@@ -46,7 +46,7 @@ final class VetDetailViewModel {
         do {
             reviews = try await getVetProfileUseCase.reviews(vetId: vetId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

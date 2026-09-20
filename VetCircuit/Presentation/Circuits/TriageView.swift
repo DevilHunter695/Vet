@@ -26,7 +26,7 @@ final class TriageViewModel {
             }
         } catch {
             Haptics.error()
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

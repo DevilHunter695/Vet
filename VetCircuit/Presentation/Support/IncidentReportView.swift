@@ -27,7 +27,7 @@ final class IncidentReportViewModel {
             didSubmit = true
         } catch {
             Haptics.error()
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

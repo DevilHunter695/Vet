@@ -83,7 +83,7 @@ struct VisitDetailView: View {
         do {
             pendingCancellation = try await cancelVisitUseCase.preview(visitId: visit.id, scheduledAt: visit.scheduledAt)
         } catch {
-            cancelErrorMessage = error.localizedDescription
+            cancelErrorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -102,7 +102,7 @@ struct VisitDetailView: View {
             withAnimation(Theme.springSoft) { cancelledStatus = .cancelledByUser }
         } catch {
             Haptics.error()
-            cancelErrorMessage = error.localizedDescription
+            cancelErrorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -377,7 +377,7 @@ struct VisitDetailView: View {
                                     await UIApplication.shared.open(dialURL)
                                 }
                             } catch {
-                                callErrorMessage = error.localizedDescription
+                                callErrorMessage = UserFacingError.message(for: error)
                             }
                         }
                     } label: {
@@ -529,7 +529,7 @@ struct VisitDetailView: View {
                 do {
                     visitOTP = try await visitOTPRepository.generateOTP(visitId: visit.id)
                 } catch {
-                    otpErrorMessage = "We couldn't generate your door code. Ask your vet to confirm the visit manually — \(error.localizedDescription)"
+                    otpErrorMessage = "We couldn't generate your door code. Ask your vet to confirm the visit manually — \(UserFacingError.message(for: error))"
                 }
             }
             var failures: [String] = []
@@ -571,7 +571,7 @@ struct VisitDetailView: View {
             retryAttempts += 1
             await UIApplication.shared.open(url)
         } catch {
-            retryErrorMessage = error.localizedDescription
+            retryErrorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -586,7 +586,7 @@ struct VisitDetailView: View {
             _ = try await respondToRescheduleProposalUseCase.execute(proposal: proposal, visit: visit, accept: accept)
             pendingProposal = nil
         } catch {
-            proposalActionMessage = error.localizedDescription
+            proposalActionMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -601,7 +601,7 @@ struct VisitDetailView: View {
             // 100 silently drops the paise on any non-round refund.
             noShowMessage = "Reported. Your \(CurrencyFormatter.rupees(outcome.refundMinorUnits)) refund and \(outcome.goodwillCreditPoints) goodwill points are on the way."
         } catch {
-            noShowMessage = error.localizedDescription
+            noShowMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -624,7 +624,7 @@ struct VisitDetailView: View {
             followUpBooking = FollowUpBooking(circuit: circuit, service: service, variantId: variantId)
         } catch {
             Haptics.error()
-            followUpErrorMessage = "Couldn't set up your follow-up. \(error.localizedDescription)"
+            followUpErrorMessage = "Couldn't set up your follow-up. \(UserFacingError.message(for: error))"
         }
     }
 }

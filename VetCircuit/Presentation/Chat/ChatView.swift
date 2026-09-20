@@ -36,7 +36,7 @@ final class ChatViewModel {
         do {
             messages = try await chatRepository.history(visitId: visitId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
         // J3: read receipts — mark the other party's messages read as soon
         // as this thread is opened.
@@ -80,7 +80,7 @@ final class ChatViewModel {
             let message = try await sendChatMessageUseCase.execute(visitId: visitId, body: body)
             messages.append(message)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
             draft = body
         }
     }
@@ -92,7 +92,7 @@ final class ChatViewModel {
             messages.append(message)
         } catch {
             Haptics.error()
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

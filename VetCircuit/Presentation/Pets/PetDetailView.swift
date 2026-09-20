@@ -38,7 +38,7 @@ final class PetDetailViewModel {
             vaccinations = try await shots
             prescriptions = try await scripts
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -49,7 +49,7 @@ final class PetDetailViewModel {
             pet = try await managePetsUseCase.update(pet)
             Haptics.success()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -61,7 +61,7 @@ final class PetDetailViewModel {
             pet.weightKg = weightKg
             Haptics.success()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -82,7 +82,7 @@ final class PetDetailViewModel {
             pet = try await managePetsUseCase.archive(pet, reason: reason)
             Haptics.confirm()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -90,7 +90,7 @@ final class PetDetailViewModel {
         do {
             pet = try await managePetsUseCase.unarchive(pet)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -479,7 +479,7 @@ struct PetDetailView: View {
             bookVaccinationService = service
         } catch {
             Haptics.error()
-            viewModel.errorMessage = "Couldn't open vaccination booking. \(error.localizedDescription)"
+            viewModel.errorMessage = "Couldn't open vaccination booking. \(UserFacingError.message(for: error))"
         }
     }
 

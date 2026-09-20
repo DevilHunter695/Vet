@@ -73,7 +73,7 @@ final class ManageSubscriptionViewModel {
                 try? await renewalReminderUseCase.execute(user: currentUser, subscription: subscription)
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -92,7 +92,7 @@ final class ManageSubscriptionViewModel {
                 subscription?.status = .cancelled
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
         self.pendingAction = nil
     }
@@ -102,7 +102,7 @@ final class ManageSubscriptionViewModel {
         do {
             subscription = try await manageSubscriptionUseCase.resume(subscriptionId: subscriptionId, userId: userId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

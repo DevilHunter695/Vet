@@ -50,7 +50,7 @@ final class PackagesViewModel {
                 }
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -73,7 +73,7 @@ final class PackagesViewModel {
             withAnimation(Theme.springSoft) { boughtPackageId = package.id }
         } catch {
             Haptics.error()
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

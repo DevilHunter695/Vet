@@ -93,7 +93,7 @@ struct AddAddressView: View {
             dismiss()
         } catch {
             Haptics.error()
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

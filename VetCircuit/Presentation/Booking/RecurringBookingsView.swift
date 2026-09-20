@@ -24,7 +24,7 @@ final class RecurringBookingsViewModel {
         do {
             rules = try await manageRecurringBookingUseCase.list(userId: userId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -33,7 +33,7 @@ final class RecurringBookingsViewModel {
             let updated = try await manageRecurringBookingUseCase.setActive(id: rule.id, isActive: !rule.isActive)
             if let index = rules.firstIndex(where: { $0.id == rule.id }) { rules[index] = updated }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -42,7 +42,7 @@ final class RecurringBookingsViewModel {
             try await manageRecurringBookingUseCase.cancel(id: rule.id)
             rules.removeAll { $0.id == rule.id }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

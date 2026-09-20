@@ -19,7 +19,7 @@ final class MyTicketsViewModel {
         do {
             tickets = try await contactSupportUseCase.myTickets(userId: userId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

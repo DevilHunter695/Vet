@@ -20,7 +20,7 @@ final class ReferralViewModel {
             code = try await referralRepository.myReferralCode(userId: userId)
             referrals = try await referralRepository.listReferrals(userId: userId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -37,7 +37,7 @@ final class ReferralViewModel {
             Haptics.success()
         } catch {
             Haptics.error()
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

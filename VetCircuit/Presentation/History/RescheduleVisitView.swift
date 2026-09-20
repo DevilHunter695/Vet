@@ -24,7 +24,7 @@ final class RescheduleVisitViewModel {
             let circuit = try await circuitRepository.circuit(id: visit.circuitId)
             availableSlots = circuit.schedule.filter { $0.isAvailable && $0.startTime > .now }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -39,7 +39,7 @@ final class RescheduleVisitViewModel {
             rescheduled = true
         } catch {
             Haptics.error()
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

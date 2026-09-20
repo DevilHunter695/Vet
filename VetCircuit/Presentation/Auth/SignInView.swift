@@ -23,7 +23,7 @@ final class SignInViewModel {
             try await authRepository.requestOTP(phone: phone)
             isOTPSent = true
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -34,7 +34,7 @@ final class SignInViewModel {
         do {
             return try await authRepository.verifyOTP(phone: phone, code: otp)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
             return nil
         }
     }

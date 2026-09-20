@@ -82,7 +82,7 @@ final class CartViewModel {
             // change below, so the total is always live.
             if let cart, !cart.items.isEmpty { await getQuote() }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -98,7 +98,7 @@ final class CartViewModel {
             redeemMessage = "Redeemed \(points) points into your wallet."
             Haptics.success()
         } catch {
-            redeemMessage = error.localizedDescription
+            redeemMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -108,7 +108,7 @@ final class CartViewModel {
             self.cart = try await manageCartUseCase.removeItem(id: item.id, from: cart)
             await getQuote()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -119,7 +119,7 @@ final class CartViewModel {
             self.cart = try await manageCartUseCase.setQuantity(quantity, forItemId: item.id, in: cart)
             await getQuote()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -130,7 +130,7 @@ final class CartViewModel {
             cart = Cart(id: cart?.id ?? UUID(), userId: userId)
             quote = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -154,7 +154,7 @@ final class CartViewModel {
         do {
             quote = try await getQuoteUseCase.execute(cart: cart, useWalletBalance: useWalletBalance)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -236,7 +236,7 @@ final class CartViewModel {
                 checkoutURL = session.checkoutURL
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -272,7 +272,7 @@ final class CartViewModel {
                 errorMessage = reason ?? "That payment didn't go through."
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -318,7 +318,7 @@ final class CartViewModel {
             }
             checkoutURL = try await retryPaymentUseCase.execute(visitId: visit.id, paymentId: paymentId, quote: quote, priorAttempts: retryAttempts)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 

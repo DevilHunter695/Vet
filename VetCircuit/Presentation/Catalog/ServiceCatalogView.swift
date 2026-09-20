@@ -16,7 +16,7 @@ final class ServiceCatalogViewModel {
         do {
             services = try await getCatalogUseCase.execute(vertical: vertical, forSpecies: species)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

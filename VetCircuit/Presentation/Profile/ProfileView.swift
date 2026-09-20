@@ -74,7 +74,7 @@ final class ProfileViewModel {
                 }
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -86,7 +86,7 @@ final class ProfileViewModel {
             withAnimation(Theme.springSoft) { pets.append(added) }
             newPetName = ""
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -101,7 +101,7 @@ final class ProfileViewModel {
                 if let index = pets.firstIndex(where: { $0.id == pet.id }) { pets[index] = archived }
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 

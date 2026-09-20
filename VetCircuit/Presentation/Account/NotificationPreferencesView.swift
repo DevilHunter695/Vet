@@ -16,7 +16,7 @@ final class NotificationPreferencesViewModel {
         do {
             preferences = try await useCase.load(userId: userId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -30,7 +30,7 @@ final class NotificationPreferencesViewModel {
             Haptics.tap()
         } catch {
             Haptics.error()
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

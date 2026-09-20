@@ -64,7 +64,7 @@ struct VisitChecklistView: View {
         do {
             items = try await getVisitChecklistUseCase.execute(visitId: visitId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

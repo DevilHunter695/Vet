@@ -27,7 +27,7 @@ final class TicketDetailViewModel {
         do {
             auditTrail = try await issueSupportRefundUseCase.auditTrail(ticketId: ticket.id)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -46,7 +46,7 @@ final class TicketDetailViewModel {
             await loadAuditTrail()
         } catch {
             Haptics.error()
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

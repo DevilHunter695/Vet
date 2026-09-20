@@ -79,7 +79,7 @@ final class VisitHistoryViewModel {
                 }
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -121,7 +121,7 @@ final class VisitHistoryViewModel {
             let outcome = try await cancelVisitUseCase.preview(visitId: visit.id, scheduledAt: visit.scheduledAt)
             pendingCancellation = (visit, outcome)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -146,7 +146,7 @@ final class VisitHistoryViewModel {
                 withAnimation(Theme.springSoft) { visits[index].status = .cancelledByUser }
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

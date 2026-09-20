@@ -73,7 +73,7 @@ struct LiabilityWaiverView: View {
             // No consent recorded means no continuing.
             Haptics.error()
             isAccepting = false
-            errorMessage = "We couldn't record your consent, so we can't continue yet. \(error.localizedDescription)"
+            errorMessage = "We couldn't record your consent, so we can't continue yet. \(UserFacingError.message(for: error))"
         }
     }
 }

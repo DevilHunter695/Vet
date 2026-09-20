@@ -141,7 +141,7 @@ final class BookingViewModel {
             activeHold = hold
             startCountdown(until: hold.expiresAt)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -175,7 +175,7 @@ final class BookingViewModel {
             // preview appears as soon as a slot is picked.
             await refreshPreviewQuote()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -241,7 +241,7 @@ final class BookingViewModel {
                 await createRecurringRuleIfNeeded(pet: pet)
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -279,7 +279,7 @@ final class BookingViewModel {
                 errorMessage = reason ?? "That payment didn't go through."
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -302,7 +302,7 @@ final class BookingViewModel {
             }
             checkoutURL = try await retryPaymentUseCase.execute(visitId: visit.id, paymentId: paymentId, quote: quote, priorAttempts: retryAttempts)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 

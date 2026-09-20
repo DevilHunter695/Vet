@@ -16,7 +16,7 @@ final class AddressListViewModel {
         do {
             addresses = try await manageAddressesUseCase.list(ownerId: ownerId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -25,7 +25,7 @@ final class AddressListViewModel {
             try await manageAddressesUseCase.setDefault(id: address.id, ownerId: ownerId)
             await load(ownerId: ownerId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -34,7 +34,7 @@ final class AddressListViewModel {
             try await manageAddressesUseCase.remove(id: address.id)
             addresses.removeAll { $0.id == address.id }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

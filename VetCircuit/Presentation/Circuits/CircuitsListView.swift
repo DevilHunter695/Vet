@@ -94,7 +94,7 @@ final class CircuitsListViewModel {
             recentCircuits = RecentlyViewedStore.shared.recentCircuits(from: circuits)
             if isSearching { await search(vertical: vertical) }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -103,7 +103,7 @@ final class CircuitsListViewModel {
         do {
             searchResult = try await searchUseCase.execute(term: searchArea, vertical: vertical)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 

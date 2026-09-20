@@ -32,7 +32,7 @@ final class HouseholdViewModel {
                 sharedVisits = []
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -41,7 +41,7 @@ final class HouseholdViewModel {
             household = try await manageHouseholdUseCase.create(name: name, ownerId: ownerId)
             await load(userId: ownerId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -52,7 +52,7 @@ final class HouseholdViewModel {
             withAnimation(Theme.springSoft) { members.append(member) }
             invitePhone = ""
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -62,7 +62,7 @@ final class HouseholdViewModel {
             try await manageHouseholdUseCase.removeMember(householdId: household.id, memberId: member.id)
             withAnimation(Theme.springQuick) { members.removeAll { $0.id == member.id } }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 

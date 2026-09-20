@@ -40,7 +40,7 @@ final class LiveTrackingViewModel {
             sosShareText = ShareVisitLinkUseCase.shareMessage(visitId: result.report.visitId)
         } catch {
             Haptics.error()
-            sosErrorMessage = error.localizedDescription
+            sosErrorMessage = UserFacingError.message(for: error)
         }
     }
 

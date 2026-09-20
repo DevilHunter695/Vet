@@ -33,7 +33,7 @@ final class EditProfileViewModel {
             Haptics.success()
             return updated
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
             return nil
         }
     }

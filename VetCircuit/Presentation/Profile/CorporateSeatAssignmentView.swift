@@ -22,7 +22,7 @@ final class CorporateSeatAssignmentViewModel {
         } catch {
             // Silently swallowing this left the screen claiming zero seats
             // were assigned when the fetch had simply failed.
-            errorMessage = "Couldn't load seat assignments. \(error.localizedDescription)"
+            errorMessage = "Couldn't load seat assignments. \(UserFacingError.message(for: error))"
         }
     }
 
@@ -33,7 +33,7 @@ final class CorporateSeatAssignmentViewModel {
             assignments.append(assignment)
             phoneInput = ""
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -42,7 +42,7 @@ final class CorporateSeatAssignmentViewModel {
             try await useCase.unassign(id: assignment.id)
             assignments.removeAll { $0.id == assignment.id }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

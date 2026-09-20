@@ -55,7 +55,7 @@ private extension VisitTimelineView {
         do {
             events = try await visitRepository.statusHistory(visitId: visitId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

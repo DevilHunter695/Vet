@@ -21,7 +21,7 @@ final class PaymentMethodsViewModel {
         do {
             methods = try await useCase.list(userId: userId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -41,7 +41,7 @@ final class PaymentMethodsViewModel {
             await load(userId: userId)
             Haptics.success()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
             Haptics.error()
         }
     }
@@ -51,7 +51,7 @@ final class PaymentMethodsViewModel {
             try await useCase.remove(id: method.id)
             await load(userId: userId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 
@@ -60,7 +60,7 @@ final class PaymentMethodsViewModel {
             try await useCase.setDefault(id: method.id, userId: userId)
             await load(userId: userId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }

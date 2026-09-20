@@ -20,7 +20,7 @@ final class PlanCatalogViewModel {
         do {
             checkoutURL = try await subscribeToPlanUseCase.execute(userId: userId, plan: plan, seatCount: seatCount)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingError.message(for: error)
         }
     }
 }
