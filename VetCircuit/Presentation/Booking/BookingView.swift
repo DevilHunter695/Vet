@@ -972,11 +972,19 @@ struct BookingView: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 8)
-        // iOS 26 guidance is to differentiate controls from content with
-        // the material rather than a solid or semi-opaque strip beneath
-        // them, and to let content scroll under it. `.bar` was the old
-        // answer; glass is the current one.
-        .glassEffect(.regular, in: Rectangle())
+        // The material has to reach the physical bottom of the screen.
+        //
+        // As a plain `.glassEffect(in: Rectangle())` on a safeAreaInset the
+        // bar stopped above the home indicator, so it read as a detached grey
+        // slab with a hard edge top and bottom, with the tab accessory
+        // floating below it as a second, unrelated piece of chrome. Pushing
+        // the background into the safe area makes it one surface that meets
+        // the edge, which is what every system bar does.
+        .background {
+            Color.clear
+                .glassEffect(.regular, in: Rectangle())
+                .ignoresSafeArea(edges: .bottom)
+        }
     }
 
     /// What is actually being confirmed.

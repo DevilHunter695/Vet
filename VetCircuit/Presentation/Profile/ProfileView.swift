@@ -524,10 +524,13 @@ private struct LoyaltyProgressCard: View {
                 .frame(height: 8)
                 .accessibilityHidden(true)
 
+            // The section header above already says which tier this is, so
+            // this line only carries what it does not. It used to repeat
+            // "You're at the top tier" verbatim and then run on.
             Text(
                 pointsToNextTier > 0
-                    ? "\(pointsToNextTier) more points unlocks the next tier — you earn them on every completed visit."
-                    : "You're at the top tier. Points still convert to wallet credit at checkout."
+                    ? "\(pointsToNextTier) more to the next tier"
+                    : "Points convert to wallet credit at checkout"
             )
             .font(.brandCaption2)
             .foregroundStyle(Theme.textSecondary)

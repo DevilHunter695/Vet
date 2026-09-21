@@ -135,14 +135,31 @@ enum FloatingChrome {
     /// on its own, so content can no longer come to rest underneath it.
     /// Kept at zero rather than deleted so the constant's callers still read.
     static let tabBarInset: CGFloat = 0
+
+    /// Height of the tab bar's bottom accessory, plus a little breathing
+    /// room. Deliberately modest: too much and every screen ends in a band of
+    /// dead space, which is its own complaint.
+    static let accessoryClearance: CGFloat = 56
 }
 
 extension View {
     /// No longer needed — the system tab bar handles its own safe area.
     func floatingTabBarScroll() -> some View { self }
 
-    /// No longer needed — the system tab bar handles its own safe area.
-    func floatingTabBarInset() -> some View { self }
+    /// Clears the tab bar's bottom accessory.
+    ///
+    /// The system tab bar insets for itself, but `tabViewBottomAccessory` —
+    /// the "Vet en route" pill — sits above it and its height is not added to
+    /// the scroll content's safe area. So the last line of every screen was
+    /// parked underneath it: on Profile, "Points still convert to wallet
+    /// credit" was permanently half-hidden with no way to scroll it clear.
+    ///
+    /// `contentMargins` rather than `padding` on purpose: it moves the
+    /// content without moving the scroll indicator, so the scrollbar still
+    /// runs the true height of the view.
+    func floatingTabBarInset() -> some View {
+        contentMargins(.bottom, FloatingChrome.accessoryClearance, for: .scrollContent)
+    }
 
     /// No longer needed — the bar tracks its own scrolling.
     func tracksScrollOffset() -> some View { self }
