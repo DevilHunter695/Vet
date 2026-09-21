@@ -331,6 +331,7 @@ final class CartViewModel {
 /// this screen gets selections into a real quote, which is the prerequisite.
 struct CartView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.dismiss) private var dismiss
     @State private var viewModel = CartViewModel()
 
     var body: some View {
@@ -481,7 +482,10 @@ struct CartView: View {
             CheckoutWebView(url: url)
         }
         .navigationDestination(item: $viewModel.confirmedVisit) { visit in
-            BookingConfirmedView(visit: visit)
+            BookingConfirmedView(visit: visit) {
+                viewModel.confirmedVisit = nil
+                dismiss()
+            }
         }
     }
 

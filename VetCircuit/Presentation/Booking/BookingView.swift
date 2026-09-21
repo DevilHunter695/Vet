@@ -158,7 +158,19 @@ final class BookingViewModel {
 
     func releaseHold() {
         holdTimer?.cancel()
+        holdTimer = nil
         if let hold = activeHold { Task { try? await slotHoldRepository.releaseHold(id: hold.id) } }
+        activeHold = nil
+        holdSecondsRemaining = nil
+    }
+
+    /// `releaseHold()` fires its network call in a detached Task; inside an
+    /// async booking path we want the same cleanup but awaited, so the hold is
+    /// really gone before the confirmation screen appears.
+    private func releaseHoldAndAwait() async {
+        holdTimer?.cancel()
+        holdTimer = nil
+        if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
         activeHold = nil
         holdSecondsRemaining = nil
     }
@@ -217,7 +229,11 @@ final class BookingViewModel {
                         serviceId: serviceId, variantId: variantId
                     )
                     bookedVisit = visit
-                    if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
+                    // Full release, not just the server call: this also cancels the
+                    // countdown timer and clears `activeHold`. Releasing the hold
+                    // server-side while leaving the timer running left the booked
+                    // screen counting down to a "0:00" that meant nothing.
+                    await releaseHoldAndAwait()
                     await sendConfirmationReceipt(pet: pet)
                     await createRecurringRuleIfNeeded(pet: pet)
                 } else {
@@ -229,14 +245,22 @@ final class BookingViewModel {
                     pendingVisit = session.visit
                     checkoutURL = session.checkoutURL
                     // The hold's job ends once the visit is booked (pending payment).
-                    if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
+                    // Full release, not just the server call: this also cancels the
+                    // countdown timer and clears `activeHold`. Releasing the hold
+                    // server-side while leaving the timer running left the booked
+                    // screen counting down to a "0:00" that meant nothing.
+                    await releaseHoldAndAwait()
                 }
             } else {
                 bookedVisit = try await bookVisitUseCase.execute(
                     petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
                     idempotencyKey: bookingIdempotencyKey
                 )
-                if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
+                // Full release, not just the server call: this also cancels the
+                    // countdown timer and clears `activeHold`. Releasing the hold
+                    // server-side while leaving the timer running left the booked
+                    // screen counting down to a "0:00" that meant nothing.
+                    await releaseHoldAndAwait()
                 await sendConfirmationReceipt(pet: pet)
                 await createRecurringRuleIfNeeded(pet: pet)
             }
@@ -332,6 +356,7 @@ final class BookingViewModel {
 
 struct BookingView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.dismiss) private var dismiss
     @State private var viewModel: BookingViewModel
     @State private var showingWaiver = false
     @State private var step: BookingStep = .slot
@@ -587,7 +612,10 @@ struct BookingView: View {
             }
         }
         .navigationDestination(item: $viewModel.bookedVisit) { visit in
-            BookingConfirmedView(visit: visit)
+            BookingConfirmedView(visit: visit) {
+                viewModel.bookedVisit = nil
+                dismiss()
+            }
         }
         .overlay {
             if viewModel.isResolvingPayment {
@@ -800,6 +828,11 @@ struct BookingView: View {
     }
 
     private var confirmTitle: String {
+        // The first tap on a never-before-signed account opens the liability
+        // waiver, not payment. Promising "Confirm & pay securely" and then
+        // showing a consent form reads as a bait and switch at exactly the
+        // moment the customer is deciding whether to trust us with money.
+        guard hasAcceptedWaiver else { return "Review & continue" }
         guard viewModel.canCheckoutWithPayment else { return "Request this visit" }
         return viewModel.payAfterVisit ? "Confirm — pay after visit" : "Confirm & pay securely"
     }
@@ -944,6 +977,14 @@ private struct SelectableRow: View {
 
 struct BookingConfirmedView: View {
     let visit: Visit
+
+    /// Clears the booking that pushed this screen, popping the flow. The
+    /// screen hides the back button - correctly, since the booking is already
+    /// placed and "back to the payment step" is meaningless - so without this
+    /// there is no way off it at all except force-quitting the app.
+    var onDone: () -> Void = {}
+
+    @Environment(Router.self) private var router
     @State private var checkmarkScale: CGFloat = 0.4
     @State private var ringOpacity: Double = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1007,11 +1048,43 @@ struct BookingConfirmedView: View {
                     text: "You can track the vet live, message them, and cancel from the Visits tab. Cancelling more than \(Int(CancellationPolicy.freeWindowHours))h ahead is free.",
                     systemImage: "info.circle.fill"
                 )
+
+                VStack(spacing: 10) {
+                    Button {
+                        Haptics.tap()
+                        // Switches to Visits and pushes this visit's detail,
+                        // so the obvious next question - "where is it?" - is
+                        // one tap away rather than a hunt through a tab.
+                        router.handle(.visit(visit.id))
+                        onDone()
+                    } label: {
+                        Text("Track this visit")
+                            .font(.brandHeadline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.primary)
+
+                    Button {
+                        Haptics.tap()
+                        onDone()
+                    } label: {
+                        Text("Done")
+                            .font(.brandCallout)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.textSecondary)
+                }
+                .padding(.top, 4)
             }
             .padding(24)
             .appearAnimation()
         }
         .navigationBarBackButtonHidden()
+        .interactiveDismissDisabled()
     }
 }
 
