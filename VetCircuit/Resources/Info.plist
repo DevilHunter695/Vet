@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -25,16 +29,10 @@
 	<string>1.1</string>
 	<key>CFBundleVersion</key>
 	<string>2</string>
-	<key>NSCameraUsageDescription</key>
-	<string>VetCircuit uses your camera to let you attach photos of your pet to chat with your vet.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>VetCircuit uses Face ID to keep your pet's medical records and account locked to you, when app lock is turned on.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>VetCircuit uses your location to show nearby vet circuits and let you track your vet's arrival.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>VetCircuit uses your photo library so you can share photos of your pet with your vet.</string>
-	<key>NSUserTrackingUsageDescription</key>
-	<string>VetCircuit does not track you across other apps or websites.</string>
 	<key>SUPABASE_ANON_KEY</key>
 	<string>$(SUPABASE_ANON_KEY)</string>
 	<key>SUPABASE_URL</key>

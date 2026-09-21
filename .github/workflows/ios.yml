@@ -47,6 +47,13 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Seed build configuration
+        run: |
+          # The real Config.xcconfig is gitignored. CI builds against the empty
+          # SUPABASE_* defaults (mock data) on purpose, but project.yml now
+          # references the file, so it has to exist for xcodegen.
+          [ -f Config.xcconfig ] || printf 'SUPABASE_URL =\nSUPABASE_ANON_KEY =\n' > Config.xcconfig
+
       - name: Generate Xcode project
         run: xcodegen generate
 

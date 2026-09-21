@@ -36,12 +36,11 @@ targets:
         CFBundleShortVersionString: "1.1"
         CFBundleVersion: "2"
         UILaunchScreen: {}
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        NSCameraUsageDescription: "VetCircuit uses your camera to let you attach photos of your pet to chat with your vet."
         NSPhotoLibraryUsageDescription: "VetCircuit uses your photo library so you can share photos of your pet with your vet."
-        NSLocationWhenInUseUsageDescription: "VetCircuit uses your location to show nearby vet circuits and let you track your vet's arrival."
-        NSUserTrackingUsageDescription: "VetCircuit does not track you across other apps or websites."
         NSFaceIDUsageDescription: "VetCircuit uses Face ID to keep your pet's medical records and account locked to you, when app lock is turned on."
         # O2: English + Hindi at launch (Localizable.xcstrings under
         # Resources). Coverage is partial by design — see TECHNICAL_PLAN.md's
@@ -51,6 +50,13 @@ targets:
           - hi
         SUPABASE_URL: "$(SUPABASE_URL)"
         SUPABASE_ANON_KEY: "$(SUPABASE_ANON_KEY)"
+    # Without this, `xcodegen generate` would drop any xcconfig you attached by
+    # hand in Xcode, and the app would silently rebuild against the empty
+    # SUPABASE_* defaults below — i.e. permanently stuck on mock data. Copy
+    # Config.template.xcconfig to Config.xcconfig (gitignored) to fill it in.
+    configFiles:
+      Debug: Config.xcconfig
+      Release: Config.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.vetcircuit.app
@@ -68,6 +74,7 @@ targets:
           - Default
         com.apple.security.application-groups:
           - group.com.vetcircuit.app
+        aps-environment: development
     dependencies:
       - package: Supabase
       - target: VetCircuitWidgetExtension

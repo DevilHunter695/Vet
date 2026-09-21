@@ -45,7 +45,7 @@ open VetCircuit.xcodeproj
 3. Deploy the payment webhook: `supabase functions deploy payment-webhook`, and set its secrets:
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `PAYMENT_GATEWAY_WEBHOOK_SECRET`
-4. In Xcode, set `SUPABASE_URL` and `SUPABASE_ANON_KEY` as build setting overrides (or an `.xcconfig` you don't commit) — they're read into `Info.plist` and surfaced via `AppConfig`.
+4. `cp Config.template.xcconfig Config.xcconfig` and fill in `SUPABASE_URL` / `SUPABASE_ANON_KEY`. `project.yml` attaches that file to the app target's Debug and Release configurations, so it survives `xcodegen generate`; the values are read into `Info.plist` and surfaced via `AppConfig`. `Config.xcconfig` is gitignored — don't commit it.
 
 ### 3. Run
 
