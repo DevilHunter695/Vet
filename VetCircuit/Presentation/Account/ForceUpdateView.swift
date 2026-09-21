@@ -14,6 +14,13 @@ struct ForceUpdateView: View {
 
     let mode: Mode
 
+    /// Maintenance ends without the app being relaunched, so the gate has to
+    /// offer a way back in. Without this the screen is a dead end: the check
+    /// only ran once, in `RootView`'s `.task`, and nothing re-ran it.
+    var onRetry: (() async -> Void)?
+
+    @State private var isRetrying = false
+
     var body: some View {
         ZStack {
             Theme.heroGradient.ignoresSafeArea()
@@ -31,12 +38,11 @@ struct ForceUpdateView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
 
-                if case .forceUpgrade = mode {
+                switch mode {
+                case .forceUpgrade:
                     Button {
                         Haptics.tap()
-                        if let url = URL(string: "itms-apps://apps.apple.com/app/id0000000000") {
-                            UIApplication.shared.open(url)
-                        }
+                        UIApplication.shared.open(AppConfig.appStoreURL)
                     } label: {
                         Text("Update now")
                             .font(.brandHeadline)
@@ -47,6 +53,34 @@ struct ForceUpdateView: View {
                     .tint(Theme.primary)
                     .padding(.horizontal, 32)
                     .padding(.top, 8)
+
+                case .maintenance:
+                    if let onRetry {
+                        Button {
+                            Haptics.tap()
+                            isRetrying = true
+                            Task {
+                                await onRetry()
+                                isRetrying = false
+                            }
+                        } label: {
+                            Group {
+                                if isRetrying {
+                                    ProgressView().tint(.white)
+                                } else {
+                                    Text("Try again")
+                                }
+                            }
+                            .font(.brandHeadline)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.primary)
+                        .disabled(isRetrying)
+                        .padding(.horizontal, 32)
+                        .padding(.top, 8)
+                    }
                 }
             }
             .padding()
@@ -71,7 +105,7 @@ struct ForceUpdateView: View {
 }
 
 #Preview("Maintenance") {
-    ForceUpdateView(mode: .maintenance(message: "We're upgrading our booking system. Back by 6pm."))
+    ForceUpdateView(mode: .maintenance(message: "We're upgrading our booking system. Back by 6pm.")) {}
 }
 
 #Preview("Force upgrade") {

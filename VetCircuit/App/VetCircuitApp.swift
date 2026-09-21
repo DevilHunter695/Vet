@@ -140,11 +140,17 @@ struct RootView: View {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
     }
 
+    private func refreshAppConfigGate() async {
+        appConfigGate = await checkAppConfigUseCase.execute(currentVersion: currentAppVersion)
+    }
+
     var body: some View {
         Group {
             if case .maintenance(let message) = appConfigGate {
-                ForceUpdateView(mode: .maintenance(message: message))
-                    .transition(.opacity)
+                ForceUpdateView(mode: .maintenance(message: message)) {
+                    await refreshAppConfigGate()
+                }
+                .transition(.opacity)
             } else if case .forceUpgrade(let minVersion) = appConfigGate {
                 ForceUpdateView(mode: .forceUpgrade(minVersion: minVersion))
                     .transition(.opacity)
@@ -177,11 +183,20 @@ struct RootView: View {
         }
         .animation(Theme.springSoft, value: session.currentUser != nil)
         .animation(Theme.crossFade, value: session.isBootstrapping)
-        // O7/O8: fetched once at launch, before we even know whether there's a
-        // session — a killed binary must be gated for signed-out users too.
-        .task { appConfigGate = await checkAppConfigUseCase.execute(currentVersion: currentAppVersion) }
+        // O7/O8: fetched at launch, before we even know whether there's a
+        // session — a killed binary must be gated for signed-out users too —
+        // and again on every foreground, so the gate can lift by itself.
+        .task { await refreshAppConfigGate() }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .background { biometricLock.lock() }
+            if newPhase == .background {
+                biometricLock.lock()
+            } else if newPhase == .active {
+                // Maintenance windows end while the app sits in the
+                // background. Re-checking on every foreground means people
+                // come back to a working app instead of a screen that stays
+                // blocked until they force-quit.
+                Task { await refreshAppConfigGate() }
+            }
         }
     }
 }

@@ -2,3 +2,8 @@
 // from the VetCircuit target's build settings in Xcode.
 SUPABASE_URL = https:/$()/your-project.supabase.co
 SUPABASE_ANON_KEY = your-anon-key-here
+
+// Numeric App Store ID (the digits after "id" in the listing URL). Leave
+// blank before the app is on the App Store - the force-upgrade screen then
+// falls back to an App Store search instead of a dead placeholder page.
+APP_STORE_ID =

@@ -48,6 +48,7 @@ targets:
         CFBundleLocalizations:
           - en
           - hi
+        APP_STORE_ID: "$(APP_STORE_ID)"
         SUPABASE_URL: "$(SUPABASE_URL)"
         SUPABASE_ANON_KEY: "$(SUPABASE_ANON_KEY)"
     # Without this, `xcodegen generate` would drop any xcconfig you attached by
@@ -62,6 +63,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.vetcircuit.app
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        APP_STORE_ID: ""
         SUPABASE_URL: ""
         SUPABASE_ANON_KEY: ""
     # N6: shared App Group so the widget extension can read the

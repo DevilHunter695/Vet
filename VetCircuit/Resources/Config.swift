@@ -26,4 +26,21 @@ enum AppConfig {
     }
 
     static let apiBaseURL = supabaseURL ?? URL(string: "https://example.invalid")!
+
+    /// Where "Update now" on the force-upgrade gate sends people. Set
+    /// `APP_STORE_ID` in Config.xcconfig once the app has a real App Store
+    /// listing. Until then this falls back to an App Store search for the
+    /// app's own display name, because the alternative - a hardcoded
+    /// placeholder ID - opens the App Store on a "not available" page and
+    /// leaves the person stuck on a screen with no other way out.
+    static var appStoreURL: URL {
+        let id = (Bundle.main.object(forInfoDictionaryKey: "APP_STORE_ID") as? String)?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        if !id.isEmpty, id.allSatisfy(\.isNumber) {
+            return URL(string: "itms-apps://apps.apple.com/app/id\(id)")!
+        }
+        let name = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String) ?? "VetCircuit"
+        let term = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "VetCircuit"
+        return URL(string: "itms-apps://itunes.apple.com/search?media=software&term=\(term)")!
+    }
 }
