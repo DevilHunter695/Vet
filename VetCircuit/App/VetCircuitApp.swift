@@ -69,14 +69,39 @@ struct VetCircuitApp: App {
     @State private var router = Router()
     @AppStorage("vc.appearance") private var appearanceRaw: String = AppearanceOption.system.rawValue
 
+    /// The SwiftData store holds `CachedVisit`/`CachedChatMessage`/
+    /// `CachedVetProfile` — an offline *cache*, never the source of truth,
+    /// which is the server. So a store that won't open is not worth crashing
+    /// over: a schema change that SwiftData can't migrate, or a file damaged
+    /// by a bad shutdown, used to `fatalError` on the very first frame, which
+    /// on a shipped build is an app that launches to a crash every time with
+    /// no way out but delete-and-reinstall.
+    ///
+    /// Three attempts, worst case getting quieter each time: open the store;
+    /// if that fails, delete it and start clean (losing only cached copies of
+    /// data we can re-fetch); if even that fails, run in memory, where the
+    /// app works fully online and simply has nothing cached for offline.
     var sharedModelContainer: ModelContainer = {
         let schema = Schema(LocalStoreSchema.models)
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-        do {
-            return try ModelContainer(for: schema, configurations: [configuration])
-        } catch {
-            fatalError("Could not create SwiftData ModelContainer: \(error)")
+        let onDisk = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+
+        if let container = try? ModelContainer(for: schema, configurations: [onDisk]) {
+            return container
         }
+
+        let storeDirectory = URL.applicationSupportDirectory
+        for name in ["default.store", "default.store-shm", "default.store-wal"] {
+            try? FileManager.default.removeItem(at: storeDirectory.appending(path: name))
+        }
+        if let container = try? ModelContainer(for: schema, configurations: [onDisk]) {
+            return container
+        }
+
+        let inMemory = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        // The last resort genuinely cannot fail — an in-memory store has no
+        // file to be wrong — but `ModelContainer` is throwing, so this stays
+        // a `try!` rather than inventing a fourth fallback that never runs.
+        return try! ModelContainer(for: schema, configurations: [inMemory])
     }()
 
     var body: some Scene {
