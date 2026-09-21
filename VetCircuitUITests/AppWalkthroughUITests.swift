@@ -248,6 +248,78 @@ final class AppWalkthroughUITests: XCTestCase {
         snapshot(app, "Booking — slot picked, hold placed")
     }
 
+    /// The whole booking, start to finish, and back out of it again.
+    ///
+    /// This is the path every other booking test stops short of, and it is
+    /// where the worst bugs lived: the confirmation screen hid its back button
+    /// and had no button of its own, so a completed booking could only be
+    /// escaped by force-quitting the app. Nothing in the suite would ever have
+    /// noticed, because nothing walked this far.
+    ///
+    /// Deliberately tolerant about the middle: mock data decides how many pets
+    /// exist, and therefore whether the pet step appears at all, so this
+    /// advances by whatever the pinned action bar currently offers rather than
+    /// asserting a fixed number of steps.
+    @MainActor
+    func testAWholeBookingCanBeCompletedAndLeft() throws {
+        let app = launchApp()
+        goToTab("Book", in: app)
+
+        let rows = app.buttons.containing(NSPredicate(format: "label CONTAINS[c] 'rated'"))
+        guard rows.count > 0 else { throw XCTSkip("No circuits in the mock data to book") }
+        rows.element(boundBy: 0).tap()
+        require(app.navigationBars["Book visit"], "the booking screen")
+
+        let slots = app.buttons.containing(NSPredicate(format: "label CONTAINS[c] 'spot'"))
+        guard slots.count > 0 else { throw XCTSkip("No open slots in the mock data") }
+        slots.element(boundBy: 0).tap()
+
+        // Walk the steps by whatever the action bar says next. The titles are
+        // the ones `confirmTitle`/`advanceTitle` produce; the last of them
+        // commits the booking.
+        let advanceTitles = [
+            "Continue", "Review & continue", "Request this visit",
+            "Confirm — pay after visit", "Confirm & pay securely", "Confirm booking",
+        ]
+        var steps = 0
+        while steps < 6 {
+            guard let next = advanceTitles
+                .map({ app.buttons[$0] })
+                .first(where: { $0.exists && $0.isHittable })
+            else { break }
+            next.tap()
+            steps += 1
+            // The waiver is a one-time consent sheet in front of the commit.
+            let accept = app.buttons["I agree, continue"]
+            if accept.waitForExistence(timeout: 2), accept.isHittable { accept.tap() }
+            if app.staticTexts["Booking requested"].waitForExistence(timeout: 3) { break }
+        }
+
+        require(app.staticTexts["Booking requested"], "the booking confirmation", timeout: 15)
+        snapshot(app, "Booking — confirmed")
+
+        // The fix this test exists for: the confirmation screen must offer a
+        // way off itself. Without one the only exit is force-quitting.
+        let track = app.buttons["Track this visit"]
+        let done = app.buttons["Done"]
+        XCTAssertTrue(
+            track.exists || done.exists,
+            "The booking confirmation offered no way out — this is the dead end "
+            + "where force-quitting the app was the only escape"
+        )
+
+        XCTAssertTrue(done.isHittable, "'Done' is drawn on the confirmation but not hittable")
+        done.tap()
+
+        // And leaving it actually leaves: we are back in the app, not stuck
+        // behind a screen that re-presents itself.
+        XCTAssertTrue(
+            app.staticTexts["Booking requested"].waitForNonExistence(timeout: 10),
+            "Tapping Done left the confirmation screen on screen"
+        )
+        snapshot(app, "Booking — left the confirmation")
+    }
+
     // MARK: - Profile tab (A5, B1, N4, H1)
 
     @MainActor
