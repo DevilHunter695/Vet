@@ -85,6 +85,19 @@ struct VisitDetailView: View {
         Visit.canTransition(from: effectiveStatus, to: .cancelledByUser)
     }
 
+    /// The same window `RescheduleVisitUseCase` enforces. Gating the row on
+    /// status alone offered "Reschedule this visit" on a visit two hours
+    /// away, let the customer pick a new slot, and only then refused it —
+    /// the failure arriving at the last tap, exactly like the slot picker
+    /// offering times that had already passed.
+    private var isWithinRescheduleWindow: Bool {
+        visit.scheduledAt.timeIntervalSinceNow / 3600 >= CancellationPolicy.freeWindowHours
+    }
+
+    private var isReschedulableStatus: Bool {
+        visit.status == .requested || visit.status == .confirmed
+    }
+
     private func previewCancellation() async {
         do {
             pendingCancellation = try await cancelVisitUseCase.preview(visitId: visit.id, scheduledAt: visit.scheduledAt)
@@ -289,7 +302,7 @@ struct VisitDetailView: View {
                     .appearAnimation()
                 }
 
-                if visit.status == .requested || visit.status == .confirmed {
+                if isReschedulableStatus && isWithinRescheduleWindow {
                     Button {
                         Haptics.tap()
                         showingReschedule = true
@@ -297,6 +310,16 @@ struct VisitDetailView: View {
                         ActionRow(title: "Reschedule this visit", systemImage: "calendar.badge.clock", tint: Theme.primary)
                     }
                     .buttonStyle(PressableStyle())
+                    .appearAnimation(delay: 0.03)
+                } else if isReschedulableStatus {
+                    // Said, rather than silently hidden. A row that vanishes
+                    // with no explanation reads as the app losing a feature;
+                    // this says which rule applied and what the alternative
+                    // is, at the point somebody is looking for it.
+                    CalloutNote(
+                        text: "This visit is within \(Int(CancellationPolicy.freeWindowHours))h, so it can't be moved any more. You can still cancel — we'll show you exactly what comes back first.",
+                        systemImage: "calendar.badge.exclamationmark", tint: Theme.warning
+                    )
                     .appearAnimation(delay: 0.03)
                 }
 

@@ -81,3 +81,51 @@ struct BookableSlotTests {
         }
     }
 }
+
+// The other place the UI offered something the domain layer refuses.
+//
+// The reschedule row was gated on visit status alone, so a visit two hours
+// away showed "Reschedule this visit", let the customer pick a new slot, and
+// only then refused it — the same last-tap failure as the slot picker. These
+// pin the window the UI must apply so it cannot drift from the use case's.
+
+@Suite("Reschedule window")
+struct RescheduleWindowTests {
+    private func hoursUntil(_ hours: Double) -> Date {
+        .now.addingTimeInterval(hours * 3600)
+    }
+
+    /// Mirrors `VisitDetailView.isWithinRescheduleWindow`.
+    private func uiWouldOfferReschedule(scheduledAt: Date) -> Bool {
+        scheduledAt.timeIntervalSinceNow / 3600 >= CancellationPolicy.freeWindowHours
+    }
+
+    @Test("the use case refuses a visit inside the free window")
+    func useCaseRefusesInsideWindow() async {
+        let repo = MockVisitRepository()
+        let useCase = RescheduleVisitUseCase(visitRepository: repo)
+        let soon = hoursUntil(CancellationPolicy.freeWindowHours - 1)
+        let newSlot = ScheduleSlot(
+            id: UUID(), dayOfWeek: 1, startTime: hoursUntil(48), endTime: hoursUntil(49),
+            capacity: 5, bookedCount: 0
+        )
+
+        await #expect(throws: DomainError.self) {
+            _ = try await useCase.execute(
+                visitId: UUID(), currentScheduledAt: soon, newSlot: newSlot
+            )
+        }
+    }
+
+    @Test("the UI does not offer what the use case would refuse")
+    func uiAgreesWithUseCase() {
+        // Just inside: refused by both. Just outside: offered by both.
+        #expect(uiWouldOfferReschedule(scheduledAt: hoursUntil(CancellationPolicy.freeWindowHours - 0.5)) == false)
+        #expect(uiWouldOfferReschedule(scheduledAt: hoursUntil(CancellationPolicy.freeWindowHours + 0.5)))
+    }
+
+    @Test("a visit already in the past is never offered a reschedule")
+    func pastVisitIsNotReschedulable() {
+        #expect(uiWouldOfferReschedule(scheduledAt: hoursUntil(-2)) == false)
+    }
+}
