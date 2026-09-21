@@ -192,10 +192,17 @@ jobs:
       - name: Test verdict
         if: always()
         run: |
+          # Set by `verdict` when a suite is anything other than demonstrably
+          # passing. The step used to only print, so the job went green on a
+          # red suite — both test steps are continue-on-error, so their own
+          # "success" means nothing more than "the step ran".
+          suites_bad=0
+
           verdict() {
             local name="$1" log="$2"
             if [ ! -f "$log" ]; then
               echo "$name: NO LOG — the step did not run or died before writing anything"
+              suites_bad=1
               return
             fi
             local summary
@@ -237,6 +244,17 @@ jobs:
               echo "  failing:"
               echo "$failing" | sed 's/^[[:space:]]*/    - /'
             fi
+
+            # A suite counts as passing only on an explicit SUCCEEDED marker
+            # with no failures recorded by either framework. Anything else —
+            # a FAILED marker, a missing one because the step was cut off, a
+            # non-zero failure count — fails the job. Silence is not success.
+            case "$marker" in
+              *"TEST SUCCEEDED"*) ;;
+              *) suites_bad=1 ;;
+            esac
+            if echo "$summary" | grep -q "failed"; then suites_bad=1; fi
+            if echo "$xctest" | grep -qE "with [1-9][0-9]* failure"; then suites_bad=1; fi
           }
           echo "=============== TOOLCHAIN ==============="
           xcodebuild -version 2>&1 | tr '\n' ' ' || true
@@ -264,3 +282,11 @@ jobs:
             verdict "UI walkthrough" ui-tests.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+          # The gate. Everything above this line is diagnostics; this is the
+          # line that makes a red suite a red build.
+          if [ "$suites_bad" -ne 0 ]; then
+            echo "::error::Tests did not pass — see the verdict above."
+            exit 1
+          fi
+          echo "Both suites passed."
