@@ -40,8 +40,30 @@ struct RunTriageUseCase {
 /// API key client-side — proxy it through a backend function) once V3 is
 /// ready to go live.
 actor MockTriageRepository: TriageRepository {
-    private let urgentKeywords = ["bleeding", "seizure", "unconscious", "can't breathe", "cannot breathe", "collapsed", "poison"]
-    private let moderateKeywords = ["vomiting", "diarrhea", "limping", "not eating", "lethargic", "fever"]
+    /// Signs that need a vet now. Deliberately includes the plain words
+    /// people actually type at midnight ("not moving", "won't get up")
+    /// rather than clinical terms they don't.
+    private let urgentKeywords = [
+        "bleeding", "blood", "seizure", "fitting", "unconscious", "unresponsive",
+        "can't breathe", "cannot breathe", "not breathing", "struggling to breathe",
+        "collapsed", "collapse", "poison", "poisoned", "ate chocolate", "ate rat",
+        "not moving", "won't move", "cannot move", "can't move", "won't get up",
+        "can't stand", "cannot stand", "won't stand", "paralysed", "paralyzed",
+        "bloated", "swollen stomach", "straining", "choking", "hit by",
+        "broken", "fracture", "not urinating", "can't urinate"
+    ]
+
+    private let moderateKeywords = [
+        "vomiting", "vomit", "diarrhea", "diarrhoea", "limping", "not eating",
+        "won't eat", "lethargic", "tired", "fever", "itching", "scratching",
+        "coughing", "sneezing", "discharge", "lump", "rash", "ear infection"
+    ]
+
+    /// Mild, and only ever consulted when nothing above matched.
+    private let mildKeywords = [
+        "nail", "claws", "grooming", "bath", "vaccination", "vaccine",
+        "deworming", "checkup", "check up", "routine", "booster"
+    ]
 
     func assess(species: Pet.Species, symptoms: String) async throws -> TriageResult {
         let lowered = symptoms.lowercased()
@@ -49,18 +71,67 @@ actor MockTriageRepository: TriageRepository {
         if urgentKeywords.contains(where: lowered.contains) {
             return TriageResult(
                 recommendation: .bookVisitUrgently,
-                message: "These symptoms need a vet's attention right away. We recommend booking the earliest available slot, or contacting an emergency clinic if one isn't available soon."
+                message: "These symptoms need a vet's attention right away. Book the earliest slot, or contact an emergency clinic if none is available soon."
             )
         }
+
+        // Something that has gone on for days is not mild, whatever it is.
+        // "Not eating" for an afternoon and "not eating for four days" are
+        // different animals, and the second one was previously scored the
+        // same as the first.
+        if TriageDurationHeuristic.suggestsDaysOrLonger(lowered) {
+            return TriageResult(
+                recommendation: .bookVisitUrgently,
+                message: "Something that has lasted this long needs looking at rather than waiting out. Book the earliest slot you can."
+            )
+        }
+
         if moderateKeywords.contains(where: lowered.contains) {
             return TriageResult(
                 recommendation: .bookVisit,
-                message: "This is worth having a vet take a look at. We suggest booking a visit in the next day or two."
+                message: "This is worth having a vet look at. We suggest booking a visit in the next day or two."
             )
         }
+
+        if mildKeywords.contains(where: lowered.contains) {
+            return TriageResult(
+                recommendation: .selfCare,
+                message: "That sounds routine rather than urgent. Book whenever suits you — there's no rush."
+            )
+        }
+
+        // The default is NOT "probably fine".
+        //
+        // It used to be: anything this rule set did not recognise returned
+        // "This doesn't sound urgent", so "dog not moving since 4 days"
+        // - which matched no keyword - was answered with reassurance. A
+        // checker that reassures by default is worse than no checker,
+        // because it converts "we don't know" into "you're fine" on the one
+        // screen a frightened owner is most likely to believe.
+        //
+        // Unrecognised means unknown, and unknown errs toward being seen.
         return TriageResult(
-            recommendation: .selfCare,
-            message: "This doesn't sound urgent. Keep an eye on your pet, and book a visit if things don't improve in a couple of days."
+            recommendation: .bookVisit,
+            message: "We couldn't judge this one from the description — that isn't the same as it being fine. Book a visit and let a vet look, or call us if your pet seems to be getting worse."
         )
+    }
+}
+
+/// Does the description say this has been going on for days or longer?
+///
+/// Split out so it can be tested directly, and so the rule is stated once
+/// rather than re-derived inside the matcher.
+enum TriageDurationHeuristic {
+    static func suggestsDaysOrLonger(_ lowered: String) -> Bool {
+        let markers = ["days", "day", "week", "weeks", "month", "months"]
+        guard markers.contains(where: lowered.contains) else { return false }
+        // "today" and "yesterday" contain "day" but describe something
+        // recent, so they must not trip the long-duration branch.
+        let recent = ["today", "yesterday", "this morning", "tonight", "just now", "a day"]
+        if recent.contains(where: lowered.contains),
+           !["days", "week", "month"].contains(where: lowered.contains) {
+            return false
+        }
+        return true
     }
 }
