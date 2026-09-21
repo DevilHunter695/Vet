@@ -26,11 +26,14 @@ struct CorporatePlanView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Number of seats").font(.brandHeadline)
-                    Stepper(value: $seatCount, in: 5...500, step: 5) {
+                    // The floor comes from the same policy the use case
+                    // validates against. SubscribeToPlanUseCase deliberately
+                    // avoids a literal 5 for this reason; the picker had one.
+                    Stepper(value: $seatCount, in: SubscriptionManagementPolicy.minimumCorporateSeats...500, step: 5) {
                         Text("\(seatCount) seats").font(.brandBody)
                     }
                     .onChange(of: seatCount) { _, _ in Haptics.rigid() }
-                    Text("Minimum 5 seats.")
+                    Text("Minimum \(SubscriptionManagementPolicy.minimumCorporateSeats) seats.")
                         .font(.brandCaption)
                         .foregroundStyle(Theme.textSecondary)
                 }
