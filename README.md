@@ -38,6 +38,13 @@ xcodegen generate
 open VetCircuit.xcodeproj
 ```
 
+**Re-run `xcodegen generate` after every pull that adds a file.** The
+generated project lists source files explicitly, so a new file added upstream
+does not appear in a project you generated before it existed — the build fails
+with `Cannot find 'SomeType' in scope` for a type whose file is sitting right
+there in the working tree. Nothing is wrong with the code; the project is
+just stale. Regenerating fixes it.
+
 ### 2. Backend (Supabase)
 
 1. Create a free project at supabase.com.

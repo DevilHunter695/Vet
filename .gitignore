@@ -13,3 +13,10 @@ Package.resolved
 !Config.template.xcconfig
 .env
 .env.local
+
+# Stray Xcode project files from an upload; the real project is generated
+# by `xcodegen generate` from project.yml and is never committed.
+Landmarks.xcodeproj/
+/project.pbxproj
+/project.xcworkspace/
+/xcshareddata/
