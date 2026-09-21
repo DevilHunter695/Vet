@@ -19,6 +19,26 @@ comment on column visits.address_id is
 create index visits_address_id_idx on visits(address_id);
 
 -- ---------------------------------------------------------------------------
+-- Drop the older overloads before redefining book_visit().
+--
+-- `create or replace function` matches on the argument type list, so every
+-- migration that added a parameter (0062, 0063, and this one) created a NEW
+-- function rather than replacing the previous one. Three book_visit()
+-- overloads therefore coexist, and PostgREST picks whichever one matches the
+-- keys a given client sends. That is how an address - or a package
+-- redemption, or a companion pet - gets silently dropped: an older overload
+-- has no parameter to put it in and inserts the row without it.
+--
+-- Dropping them leaves exactly one book_visit(). A client build older than
+-- this migration now fails loudly on a missing parameter instead of booking
+-- a visit that quietly loses half of what it was told, which is the failure
+-- worth having.
+-- ---------------------------------------------------------------------------
+drop function if exists book_visit(uuid, uuid, uuid, uuid, timestamptz, text);
+drop function if exists book_visit(uuid, uuid, uuid, uuid, timestamptz, text, uuid, uuid, uuid);
+drop function if exists book_visit(uuid, uuid, uuid, uuid, timestamptz, text, uuid, uuid, uuid, text);
+
+-- ---------------------------------------------------------------------------
 -- book_visit(): 0063's version plus `p_address_id`, so the booking records
 -- where the vet is going. Defaulted to null and appended last, so a client
 -- build older than this migration keeps booking unchanged.
