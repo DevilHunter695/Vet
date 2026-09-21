@@ -1489,11 +1489,19 @@ enum MockData {
     static let circuits: [Circuit] = vets.enumerated().map { index, vet in
         Circuit(
             id: UUID(), vetId: vet.id, vet: vet, clusterArea: areas[index % areas.count],
+            // Slots start a day out, never at `.now`. The first circuit's
+            // earliest slot used to be exactly now, which is already in the
+            // past by the time anyone taps it — so it rendered as bookable
+            // and then failed `BookVisitUseCase`'s "must be in the future"
+            // guard at the Confirm tap.
             schedule: (0..<3).map { offset in
-                ScheduleSlot(
+                let start = Calendar.current.date(
+                    byAdding: .day, value: offset + index + 1, to: .now
+                ) ?? .now.addingTimeInterval(86_400)
+                return ScheduleSlot(
                     id: UUID(), dayOfWeek: (offset % 7) + 1,
-                    startTime: Calendar.current.date(byAdding: .day, value: offset + index, to: .now) ?? .now,
-                    endTime: Calendar.current.date(byAdding: .hour, value: offset + 1, to: .now) ?? .now,
+                    startTime: start,
+                    endTime: start.addingTimeInterval(3_600),
                     capacity: 5, bookedCount: offset == 2 ? 5 : offset
                 )
             }

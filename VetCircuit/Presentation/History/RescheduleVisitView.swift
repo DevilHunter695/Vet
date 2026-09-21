@@ -22,7 +22,7 @@ final class RescheduleVisitViewModel {
         defer { isLoading = false }
         do {
             let circuit = try await circuitRepository.circuit(id: visit.circuitId)
-            availableSlots = circuit.schedule.filter { $0.isAvailable && $0.startTime > .now }
+            availableSlots = circuit.schedule.filter { $0.isBookable() }
         } catch {
             errorMessage = UserFacingError.message(for: error)
         }

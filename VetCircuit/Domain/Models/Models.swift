@@ -143,7 +143,22 @@ struct ScheduleSlot: Identifiable, Codable, Equatable, Hashable {
     var capacity: Int = 1
     var bookedCount: Int = 0
 
+    /// Capacity only — this says nothing about *when* the slot is.
     var isAvailable: Bool { bookedCount < capacity }
+
+    /// Whether this slot can actually be booked right now: it has capacity
+    /// left AND it has not already started.
+    ///
+    /// `isAvailable` alone was being used to decide what to offer a customer,
+    /// which is how the booking screen came to list times that had already
+    /// passed. `BookVisitUseCase` rejects those - correctly - but only at the
+    /// very end, after a pet, an address and a payment method have been
+    /// chosen, so the first thing anyone learned about it was a validation
+    /// error on the Confirm tap.
+    func isBookable(asOf now: Date = .now) -> Bool {
+        isAvailable && startTime > now
+    }
+
     var remainingCapacity: Int { max(0, capacity - bookedCount) }
 }
 

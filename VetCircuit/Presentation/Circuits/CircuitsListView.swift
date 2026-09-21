@@ -612,7 +612,7 @@ struct CircuitRow: View {
     /// list exists to answer.
     private var nextSlot: ScheduleSlot? {
         circuit.schedule
-            .filter { $0.isAvailable && $0.startTime > .now }
+            .filter { $0.isBookable() }
             .min { $0.startTime < $1.startTime }
     }
 

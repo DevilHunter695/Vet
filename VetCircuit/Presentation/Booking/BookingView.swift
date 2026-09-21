@@ -799,7 +799,12 @@ struct BookingView: View {
     /// vet running three stops a day for a week produced a 20-row wall the
     /// customer had to read linearly to find "Saturday morning".
     private var slotPicker: some View {
-        let available = viewModel.circuit.schedule.filter(\.isAvailable).sorted { $0.startTime < $1.startTime }
+        // `isBookable`, not `isAvailable`: a slot that has already started
+        // has capacity but cannot be booked, and offering it means the
+        // customer finds out at the Confirm tap.
+        let available = viewModel.circuit.schedule
+            .filter { $0.isBookable() }
+            .sorted { $0.startTime < $1.startTime }
         let byDay = Dictionary(grouping: available) { Calendar.current.startOfDay(for: $0.startTime) }
         let days = byDay.keys.sorted()
 
