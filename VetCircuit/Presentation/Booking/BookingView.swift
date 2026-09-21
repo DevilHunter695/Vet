@@ -635,7 +635,7 @@ struct BookingView: View {
                         // service/variant to price against, so quoting anything
                         // would be a guess.
                         CalloutNote(
-                            text: "You're requesting a visit directly with this vet. They'll confirm the slot and the price is settled from the service catalogue at the visit.",
+                            text: "You're requesting this vet directly. They'll confirm the slot, and the price is settled at the visit.",
                             systemImage: "info.circle.fill"
                         )
                     }
@@ -651,7 +651,7 @@ struct BookingView: View {
                                         }
                                     }
                                     .pickerStyle(.segmented)
-                                    Text("We'll set up a \(viewModel.recurringCadence.displayName.lowercased()) reminder — booking the next visit each cycle still needs confirming.")
+                                    Text("A \(viewModel.recurringCadence.displayName.lowercased()) reminder. Each booking still needs confirming.")
                                         .font(.brandCaption)
                                         .foregroundStyle(Theme.textSecondary)
                                 }
@@ -879,7 +879,7 @@ struct BookingView: View {
                             .font(.brandMono(.title3, weight: .bold))
                             .brandDisplayText()
                     }
-                    Text("Price is locked for 10 minutes and re-checked against the server when you confirm — it can't change between here and payment.")
+                    Text("Locked for 10 minutes. This price can't change before you pay.")
                         .font(.brandCaption2)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1028,7 +1028,7 @@ struct BookingView: View {
 
             if viewModel.addresses.isEmpty {
                 CalloutNote(
-                    text: "You haven't saved an address yet. Add one so the vet knows where to go — you can still book now and we'll confirm the address with you.",
+                    text: "No saved address yet. Add one so the vet knows where to go.",
                     systemImage: "mappin.slash", tint: Theme.warning
                 )
                 Button {

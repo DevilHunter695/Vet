@@ -44,7 +44,7 @@ struct TriageView: View {
                         PawMascot(size: 44, animated: false)
                         Text("Tell us what's going on").font(.brandTitle).brandDisplayText()
                     }
-                    Text("This isn't a diagnosis — it helps us point you to the right next step. VetCircuit isn't an emergency service.")
+                    Text("Not a diagnosis — it points you to the right next step.")
                         .font(.brandBody)
                         .foregroundStyle(Theme.textSecondary)
                 }

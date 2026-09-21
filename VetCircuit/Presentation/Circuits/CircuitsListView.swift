@@ -179,7 +179,7 @@ struct CircuitsListView: View {
                             // L8: a brief disclaimer visible in the main
                             // booking flow, not only reachable via the
                             // emergency path itself.
-                            Text("VetCircuit isn't an emergency service. For a life-threatening situation, use the emergency button above or call a clinic directly.")
+                            Text("Not an emergency service — for anything life-threatening, call a clinic directly.")
                                 .font(.brandCaption)
                                 .foregroundStyle(Theme.textSecondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)

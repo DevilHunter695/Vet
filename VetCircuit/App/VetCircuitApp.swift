@@ -274,10 +274,16 @@ struct MainTabView: View {
                 ProfileView()
             }
         }
-        // Apple's guidance describes minimizing as something you do to a bar
-        // that has an accessory to move inline with it. This app's accessory
-        // is a visit that is actually happening, below.
-        .tabBarMinimizeBehavior(.onScrollDown)
+        // `.automatic`, not `.onScrollDown`.
+        //
+        // Forcing minimize-on-scroll-down means a screen without much to
+        // scroll can minimize the bar and then offer no upward scroll to
+        // bring it back, so it sits minimized with no way to restore it -
+        // which is the "bar stays minimized and gets stuck" report. The
+        // system already knows how much scroll a view has and whether
+        // restoring is reachable; `.automatic` lets it decide per screen
+        // instead of applying one rule to screens of very different lengths.
+        .tabBarMinimizeBehavior(.automatic)
         .tabViewBottomAccessory {
             if let accessory = liveVisitAccessory {
                 TabBarAccessory(model: accessory)
