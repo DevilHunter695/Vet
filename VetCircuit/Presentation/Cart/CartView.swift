@@ -43,6 +43,11 @@ final class CartViewModel {
     var payAfterVisit = false
     private(set) var pendingVisit: Visit?
     var confirmedVisit: Visit?
+    /// The cart is the other way into a booking, and it had the same hole
+    /// `BookingView` did: it built its Cart with `addressId: nil` and checked
+    /// out without ever asking where the vet should go.
+    private(set) var addresses: [Address] = []
+    var selectedAddress: Address?
     var isCheckingOut = false
     private(set) var canRetryPayment = false
     private var lastQuote: Quote?
@@ -50,6 +55,7 @@ final class CartViewModel {
     private var checkoutIdempotencyKey = UUID().uuidString
 
     private let manageCartUseCase = DependencyContainer.shared.manageCartUseCase()
+    private let manageAddressesUseCase = DependencyContainer.shared.manageAddressesUseCase()
     private let getQuoteUseCase = DependencyContainer.shared.getQuoteUseCase()
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
     private let getWalletBalanceUseCase = DependencyContainer.shared.getWalletBalanceUseCase()
@@ -72,6 +78,14 @@ final class CartViewModel {
             async let physioServices = getCatalogUseCase.execute(vertical: .physio)
             async let balanceResult = getWalletBalanceUseCase.balance(userId: userId)
             async let loyaltyResult = getLoyaltyAccountUseCase.execute(userId: userId)
+            // Best-effort, like BookingView: a failed address list leaves the
+            // selection empty rather than blocking a checkout.
+            if let saved = try? await manageAddressesUseCase.list(ownerId: userId) {
+                addresses = saved
+                if selectedAddress == nil {
+                    selectedAddress = saved.first(where: \.isDefault) ?? saved.first
+                }
+            }
             cart = try await cartResult
             services = try await vetServices + elderServices + physioServices
             walletBalanceMinorUnits = try await balanceResult
@@ -88,6 +102,16 @@ final class CartViewModel {
 
     /// E5: redeem loyalty points into wallet credit, then refresh both
     /// balances so the "use wallet balance" toggle immediately reflects it.
+    func reloadAddresses(userId: UUID) async {
+        guard let saved = try? await manageAddressesUseCase.list(ownerId: userId) else { return }
+        let known = Set(addresses.map(\.id))
+        addresses = saved
+        selectedAddress = saved.first { !known.contains($0.id) }
+            ?? selectedAddress.flatMap { current in saved.first { $0.id == current.id } }
+            ?? saved.first(where: \.isDefault)
+            ?? saved.first
+    }
+
     func redeemPoints(userId: UUID) async {
         guard let points = Int(redeemPointsInput) else { return }
         do {
@@ -216,7 +240,8 @@ final class CartViewModel {
                     vetId: circuit.vetId, circuitId: circuitId, slot: slot,
                     quote: quote, idempotencyKey: checkoutIdempotencyKey,
                     serviceId: primaryItem?.serviceId, variantId: primaryItem?.variantId,
-                    packageRedemptionId: primaryItem?.packageRedemptionId
+                    packageRedemptionId: primaryItem?.packageRedemptionId,
+                    addressId: selectedAddress?.id
                 )
                 confirmedVisit = visit
                 await settleCartAfterBooking(bookedItem: primaryItem, user: user)
@@ -230,7 +255,8 @@ final class CartViewModel {
                     vetId: circuit.vetId, circuitId: circuitId, slot: slot,
                     quote: quote, idempotencyKey: checkoutIdempotencyKey,
                     serviceId: primaryItem?.serviceId, variantId: primaryItem?.variantId,
-                    packageRedemptionId: primaryItem?.packageRedemptionId
+                    packageRedemptionId: primaryItem?.packageRedemptionId,
+                    addressId: selectedAddress?.id
                 )
                 pendingVisit = session.visit
                 checkoutURL = session.checkoutURL
@@ -294,7 +320,7 @@ final class CartViewModel {
             self.cart = try? await manageCartUseCase.removeItem(id: bookedItem.id, from: cart)
         } else {
             try? await manageCartUseCase.clear(userId: user.id)
-            self.cart = Cart(id: UUID(), userId: user.id, addressId: nil, circuitId: nil, slotId: nil)
+            self.cart = Cart(id: UUID(), userId: user.id, addressId: selectedAddress?.id, circuitId: nil, slotId: nil)
         }
         self.quote = nil
     }
@@ -332,6 +358,7 @@ final class CartViewModel {
 struct CartView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.dismiss) private var dismiss
+    @State private var showingAddAddress = false
     @State private var viewModel = CartViewModel()
 
     var body: some View {
@@ -425,6 +452,13 @@ struct CartView: View {
                             }
                         }
 
+                        // Where the vet is going. Same question the booking
+                        // flow asks, on the other route to the same booking —
+                        // this one used to check out with addressId: nil.
+                        if viewModel.quote != nil {
+                            cartAddressSection
+                        }
+
                         // E6+E8: only once a real signed quote is in hand
                         // does checkout become available — never a
                         // client-computed amount going to checkout.
@@ -481,12 +515,62 @@ struct CartView: View {
         }) { url in
             CheckoutWebView(url: url)
         }
+        .sheet(isPresented: $showingAddAddress) {
+            if let user = session.currentUser {
+                AddAddressView(ownerId: user.id) {
+                    Task { await viewModel.reloadAddresses(userId: user.id) }
+                }
+            }
+        }
         .navigationDestination(item: $viewModel.confirmedVisit) { visit in
             BookingConfirmedView(visit: visit) {
                 viewModel.confirmedVisit = nil
                 dismiss()
             }
         }
+    }
+
+    @ViewBuilder
+    private var cartAddressSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "Where should the vet come?", systemImage: "house.fill")
+
+            if viewModel.addresses.isEmpty {
+                CalloutNote(
+                    text: "You haven't saved an address yet. Add one so the vet knows where to go.",
+                    systemImage: "mappin.slash", tint: Theme.warning
+                )
+                Button {
+                    Haptics.tap()
+                    showingAddAddress = true
+                } label: {
+                    Label("Add an address", systemImage: "plus")
+                        .font(.brandCallout.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.primary)
+            } else {
+                Picker("Address", selection: $viewModel.selectedAddress) {
+                    ForEach(viewModel.addresses) { address in
+                        Text("\(address.label) — \(address.line1)")
+                            .tag(Optional(address))
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(Theme.primary)
+
+                if let selected = viewModel.selectedAddress, !selected.isServed {
+                    CalloutNote(
+                        text: "We don't cover \(selected.label) yet. You can still book — the vet will call to work out whether they can reach you.",
+                        systemImage: "exclamationmark.triangle.fill", tint: Theme.warning
+                    )
+                }
+            }
+        }
+        .padding()
+        .glassCard()
     }
 
     /// The total and the commit action, pinned. The price is live (every cart
