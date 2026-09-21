@@ -59,10 +59,22 @@ actor MockTriageRepository: TriageRepository {
         "coughing", "sneezing", "discharge", "lump", "rash", "ear infection"
     ]
 
-    /// Mild, and only ever consulted when nothing above matched.
+    /// Routine, non-clinical reasons to see a vet.
     private let mildKeywords = [
         "nail", "claws", "grooming", "bath", "vaccination", "vaccine",
         "deworming", "checkup", "check up", "routine", "booster"
+    ]
+
+    /// Mild same-day observations.
+    ///
+    /// Checked *after* the urgent and duration branches, which is what makes
+    /// this safe: "a little sleepy today" lands here, while "sleepy for four
+    /// days" has already been escalated by the duration rule and "sleepy and
+    /// there is blood" by the urgent one. Order is the safety property, not
+    /// the word list.
+    private let mildObservationKeywords = [
+        "sleepy", "slept", "quiet", "a little off", "bit off", "not himself",
+        "not herself", "clingy", "grumpy"
     ]
 
     func assess(species: Pet.Species, symptoms: String) async throws -> TriageResult {
@@ -97,6 +109,13 @@ actor MockTriageRepository: TriageRepository {
             return TriageResult(
                 recommendation: .selfCare,
                 message: "That sounds routine rather than urgent. Book whenever suits you — there's no rush."
+            )
+        }
+
+        if mildObservationKeywords.contains(where: lowered.contains) {
+            return TriageResult(
+                recommendation: .selfCare,
+                message: "That doesn't sound urgent on its own. Keep an eye on them, and book a visit if it carries on or anything else changes."
             )
         }
 

@@ -80,3 +80,36 @@ struct TriageSafetyTests {
         }
     }
 }
+
+// Order is what makes the mild list safe.
+//
+// A mild observation is only mild *today*: the urgent and duration branches
+// run before it, so the same word escalates once it has lasted or once
+// something serious is mentioned alongside it. These pin that ordering,
+// because a mild list checked first would reopen exactly the hole this suite
+// exists to close.
+
+@Suite("Mild observations stay ordered")
+struct TriageMildOrderingTests {
+    private func assess(_ symptoms: String) async throws -> TriageResult {
+        try await MockTriageRepository().assess(species: .cat, symptoms: symptoms)
+    }
+
+    @Test("a mild same-day observation is self-care")
+    func mildTodayIsSelfCare() async throws {
+        let result = try await assess("Seems a little sleepy today")
+        #expect(result.recommendation == .selfCare)
+    }
+
+    @Test("the same observation over days is not")
+    func mildOverDaysEscalates() async throws {
+        let result = try await assess("Seems sleepy, going on 5 days now")
+        #expect(result.recommendation == .bookVisitUrgently)
+    }
+
+    @Test("a mild word next to a serious one does not soften it")
+    func mildWordDoesNotMaskUrgent() async throws {
+        let result = try await assess("quiet today and there is blood")
+        #expect(result.recommendation == .bookVisitUrgently)
+    }
+}
