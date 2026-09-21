@@ -14,12 +14,19 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIGRATIONS="$REPO_ROOT/backend/supabase/migrations"
 TESTS="$REPO_ROOT/backend/supabase/tests"
 
+# Scratch space for error logs. Set here so it exists on both paths — the
+# throwaway-server branch below reassigns it to the server's own directory.
+WORK="$(mktemp -d)"
+CLEANUP_SERVER=0
+
 if [ -n "${DATABASE_URL:-}" ]; then
   PSQL=(psql "$DATABASE_URL")
 else
   PGBIN="${PGBIN:-$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1)}"
   [ -x "$PGBIN/initdb" ] || { echo "No Postgres server binaries found; set PGBIN or DATABASE_URL." >&2; exit 2; }
+  rmdir "$WORK" 2>/dev/null || true
   WORK="$(mktemp -d)"
+  CLEANUP_SERVER=1
   # initdb refuses to run as root, so drop to an unprivileged user when needed.
   RUNAS=""
   if [ "$(id -u)" = 0 ]; then
@@ -34,6 +41,9 @@ else
   trap 'run "$PGBIN/pg_ctl -D $WORK/data stop -m immediate" >/dev/null 2>&1 || true; rm -rf "$WORK"' EXIT
   PSQL=(psql -h "$WORK" -U postgres -d migtest)
   psql -h "$WORK" -U postgres -q -c "create database migtest;"
+fi
+if [ "$CLEANUP_SERVER" -eq 0 ]; then
+  trap 'rm -rf "$WORK"' EXIT
 fi
 
 # What Supabase provides that plain Postgres does not. `auth.uid()` is pinned
