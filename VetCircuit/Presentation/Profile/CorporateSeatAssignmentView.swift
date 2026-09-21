@@ -75,6 +75,8 @@ struct CorporateSeatAssignmentView: View {
                         Haptics.tap()
                         Task { await viewModel.assign(subscriptionId: subscription.id, seatCount: subscription.seatCount) }
                     }
+                    .buttonStyle(.bordered)
+                    .tint(Theme.primary)
                     .disabled(viewModel.phoneInput.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }

@@ -52,6 +52,8 @@ struct TipVetView: View {
                         guard !isSubmitting, let rupees = Int(customAmountText), rupees > 0 else { return }
                         Task { await submit(amountMinorUnits: rupees * 100) }
                     }
+                    .buttonStyle(.bordered)
+                    .tint(Theme.primary)
                     .disabled(Int(customAmountText) == nil || isSubmitting)
                 }
 

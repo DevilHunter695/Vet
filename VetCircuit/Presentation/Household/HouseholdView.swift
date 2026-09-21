@@ -196,6 +196,8 @@ struct HouseholdView: View {
                             Haptics.confirm()
                             Task { if let user = session.currentUser { await viewModel.invite(userId: user.id) } }
                         }
+                        .buttonStyle(.bordered)
+                        .tint(Theme.primary)
                         .disabled(viewModel.invitePhone.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }

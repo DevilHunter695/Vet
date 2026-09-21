@@ -92,6 +92,8 @@ struct ReferralView: View {
                         Haptics.tap()
                         Task { if let user = session.currentUser { await viewModel.sendInvite(userId: user.id, referrerPhone: user.phone) } }
                     }
+                    .buttonStyle(.bordered)
+                    .tint(Theme.primary)
                     .disabled(viewModel.invitePhone.isEmpty || viewModel.isSending)
                 }
                 if let errorMessage = viewModel.errorMessage {
