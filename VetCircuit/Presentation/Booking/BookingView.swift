@@ -20,6 +20,12 @@ final class BookingViewModel {
             if selectedPet?.id != oldValue?.id { Task { await refreshPreviewQuote() } }
         }
     }
+    /// The inline "add your first pet" composer on the pet step. Telling a
+    /// petless customer mid-booking to go to their profile means abandoning
+    /// the flow - and the slot hold that is counting down while they do it.
+    var newPetName = ""
+    var newPetSpecies: Pet.Species = .dog
+
     /// F5: user's choice to also create a recurring rule alongside this booking.
     var makeRecurring = false
     var recurringCadence: RecurringBookingRule.Cadence = .monthly
@@ -64,6 +70,11 @@ final class BookingViewModel {
     /// sold to someone else while this customer is still filling out the form.
     private(set) var activeHold: SlotHold?
     private(set) var holdSecondsRemaining: Int?
+    /// Set when a hold runs out with the customer still in the flow. The
+    /// banner previously just stopped at "held for you ... 0:00" - a promise
+    /// the server had already stopped keeping - and the only way to find out
+    /// was to tap Confirm and get an error.
+    private(set) var hasHoldExpired = false
     private var holdTimer: Task<Void, Never>?
     private var currentUserId: UUID?
     /// E10: kept only so `confirmBooking` can send a "visit confirmed"
@@ -132,6 +143,7 @@ final class BookingViewModel {
 
     private func refreshHold() async {
         holdTimer?.cancel()
+        hasHoldExpired = false
         if let previousHold = activeHold { try? await slotHoldRepository.releaseHold(id: previousHold.id) }
         activeHold = nil
         holdSecondsRemaining = nil
@@ -150,10 +162,22 @@ final class BookingViewModel {
             while !Task.isCancelled {
                 let remaining = Int(expiresAt.timeIntervalSinceNow)
                 self?.holdSecondsRemaining = max(0, remaining)
-                if remaining <= 0 { break }
+                if remaining <= 0 {
+                    self?.hasHoldExpired = true
+                    self?.activeHold = nil
+                    break
+                }
                 try? await Task.sleep(for: .seconds(1))
             }
         }
+    }
+
+    /// Puts a fresh hold on the same slot after the previous one lapsed. The
+    /// slot may be gone by now, in which case `refreshHold` surfaces that as
+    /// an error rather than silently pretending the hold succeeded.
+    func extendHold() async {
+        hasHoldExpired = false
+        await refreshHold()
     }
 
     func releaseHold() {
@@ -162,6 +186,7 @@ final class BookingViewModel {
         if let hold = activeHold { Task { try? await slotHoldRepository.releaseHold(id: hold.id) } }
         activeHold = nil
         holdSecondsRemaining = nil
+        hasHoldExpired = false
     }
 
     /// `releaseHold()` fires its network call in a detached Task; inside an
@@ -173,6 +198,25 @@ final class BookingViewModel {
         if let hold = activeHold { try? await slotHoldRepository.releaseHold(id: hold.id) }
         activeHold = nil
         holdSecondsRemaining = nil
+        hasHoldExpired = false
+    }
+
+    func addPet() async {
+        let trimmed = newPetName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, let ownerId = currentUserId else { return }
+        do {
+            let added = try await managePetsUseCase.add(
+                Pet(id: UUID(), ownerId: ownerId, name: trimmed, species: newPetSpecies,
+                    breed: nil, dateOfBirth: nil)
+            )
+            withAnimation(Theme.springSoft) {
+                pets.append(added)
+                selectedPet = added
+            }
+            newPetName = ""
+        } catch {
+            errorMessage = UserFacingError.message(for: error)
+        }
     }
 
     func loadPets(user: User) async {
@@ -445,7 +489,9 @@ struct BookingView: View {
                     // The hold is placed the instant a slot is picked, so the
                     // confirmation belongs on this step and not only on the
                     // ones after it.
-                    if let seconds = viewModel.holdSecondsRemaining {
+                    if viewModel.hasHoldExpired {
+                        SlotHoldExpiredBanner { Task { await viewModel.extendHold() } }
+                    } else if let seconds = viewModel.holdSecondsRemaining {
                         SlotHoldBanner(secondsRemaining: seconds)
                     }
                     if let vet = viewModel.circuit.vet {
@@ -492,8 +538,13 @@ struct BookingView: View {
                         SectionHeader(title: "Which pet?", systemImage: "pawprint.fill")
                         if viewModel.pets.isEmpty {
                             CalloutNote(
-                                text: "You haven't added a pet yet. Add one from your profile and their record will be ready for the vet before they arrive.",
-                                systemImage: "exclamationmark.circle.fill", tint: Theme.warning
+                                text: "You haven't added a pet yet. Add them here and their record will be ready for the vet before they arrive.",
+                                systemImage: "pawprint.circle.fill", tint: Theme.warning
+                            )
+                            AddPetField(
+                                name: $viewModel.newPetName,
+                                species: $viewModel.newPetSpecies,
+                                onAdd: { Task { await viewModel.addPet() } }
                             )
                         } else {
                             ForEach(Array(viewModel.pets.enumerated()), id: \.element.id) { index, pet in
@@ -509,7 +560,9 @@ struct BookingView: View {
                             }
                         }
                     }
-                    if let seconds = viewModel.holdSecondsRemaining {
+                    if viewModel.hasHoldExpired {
+                        SlotHoldExpiredBanner { Task { await viewModel.extendHold() } }
+                    } else if let seconds = viewModel.holdSecondsRemaining {
                         SlotHoldBanner(secondsRemaining: seconds)
                     }
 
@@ -572,7 +625,9 @@ struct BookingView: View {
                             }
                         }
                     }
-                    if let seconds = viewModel.holdSecondsRemaining {
+                    if viewModel.hasHoldExpired {
+                        SlotHoldExpiredBanner { Task { await viewModel.extendHold() } }
+                    } else if let seconds = viewModel.holdSecondsRemaining {
                         SlotHoldBanner(secondsRemaining: seconds)
                     }
 
