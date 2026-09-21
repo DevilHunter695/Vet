@@ -23,6 +23,11 @@ struct VisitDetailView: View {
     /// Load failures on the detail fetches, surfaced instead of discarded.
     @State private var otpErrorMessage: String?
     @State private var detailLoadErrorMessage: String?
+    /// The address this visit was booked for. Resolved here rather than
+    /// carried on `Visit`, which holds only the id — and shown at all so
+    /// somebody can check, before the vet sets off, that the booking is
+    /// pointed at the right door.
+    @State private var visitAddress: Address?
     @State private var showingTip = false
     @State private var hasTipped = false
     // F6: a pending vet-initiated reschedule proposal, if any.
@@ -61,6 +66,7 @@ struct VisitDetailView: View {
     private let visitOTPRepository = DependencyContainer.shared.visitOTPRepository
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
     private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
+    private let manageAddressesUseCase = DependencyContainer.shared.manageAddressesUseCase()
     private let circuitRepository = DependencyContainer.shared.circuitRepository
     private let rescheduleProposalRepository = DependencyContainer.shared.rescheduleProposalRepository
     private let respondToRescheduleProposalUseCase = DependencyContainer.shared.respondToRescheduleProposalUseCase()
@@ -122,6 +128,15 @@ struct VisitDetailView: View {
                             Text(visit.scheduledAt.formatted(date: .long, time: .shortened))
                                 .font(.brandBody)
                                 .foregroundStyle(Theme.textSecondary)
+                            if let visitAddress {
+                                Label(
+                                    "\(visitAddress.label) · \(visitAddress.line1)",
+                                    systemImage: "house.fill"
+                                )
+                                .font(.brandCaption)
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(2)
+                            }
                             // I2: entry point to the full timestamped timeline.
                             Label("View full timeline", systemImage: "list.bullet.clipboard")
                                 .font(.brandCaption)
@@ -521,6 +536,14 @@ struct VisitDetailView: View {
             }
         }
         .task {
+            // Best-effort and deliberately silent on failure: the address is
+            // context on a screen that has plenty, and a header that fails to
+            // load one line should not put an error banner over a visit
+            // somebody opened to cancel or track.
+            if let addressId = visit.addressId, let ownerId = session.currentUser?.id {
+                let saved = (try? await manageAddressesUseCase.list(ownerId: ownerId)) ?? []
+                visitAddress = saved.first { $0.id == addressId }
+            }
             // These four fetches were all `try?`. A missing OTP or an
             // unresolved payment status then looked identical to "there
             // isn't one", which is exactly the wrong thing to tell someone
