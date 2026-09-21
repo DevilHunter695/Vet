@@ -50,20 +50,6 @@ struct TriageView: View {
                 }
                 .appearAnimation()
 
-                // C11: the explicit emergency escalation, reachable from the
-                // same place a worried owner already is.
-                NavigationLink {
-                    EmergencyView()
-                } label: {
-                    Label("This is an emergency", systemImage: "exclamationmark.triangle.fill")
-                        .font(.brandHeadline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .foregroundStyle(.white)
-                        .background(Theme.danger, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-                .buttonStyle(PressableStyle())
-
                 Picker("Pet type", selection: $viewModel.species) {
                     ForEach(Pet.Species.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
                 }
@@ -98,6 +84,22 @@ struct TriageView: View {
         .floatingTabBarInset()
         .navigationTitle("Symptom check")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // C11's escalation stays one tap away, but out of the centre.
+            // A full-width red slab above the form made the screen shout
+            // "emergency" at everyone, including the majority whose pet has
+            // a mild problem - and shouting at every visitor is how a real
+            // alarm gets tuned out.
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    EmergencyView()
+                } label: {
+                    Label("Emergency", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.danger)
+                }
+                .accessibilityLabel("This is an emergency")
+            }
+        }
     }
 }
 

@@ -48,6 +48,49 @@ final class CartViewModel {
     /// out without ever asking where the vet should go.
     private(set) var addresses: [Address] = []
     var selectedAddress: Address?
+
+    /// When the vet comes. The cart used to build its Cart with
+    /// `circuitId: nil, slotId: nil` and offer no control at all for either -
+    /// so checkout failed with "Pick a time slot from a circuit before
+    /// checking out", telling people to do something this screen gave them
+    /// no way to do. Checkout was unreachable from the cart, full stop.
+    private(set) var circuits: [Circuit] = []
+    var selectedSlot: ScheduleSlot? {
+        didSet {
+            guard selectedSlot?.id != oldValue?.id else { return }
+            syncSlotIntoCart()
+            Task { await getQuote() }
+        }
+    }
+
+    /// Every bookable slot across all circuits, soonest first, tagged with
+    /// the circuit it belongs to so picking one sets both ids.
+    var bookableSlots: [(circuit: Circuit, slot: ScheduleSlot)] {
+        circuits
+            .flatMap { circuit in circuit.schedule.filter { $0.isBookable() }.map { (circuit, $0) } }
+            .sorted { $0.slot.startTime < $1.slot.startTime }
+    }
+
+    /// Everything checkout genuinely needs, checked before the tap.
+    var canCheckout: Bool { quote != nil && selectedSlot != nil }
+
+    var checkoutBlocker: String? {
+        if selectedSlot == nil { return "Pick a time above to continue." }
+        if quote == nil { return "Waiting for the price." }
+        return nil
+    }
+
+    private func syncSlotIntoCart() {
+        guard var cart else { return }
+        if let picked = bookableSlots.first(where: { $0.slot.id == selectedSlot?.id }) {
+            cart.circuitId = picked.circuit.id
+            cart.slotId = picked.slot.id
+        } else {
+            cart.circuitId = nil
+            cart.slotId = nil
+        }
+        self.cart = cart
+    }
     var isCheckingOut = false
     private(set) var canRetryPayment = false
     private var lastQuote: Quote?
@@ -56,6 +99,7 @@ final class CartViewModel {
 
     private let manageCartUseCase = DependencyContainer.shared.manageCartUseCase()
     private let manageAddressesUseCase = DependencyContainer.shared.manageAddressesUseCase()
+    private let getCircuitsUseCase = DependencyContainer.shared.getCircuitsUseCase()
     private let getQuoteUseCase = DependencyContainer.shared.getQuoteUseCase()
     private let getCatalogUseCase = DependencyContainer.shared.getCatalogUseCase()
     private let getWalletBalanceUseCase = DependencyContainer.shared.getWalletBalanceUseCase()
@@ -86,7 +130,13 @@ final class CartViewModel {
                     selectedAddress = saved.first(where: \.isDefault) ?? saved.first
                 }
             }
+            // Best-effort for the same reason as addresses: no circuits means
+            // an empty picker with an explanation, not a failed cart load.
+            circuits = (try? await getCircuitsUseCase.execute(area: nil)) ?? []
             cart = try await cartResult
+            if let existing = cart?.slotId {
+                selectedSlot = bookableSlots.first { $0.slot.id == existing }?.slot
+            }
             services = try await vetServices + elderServices + physioServices
             walletBalanceMinorUnits = try await balanceResult
             loyaltyPoints = try await loyaltyResult.points
@@ -460,6 +510,7 @@ struct CartView: View {
                         // flow asks, on the other route to the same booking —
                         // this one used to check out with addressId: nil.
                         if viewModel.quote != nil {
+                            cartSlotSection
                             cartAddressSection
                         }
 
@@ -550,6 +601,44 @@ struct CartView: View {
         }
     }
 
+    /// When the vet comes. Without this the cart could never check out.
+    @ViewBuilder
+    private var cartSlotSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "When should the vet come?", systemImage: "clock.fill")
+
+            let options = viewModel.bookableSlots
+            if options.isEmpty {
+                CalloutNote(
+                    text: "No open slots right now. Check the Book tab — schedules are published about a week ahead.",
+                    systemImage: "calendar.badge.exclamationmark", tint: Theme.warning
+                )
+            } else {
+                Picker("Time slot", selection: $viewModel.selectedSlot) {
+                    Text("Choose a time").tag(Optional<ScheduleSlot>.none)
+                    ForEach(options, id: \.slot.id) { option in
+                        Text(slotLabel(option)).tag(Optional(option.slot))
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(Theme.primary)
+
+                if viewModel.selectedSlot == nil {
+                    Text("Pick a time to enable checkout.")
+                        .font(.brandCaption)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+        }
+        .padding()
+        .glassCard()
+    }
+
+    private func slotLabel(_ option: (circuit: Circuit, slot: ScheduleSlot)) -> String {
+        let when = option.slot.startTime.formatted(date: .abbreviated, time: .shortened)
+        return "\(when) · \(option.circuit.clusterArea)"
+    }
+
     @ViewBuilder
     private var cartAddressSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -631,10 +720,20 @@ struct CartView: View {
                     title: viewModel.payAfterVisit ? "Book — pay after visit" : "Book & pay securely",
                     systemImage: viewModel.payAfterVisit ? "checkmark" : "lock.fill",
                     isLoading: viewModel.isCheckingOut,
-                    isEnabled: viewModel.quote != nil
+                    isEnabled: viewModel.canCheckout
                 ) {
                     guard let user = session.currentUser else { return }
                     Task { await viewModel.proceedToCheckout(user: user) }
+                }
+
+                // Says what is missing *before* the tap. The button used to
+                // be enabled with no slot picked, so the only way to learn
+                // about the requirement was to tap and read a failure.
+                if let blocker = viewModel.checkoutBlocker {
+                    Text(blocker)
+                        .font(.brandCaption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .transition(.opacity)
                 }
 
                 if viewModel.quote == nil && !viewModel.isQuoting {
