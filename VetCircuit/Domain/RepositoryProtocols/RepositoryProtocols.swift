@@ -32,7 +32,7 @@ protocol VisitRepository: Sendable {
     /// visit, so this is not a detail. Optional because a visit can predate
     /// the column and because the booking flow has to stay usable for an
     /// account that has not saved an address yet.
-    func createVisit(petId: UUID, additionalPetIds: [UUID], vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?, addressId: UUID?) async throws -> Visit
+    func createVisit(petId: UUID, additionalPetIds: [UUID], vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?, addressId: UUID?, reason: String?) async throws -> Visit
     func listVisits(userId: UUID) async throws -> [Visit]
     func visit(id: UUID) async throws -> Visit
     func updateStatus(visitId: UUID, status: Visit.VisitStatus) async throws -> Visit
@@ -63,7 +63,7 @@ extension VisitRepository {
     /// protocol requirements can't carry default argument values themselves,
     /// so this extension supplies the nils instead of touching every caller.
     func createVisit(petId: UUID, vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String) async throws -> Visit {
-        try await createVisit(petId: petId, additionalPetIds: [], vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey, serviceId: nil, variantId: nil, packageRedemptionId: nil, addressId: nil)
+        try await createVisit(petId: petId, additionalPetIds: [], vetId: vetId, circuitId: circuitId, slot: slot, idempotencyKey: idempotencyKey, serviceId: nil, variantId: nil, packageRedemptionId: nil, addressId: nil, reason: nil)
     }
 }
 

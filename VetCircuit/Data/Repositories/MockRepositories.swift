@@ -533,11 +533,15 @@ actor MockVisitRepository: VisitRepository {
         statusEvents[visitId, default: []].append(VisitStatusEvent(id: UUID(), visitId: visitId, status: status, occurredAt: .now))
     }
 
-    func createVisit(petId: UUID, additionalPetIds: [UUID], vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?, addressId: UUID?) async throws -> Visit {
+    func createVisit(petId: UUID, additionalPetIds: [UUID], vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?, addressId: UUID?, reason: String?) async throws -> Visit {
         if let existingVisitId = visitsByIdempotencyKey[idempotencyKey],
            let existing = visits.first(where: { $0.id == existingVisitId }) {
             return existing
         }
+        // Matches what book_visit() stores: a field somebody tabbed through
+        // must not land as a row of spaces the vet then reads as a complaint.
+        let trimmedReason = reason?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedReason = (trimmedReason?.isEmpty ?? true) ? nil : trimmedReason
         let alreadyBooked = bookedCountBySlot[slot.id] ?? 0
         guard slot.bookedCount + alreadyBooked < slot.capacity else {
             throw DomainError.slotUnavailable
@@ -553,6 +557,7 @@ actor MockVisitRepository: VisitRepository {
             id: UUID(), userId: MockData.user.id, petId: petId, additionalPetIds: additionalPetIds,
             vetId: vetId, circuitId: circuitId,
             status: .requested, addressId: addressId,
+            reason: normalizedReason,
             scheduledAt: slot.startTime, completedAt: nil, notes: nil, paymentId: nil,
             serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId
         )

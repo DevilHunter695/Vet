@@ -249,6 +249,11 @@ struct Visit: Identifiable, Codable, Equatable, Hashable {
     /// existed have none, and because a booking made without a saved address
     /// still has to be representable rather than silently invented.
     var addressId: UUID? = nil
+    /// What the customer said was wrong, in their own words, when they booked.
+    /// Distinct from `notes`, which the vet writes afterwards and which the
+    /// app renders as "Vet notes" - there was previously no field at all for
+    /// the customer's side of that.
+    var reason: String? = nil
     var scheduledAt: Date
     var completedAt: Date?
     var notes: String?

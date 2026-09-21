@@ -78,7 +78,7 @@ struct BookVisitUseCase {
         petId: UUID, additionalPetIds: [UUID] = [], vetId: UUID, circuitId: UUID, slot: ScheduleSlot,
         idempotencyKey: String = UUID().uuidString,
         serviceId: UUID? = nil, variantId: UUID? = nil, packageRedemptionId: UUID? = nil,
-        addressId: UUID? = nil
+        addressId: UUID? = nil, reason: String? = nil
     ) async throws -> Visit {
         guard slot.isAvailable else { throw DomainError.slotUnavailable }
         guard slot.startTime > Date() else {
@@ -94,7 +94,7 @@ struct BookVisitUseCase {
             petId: petId, additionalPetIds: companions, vetId: vetId, circuitId: circuitId,
             slot: slot, idempotencyKey: idempotencyKey,
             serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId,
-            addressId: addressId
+            addressId: addressId, reason: reason
         )
     }
 }
@@ -925,14 +925,14 @@ struct BookingCheckoutUseCase {
         petId: UUID, additionalPetIds: [UUID] = [], vetId: UUID, circuitId: UUID, slot: ScheduleSlot,
         quote: Quote, idempotencyKey: String,
         serviceId: UUID? = nil, variantId: UUID? = nil, packageRedemptionId: UUID? = nil,
-        addressId: UUID? = nil
+        addressId: UUID? = nil, reason: String? = nil
     ) async throws -> Session {
         try StartCheckoutUseCase.validate(quote: quote)
         let visit = try await bookVisitUseCase.execute(
             petId: petId, additionalPetIds: additionalPetIds, vetId: vetId, circuitId: circuitId,
             slot: slot, idempotencyKey: idempotencyKey,
             serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId,
-            addressId: addressId
+            addressId: addressId, reason: reason
         )
         let checkoutURL = try await startCheckoutUseCase.execute(visitId: visit.id, quote: quote)
         return Session(visit: visit, checkoutURL: checkoutURL)
@@ -951,7 +951,7 @@ struct BookingCheckoutUseCase {
         petId: UUID, additionalPetIds: [UUID] = [], vetId: UUID, circuitId: UUID, slot: ScheduleSlot,
         quote: Quote, idempotencyKey: String,
         serviceId: UUID? = nil, variantId: UUID? = nil, packageRedemptionId: UUID? = nil,
-        addressId: UUID? = nil
+        addressId: UUID? = nil, reason: String? = nil
     ) async throws -> Visit {
         // Same up-front gate as `start`: E8 must not be the cheaper way to
         // leave an unpaid visit behind with an expired quote.
@@ -960,7 +960,7 @@ struct BookingCheckoutUseCase {
             petId: petId, additionalPetIds: additionalPetIds, vetId: vetId, circuitId: circuitId,
             slot: slot, idempotencyKey: idempotencyKey,
             serviceId: serviceId, variantId: variantId, packageRedemptionId: packageRedemptionId,
-            addressId: addressId
+            addressId: addressId, reason: reason
         )
         let paymentId = try await startCheckoutUseCase.executePayAfterVisit(visitId: visit.id, quote: quote)
         return try await visitRepository.attachPayment(visitId: visit.id, paymentId: paymentId)

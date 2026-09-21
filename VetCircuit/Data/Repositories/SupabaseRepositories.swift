@@ -691,7 +691,7 @@ final class SupabaseVisitRepository: VisitRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
-    func createVisit(petId: UUID, additionalPetIds: [UUID], vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?, addressId: UUID?) async throws -> Visit {
+    func createVisit(petId: UUID, additionalPetIds: [UUID], vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?, addressId: UUID?, reason: String?) async throws -> Visit {
         // Calls the atomic book_visit() Postgres function (Appendix D,
         // extended by 0062_package_redemptions.sql) rather than a raw insert
         // — it locks the slot row, checks capacity, and (when
@@ -710,6 +710,11 @@ final class SupabaseVisitRepository: VisitRepository {
         // against a database without the migration is unchanged; the function
         // re-checks that this address belongs to the caller.
         if let addressId { params["p_address_id"] = addressId.uuidString }
+        // 0066_visit_reason.sql. Trimmed here and again in the function, so a
+        // field somebody tabbed through never lands as a row of spaces.
+        if let reason = reason?.trimmingCharacters(in: .whitespacesAndNewlines), !reason.isEmpty {
+            params["p_reason"] = reason
+        }
         // D6: passed as a comma-joined list because `book_visit()`'s params
         // are all text. The matching parameter is added in
         // 0063_visit_additional_pets.sql, which also defaults it to null so a
@@ -2174,6 +2179,8 @@ private struct SupabaseVisitRow: Decodable {
     /// reason `additionalPetIds` is: this has to decode against a database
     /// that has not run the migration yet.
     let addressId: UUID?
+    /// 0066_visit_reason.sql. Optional for the same reason the two above are.
+    let reason: String?
 
     enum CodingKeys: String, CodingKey {
         case id, userId = "user_id", petId = "pet_id", additionalPetIds = "additional_pet_ids"
@@ -2181,14 +2188,14 @@ private struct SupabaseVisitRow: Decodable {
         case status, scheduledAt = "scheduled_at", completedAt = "completed_at", notes, paymentId = "payment_id"
         case diagnosisNotes = "diagnosis_notes", proceduresPerformed = "procedures_performed", medicationsGiven = "medications_given"
         case serviceId = "service_id", variantId = "variant_id", packageRedemptionId = "package_redemption_id"
-        case addressId = "address_id"
+        case addressId = "address_id", reason
     }
 
     func toDomain() -> Visit {
         Visit(id: id, userId: userId, petId: petId, additionalPetIds: additionalPetIds ?? [],
               vetId: vetId, circuitId: circuitId,
               status: Visit.VisitStatus(rawValue: status) ?? .requested,
-              addressId: addressId,
+              addressId: addressId, reason: reason,
               scheduledAt: scheduledAt, completedAt: completedAt, notes: notes, paymentId: paymentId,
               // Argument order has to match `Visit`'s property order: the D4
               // service/variant/redemption fields are declared above the K1

@@ -331,7 +331,28 @@ struct VisitDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .appearAnimation(delay: 0.08)
-                } else if let notes = visit.notes, !notes.isEmpty {
+                }
+
+                // The customer's own words at booking time, kept distinct
+                // from "Vet notes" below — one is the complaint, the other is
+                // the clinical record, and collapsing them would misattribute
+                // both.
+                if let reason = visit.reason, !reason.isEmpty {
+                    Card {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("What you told us", systemImage: "text.bubble")
+                                .font(.brandHeadline)
+                                .foregroundStyle(Theme.textSecondary)
+                            Text(reason).font(.brandBody)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .appearAnimation(delay: 0.08)
+                }
+
+                // Only when there is no structured record: the two say the
+                // same thing, and the structured one says it better.
+                if !visit.hasStructuredRecord, let notes = visit.notes, !notes.isEmpty {
                     Card {
                         VStack(alignment: .leading, spacing: 8) {
                             Label("Vet notes", systemImage: "note.text")

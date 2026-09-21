@@ -28,6 +28,11 @@ final class BookingViewModel {
     /// The inline "add your first pet" composer on the pet step. Telling a
     /// petless customer mid-booking to go to their profile means abandoning
     /// the flow - and the slot hold that is counting down while they do it.
+    /// What's wrong, in the customer's words. Free text on purpose: somebody
+    /// worried about their dog at 11pm should be able to write "not eating
+    /// since yesterday, very quiet" rather than hunt through a taxonomy.
+    var reason = ""
+
     var newPetName = ""
     var newPetSpecies: Pet.Species = .dog
 
@@ -297,7 +302,7 @@ final class BookingViewModel {
                         petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
                         quote: quote, idempotencyKey: bookingIdempotencyKey,
                         serviceId: serviceId, variantId: variantId,
-                        addressId: selectedAddress?.id
+                        addressId: selectedAddress?.id, reason: reason
                     )
                     bookedVisit = visit
                     // Full release, not just the server call: this also cancels the
@@ -312,7 +317,7 @@ final class BookingViewModel {
                         petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
                         quote: quote, idempotencyKey: bookingIdempotencyKey,
                         serviceId: serviceId, variantId: variantId,
-                        addressId: selectedAddress?.id
+                        addressId: selectedAddress?.id, reason: reason
                     )
                     pendingVisit = session.visit
                     checkoutURL = session.checkoutURL
@@ -327,7 +332,7 @@ final class BookingViewModel {
                 bookedVisit = try await bookVisitUseCase.execute(
                     petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
                     idempotencyKey: bookingIdempotencyKey,
-                    addressId: selectedAddress?.id
+                    addressId: selectedAddress?.id, reason: reason
                 )
                 // Full release, not just the server call: this also cancels the
                     // countdown timer and clears `activeHold`. Releasing the hold
@@ -590,6 +595,8 @@ struct BookingView: View {
                             }
                         }
                     }
+                    reasonSection
+
                     if viewModel.hasHoldExpired {
                         SlotHoldExpiredBanner { Task { await viewModel.extendHold() } }
                     } else if let seconds = viewModel.holdSecondsRemaining {
@@ -961,6 +968,32 @@ struct BookingView: View {
                     )
                 }
             }
+        }
+    }
+
+    /// Optional on purpose. Making this required would hold a booking hostage
+    /// to somebody's ability to describe a symptom, which is the opposite of
+    /// what you want from a worried owner at 11pm - and the vet is going to
+    /// ask anyway. It is here because arriving with nothing at all is worse.
+    @ViewBuilder
+    private var reasonSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHeader(
+                title: "What's going on?",
+                subtitle: "Optional — it helps the vet come prepared",
+                systemImage: "text.bubble.fill"
+            )
+
+            TextField(
+                "e.g. not eating since yesterday, limping on a back leg",
+                text: $viewModel.reason,
+                axis: .vertical
+            )
+            .lineLimit(3...6)
+            .font(.brandCallout)
+            .textInputAutocapitalization(.sentences)
+            .padding(14)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
     }
 
