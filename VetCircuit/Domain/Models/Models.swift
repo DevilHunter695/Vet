@@ -245,6 +245,10 @@ struct Visit: Identifiable, Codable, Equatable, Hashable {
     var vetId: UUID
     var circuitId: UUID
     var status: VisitStatus
+    /// Where the vet is going. Optional because visits booked before this
+    /// existed have none, and because a booking made without a saved address
+    /// still has to be representable rather than silently invented.
+    var addressId: UUID? = nil
     var scheduledAt: Date
     var completedAt: Date?
     var notes: String?

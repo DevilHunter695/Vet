@@ -691,7 +691,7 @@ final class SupabaseVisitRepository: VisitRepository {
     private let client: SupabaseClient
     init(client: SupabaseClient) { self.client = client }
 
-    func createVisit(petId: UUID, additionalPetIds: [UUID], vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?) async throws -> Visit {
+    func createVisit(petId: UUID, additionalPetIds: [UUID], vetId: UUID, circuitId: UUID, slot: ScheduleSlot, idempotencyKey: String, serviceId: UUID?, variantId: UUID?, packageRedemptionId: UUID?, addressId: UUID?) async throws -> Visit {
         // Calls the atomic book_visit() Postgres function (Appendix D,
         // extended by 0062_package_redemptions.sql) rather than a raw insert
         // — it locks the slot row, checks capacity, and (when
@@ -706,6 +706,10 @@ final class SupabaseVisitRepository: VisitRepository {
         if let serviceId { params["p_service_id"] = serviceId.uuidString }
         if let variantId { params["p_variant_id"] = variantId.uuidString }
         if let packageRedemptionId { params["p_package_redemption_id"] = packageRedemptionId.uuidString }
+        // 0065_visit_address.sql. Sent only when set, so a client running
+        // against a database without the migration is unchanged; the function
+        // re-checks that this address belongs to the caller.
+        if let addressId { params["p_address_id"] = addressId.uuidString }
         // D6: passed as a comma-joined list because `book_visit()`'s params
         // are all text. The matching parameter is added in
         // 0063_visit_additional_pets.sql, which also defaults it to null so a
@@ -2166,6 +2170,10 @@ private struct SupabaseVisitRow: Decodable {
     let serviceId: UUID?
     let variantId: UUID?
     let packageRedemptionId: UUID?
+    /// Where the vet is going (0065_visit_address.sql). Optional for the same
+    /// reason `additionalPetIds` is: this has to decode against a database
+    /// that has not run the migration yet.
+    let addressId: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id, userId = "user_id", petId = "pet_id", additionalPetIds = "additional_pet_ids"
@@ -2173,12 +2181,14 @@ private struct SupabaseVisitRow: Decodable {
         case status, scheduledAt = "scheduled_at", completedAt = "completed_at", notes, paymentId = "payment_id"
         case diagnosisNotes = "diagnosis_notes", proceduresPerformed = "procedures_performed", medicationsGiven = "medications_given"
         case serviceId = "service_id", variantId = "variant_id", packageRedemptionId = "package_redemption_id"
+        case addressId = "address_id"
     }
 
     func toDomain() -> Visit {
         Visit(id: id, userId: userId, petId: petId, additionalPetIds: additionalPetIds ?? [],
               vetId: vetId, circuitId: circuitId,
               status: Visit.VisitStatus(rawValue: status) ?? .requested,
+              addressId: addressId,
               scheduledAt: scheduledAt, completedAt: completedAt, notes: notes, paymentId: paymentId,
               // Argument order has to match `Visit`'s property order: the D4
               // service/variant/redemption fields are declared above the K1

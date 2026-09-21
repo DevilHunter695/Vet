@@ -15,6 +15,11 @@ final class BookingViewModel {
     /// the customer never re-picks it.
     let preselectedPetId: UUID?
     var pets: [Pet] = []
+    /// Where the vet is being sent. The product is a home visit, and until
+    /// this existed the booking carried no address at all - dispatch had only
+    /// the circuit's cluster area, which is a neighbourhood, not a doorstep.
+    private(set) var addresses: [Address] = []
+    var selectedAddress: Address?
     var selectedPet: Pet? {
         didSet {
             if selectedPet?.id != oldValue?.id { Task { await refreshPreviewQuote() } }
@@ -88,6 +93,7 @@ final class BookingViewModel {
 
     private let bookVisitUseCase = DependencyContainer.shared.bookVisitUseCase()
     private let managePetsUseCase = DependencyContainer.shared.managePetsUseCase()
+    private let manageAddressesUseCase = DependencyContainer.shared.manageAddressesUseCase()
     private let holdSlotUseCase = DependencyContainer.shared.holdSlotUseCase()
     private let slotHoldRepository = DependencyContainer.shared.slotHoldRepository
     private let manageRecurringBookingUseCase = DependencyContainer.shared.manageRecurringBookingUseCase()
@@ -133,7 +139,7 @@ final class BookingViewModel {
         isPricing = true
         defer { isPricing = false }
         let cart = Cart(
-            id: UUID(), userId: userId, addressId: nil, circuitId: circuit.id, slotId: slot.id,
+            id: UUID(), userId: userId, addressId: selectedAddress?.id, circuitId: circuit.id, slotId: slot.id,
             items: [CartItem(id: UUID(), serviceId: serviceId, variantId: variantId, petIds: [pet.id])]
         )
         // Best-effort: a pricing hiccup hides the preview rather than
@@ -201,6 +207,19 @@ final class BookingViewModel {
         hasHoldExpired = false
     }
 
+    func reloadAddresses() async {
+        guard let ownerId = currentUserId else { return }
+        guard let saved = try? await manageAddressesUseCase.list(ownerId: ownerId) else { return }
+        // Prefer whatever was just added: somebody who opened the composer
+        // from this screen meant to use that address for this booking.
+        let known = Set(addresses.map(\.id))
+        addresses = saved
+        selectedAddress = saved.first { !known.contains($0.id) }
+            ?? selectedAddress.flatMap { current in saved.first { $0.id == current.id } }
+            ?? saved.first(where: \.isDefault)
+            ?? saved.first
+    }
+
     func addPet() async {
         let trimmed = newPetName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, let ownerId = currentUserId else { return }
@@ -223,6 +242,13 @@ final class BookingViewModel {
         currentUserId = user.id
         currentUser = user
         let ownerId = user.id
+        // Best-effort: a failure to list addresses must not block a booking,
+        // it just leaves the address unset the same way an account with none
+        // does. The error surfaces on the pets call below if it is systemic.
+        if let saved = try? await manageAddressesUseCase.list(ownerId: ownerId) {
+            addresses = saved
+            selectedAddress = saved.first(where: \.isDefault) ?? saved.first
+        }
         do {
             pets = try await managePetsUseCase.list(ownerId: ownerId)
             selectedPet = preselectedPetId.flatMap { id in pets.first { $0.id == id } } ?? pets.first
@@ -259,7 +285,7 @@ final class BookingViewModel {
                 // the cart here is a throwaway in-memory value (never saved
                 // to `carts`); `GetQuoteUseCase` only needs its shape.
                 let cart = Cart(
-                    id: UUID(), userId: userId, addressId: nil, circuitId: circuit.id, slotId: slot.id,
+                    id: UUID(), userId: userId, addressId: selectedAddress?.id, circuitId: circuit.id, slotId: slot.id,
                     items: [CartItem(id: UUID(), serviceId: serviceId, variantId: variantId, petIds: [pet.id])]
                 )
                 let quote = try await getQuoteUseCase.execute(cart: cart)
@@ -270,7 +296,8 @@ final class BookingViewModel {
                     let visit = try await bookingCheckoutUseCase.startPayAfterVisit(
                         petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
                         quote: quote, idempotencyKey: bookingIdempotencyKey,
-                        serviceId: serviceId, variantId: variantId
+                        serviceId: serviceId, variantId: variantId,
+                        addressId: selectedAddress?.id
                     )
                     bookedVisit = visit
                     // Full release, not just the server call: this also cancels the
@@ -284,7 +311,8 @@ final class BookingViewModel {
                     let session = try await bookingCheckoutUseCase.start(
                         petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
                         quote: quote, idempotencyKey: bookingIdempotencyKey,
-                        serviceId: serviceId, variantId: variantId
+                        serviceId: serviceId, variantId: variantId,
+                        addressId: selectedAddress?.id
                     )
                     pendingVisit = session.visit
                     checkoutURL = session.checkoutURL
@@ -298,7 +326,8 @@ final class BookingViewModel {
             } else {
                 bookedVisit = try await bookVisitUseCase.execute(
                     petId: pet.id, vetId: circuit.vetId, circuitId: circuit.id, slot: slot,
-                    idempotencyKey: bookingIdempotencyKey
+                    idempotencyKey: bookingIdempotencyKey,
+                    addressId: selectedAddress?.id
                 )
                 // Full release, not just the server call: this also cancels the
                     // countdown timer and clears `activeHold`. Releasing the hold
@@ -407,6 +436,7 @@ struct BookingView: View {
     /// Which way the last step change went, so the transition mirrors it.
     @State private var isAdvancing = true
     @State private var hasAcceptedWaiver = false
+    @State private var showingAddAddress = false
     private let manageConsentUseCase = DependencyContainer.shared.manageConsentUseCase()
 
     init(circuit: Circuit, serviceCategory: ServiceCategory? = nil, serviceId: UUID? = nil, variantId: UUID? = nil, preselectedPetId: UUID? = nil) {
@@ -579,6 +609,8 @@ struct BookingView: View {
 
                 case .confirm:
                     VStack(alignment: .leading, spacing: 20) {
+                    addressSection
+
                     if viewModel.canCheckoutWithPayment {
                         VStack(alignment: .leading, spacing: 12) {
                             SectionHeader(title: "How do you want to pay?", systemImage: "creditcard.fill")
@@ -684,6 +716,14 @@ struct BookingView: View {
         .animation(Theme.crossFade, value: viewModel.holdSecondsRemaining)
         .onDisappear {
             if viewModel.bookedVisit == nil { viewModel.releaseHold() }
+        }
+        .sheet(isPresented: $showingAddAddress) {
+            if let user = session.currentUser {
+                // AddAddressView brings its own NavigationStack.
+                AddAddressView(ownerId: user.id) {
+                    Task { await viewModel.reloadAddresses() }
+                }
+            }
         }
         .sheet(isPresented: $showingWaiver) {
             if let user = session.currentUser {
@@ -872,6 +912,62 @@ struct BookingView: View {
         // them, and to let content scroll under it. `.bar` was the old
         // answer; glass is the current one.
         .glassEffect(.regular, in: Rectangle())
+    }
+
+    /// Where the vet should come. On the confirm step, because it belongs
+    /// beside the other things being agreed to - not as a fourth step that
+    /// makes a three-tap booking a four-tap one.
+    @ViewBuilder
+    private var addressSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Where should the vet come?", systemImage: "house.fill")
+
+            if viewModel.addresses.isEmpty {
+                CalloutNote(
+                    text: "You haven't saved an address yet. Add one so the vet knows where to go — you can still book now and we'll confirm the address with you.",
+                    systemImage: "mappin.slash", tint: Theme.warning
+                )
+                Button {
+                    Haptics.tap()
+                    showingAddAddress = true
+                } label: {
+                    Label("Add an address", systemImage: "plus")
+                        .font(.brandCallout.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.primary)
+            } else {
+                ForEach(viewModel.addresses) { address in
+                    SelectableRow(
+                        title: address.label,
+                        subtitle: addressSubtitle(address),
+                        systemImage: address.isServed ? "mappin.circle.fill" : "exclamationmark.triangle.fill",
+                        isSelected: viewModel.selectedAddress?.id == address.id
+                    ) {
+                        viewModel.selectedAddress = address
+                    }
+                }
+
+                // A saved address outside every served cluster is the one
+                // case where picking it and tapping Confirm would look fine
+                // and then strand somebody, so it is said here rather than
+                // discovered afterwards.
+                if let selected = viewModel.selectedAddress, !selected.isServed {
+                    CalloutNote(
+                        text: "We don't cover \(selected.label) yet. You can still book — the vet will call to work out whether they can reach you.",
+                        systemImage: "exclamationmark.triangle.fill", tint: Theme.warning
+                    )
+                }
+            }
+        }
+    }
+
+    private func addressSubtitle(_ address: Address) -> String {
+        var parts = [address.line1]
+        if let landmark = address.landmark, !landmark.isEmpty { parts.append("near \(landmark)") }
+        return parts.joined(separator: " · ")
     }
 
     private var blockingHint: String {
