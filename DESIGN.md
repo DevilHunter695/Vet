@@ -47,6 +47,50 @@ that set size, weight, tracking and leading together.
 Put these in **shared components**, not at call sites. `SectionHeader` alone
 appears on most screens — one decision there beats a hundred that drift.
 
+### Why `brandCaption2` is the same size as `brandCaption`
+
+Deliberate, and checked against the HIG rather than assumed.
+
+Apple's typography specification gives iOS a **default text size of 17pt and a
+minimum of 11pt**, and says to "follow the recommended default and minimum
+text sizes for each platform ... to ensure your text is legible on all
+devices". A true `.caption2` sits at roughly that 11pt floor at default
+Dynamic Type — and below it once somebody scales text down, which is the
+point at which the app stops being readable for the people most likely to
+need the smaller step.
+
+So `brandCaption2` resolves to `.caption`. The name is kept because call sites
+reference it, but there is no second size.
+
+The hierarchy those call sites want is still there — it is just carried by
+colour rather than size, which is what the HIG actually prescribes: "adjust
+font **weight, size, and color** as needed to emphasize important information
+and help people visualize hierarchy." All sixteen `brandCaption2` call sites
+pair it with `Theme.textSecondary`/`textTertiary`, or with a deliberate tint
+(`TagChip`). Verified by sweeping them, not by assertion.
+
+A reviewer noticing the two tokens are identical will read this as a bug. It
+is not. Reducing the size would trade a real accessibility floor for a
+difference nobody asked for.
+
+### One typeface family
+
+"Mixing too many different typefaces can obscure your information hierarchy
+and hinder readability, in addition to making an interface feel internally
+inconsistent or poorly designed." Everything in this app is
+`design: .rounded`.
+
+This is easy to break by accident: `.font(.footnote)` looks like a size
+choice, but it also silently selects the *system* face. `ErrorBanner` did
+exactly that, so every error message in the app — 45 call sites — rendered in
+a different typeface from the screen it appeared on, at the one moment you
+least want the interface to look like it has lost its composure. Reach for a
+`brand*` token, or spell out `design: .rounded`.
+
+Sources: [Typography](https://developer.apple.com/design/human-interface-guidelines/typography),
+[Layout](https://developer.apple.com/design/human-interface-guidelines/layout).
+
+
 ## Colour and contrast
 
 Every pairing the app uses is computed against WCAG 2.1 in `ContrastTests`, and
