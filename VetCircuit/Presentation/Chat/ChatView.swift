@@ -163,6 +163,14 @@ struct ChatView: View {
                 .background(Color(.secondarySystemBackground))
             }
 
+            // The composer is removed when chat is closed, not disabled.
+            //
+            // A greyed-out text field with a dead send button beside it reads
+            // as an app that is broken rather than a thread that has ended:
+            // you tap it, nothing happens, and nothing says why. The banner
+            // above already explains and points at support. A control that
+            // cannot do anything is worse than one that isn't drawn.
+            if viewModel.isChatOpen {
             HStack(spacing: 10) {
                 PhotosPicker(selection: $photoPickerItem, matching: .images) {
                     // The circle stays 36pt; the touch target around it is
@@ -207,6 +215,7 @@ struct ChatView: View {
             }
             .padding()
             .background(.regularMaterial)
+            }
         }
         .hidesFloatingTabBar()
         .navigationTitle("Chat")
