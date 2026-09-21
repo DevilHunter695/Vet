@@ -442,6 +442,7 @@ struct BookingView: View {
     @State private var isAdvancing = true
     @State private var hasAcceptedWaiver = false
     @State private var showingAddAddress = false
+    @Environment(BookingDraft.self) private var bookingDraft
     private let manageConsentUseCase = DependencyContainer.shared.manageConsentUseCase()
 
     init(circuit: Circuit, serviceCategory: ServiceCategory? = nil, serviceId: UUID? = nil, variantId: UUID? = nil, preselectedPetId: UUID? = nil) {
@@ -700,6 +701,11 @@ struct BookingView: View {
         .navigationTitle("Book visit")
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            // Whatever they already typed into the symptom check, so the same
+            // question isn't asked twice. One-shot: consuming clears it.
+            if viewModel.reason.isEmpty, let carried = bookingDraft.consumeReason() {
+                viewModel.reason = carried
+            }
             if let user = session.currentUser {
                 await viewModel.loadPets(user: user)
                 hasAcceptedWaiver = (try? await manageConsentUseCase.hasAcceptedLiabilityWaiver(userId: user.id)) ?? false
@@ -1274,6 +1280,9 @@ struct BookingConfirmedView: View {
 
 #Preview {
     NavigationStack {
-        BookingView(circuit: MockData.circuits[0]).environment(SessionStore())
+        BookingView(circuit: MockData.circuits[0])
+            .environment(SessionStore())
+            .environment(Router())
+            .environment(BookingDraft())
     }
 }

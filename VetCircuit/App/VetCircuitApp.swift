@@ -67,6 +67,9 @@ struct VetCircuitApp: App {
     // N7: the shared Router — see App/Router.swift for exactly which tabs'
     // NavigationStacks it drives and which deep links it can push onto them.
     @State private var router = Router()
+    /// One-shot handoff from the symptom check to the booking screen — see
+    /// `BookingDraft`.
+    @State private var bookingDraft = BookingDraft()
     @AppStorage("vc.appearance") private var appearanceRaw: String = AppearanceOption.system.rawValue
 
     /// The SwiftData store holds `CachedVisit`/`CachedChatMessage`/
@@ -110,6 +113,7 @@ struct VetCircuitApp: App {
                 .environment(session)
                 .environment(pendingDeepLink)
                 .environment(router)
+                .environment(bookingDraft)
                 .tint(Theme.primary)
                 .preferredColorScheme((AppearanceOption(rawValue: appearanceRaw) ?? .system).colorScheme)
                 .task { await session.bootstrap() }

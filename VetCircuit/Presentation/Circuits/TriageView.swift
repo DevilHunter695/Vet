@@ -85,7 +85,7 @@ struct TriageView: View {
                 }
 
                 if let result = viewModel.result {
-                    TriageResultCard(result: result)
+                    TriageResultCard(result: result, symptoms: viewModel.symptoms)
                         .transition(.scale(scale: 0.9).combined(with: .opacity))
                 }
             }
@@ -100,6 +100,11 @@ struct TriageView: View {
 
 private struct TriageResultCard: View {
     let result: TriageResult
+    /// Carried to the booking screen so the person doesn't get asked what's
+    /// wrong twice — see `BookingDraft`.
+    let symptoms: String
+
+    @Environment(BookingDraft.self) private var bookingDraft
 
     private var accent: Color {
         switch result.recommendation {
@@ -146,6 +151,7 @@ private struct TriageResultCard: View {
                     // 44pt target, not a bare line of text.
                     NavigationLink {
                         CircuitsListView()
+                            .onAppear { bookingDraft.setReason(symptoms) }
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "calendar.badge.plus")
@@ -177,4 +183,5 @@ private struct TriageResultCard: View {
 
 #Preview {
     NavigationStack { TriageView() }
+        .environment(BookingDraft())
 }
