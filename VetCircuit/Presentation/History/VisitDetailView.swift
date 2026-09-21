@@ -149,6 +149,19 @@ struct VisitDetailView: View {
                                 .font(.brandCaption)
                                 .foregroundStyle(Theme.textSecondary)
                                 .lineLimit(2)
+
+                                // The access notes travel with the visit, so
+                                // show them here too: this is the screen
+                                // somebody opens while the vet is on the way,
+                                // and "is the gate code still right?" is a
+                                // question they can only answer if they can
+                                // see it.
+                                if let notes = visitAddress.accessNotes, !notes.isEmpty {
+                                    Label(notes, systemImage: "key.fill")
+                                        .font(.brandCaption)
+                                        .foregroundStyle(Theme.textTertiary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                             }
                             // I2: entry point to the full timestamped timeline.
                             Label("View full timeline", systemImage: "list.bullet.clipboard")

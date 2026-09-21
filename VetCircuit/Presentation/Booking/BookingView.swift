@@ -1012,6 +1012,26 @@ struct BookingView: View {
                     }
                 }
 
+                // What the vet will actually be told on arrival. These are
+                // typed once when the address is saved and were then never
+                // shown again anywhere — so a gate code that had changed, or
+                // a typo in a floor number, was invisible until somebody was
+                // standing at the wrong door.
+                if let selected = viewModel.selectedAddress,
+                   let notes = selected.accessNotes, !notes.isEmpty {
+                    Label {
+                        Text("The vet will see: \(notes)")
+                            .font(.brandCaption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "key.fill")
+                            .scaledIcon(12)
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                    .padding(.horizontal, 2)
+                }
+
                 // A saved address outside every served cluster is the one
                 // case where picking it and tapping Confirm would look fine
                 // and then strand somebody, so it is said here rather than
