@@ -508,10 +508,7 @@ struct CartView: View {
                                     // iOS bordered button.
                                     TextField("How many?", text: $viewModel.redeemPointsInput)
                                         .keyboardType(.numberPad)
-                                        .font(.brandBody)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 10)
-                                        .background(Color(.secondarySystemBackground), in: Capsule())
+                                        .brandFieldStyle()
 
                                     Button("Redeem") { Task { await viewModel.redeemPoints(userId: user.id) } }
                                         .buttonStyle(.bordered)

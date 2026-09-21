@@ -476,6 +476,22 @@ struct EmptyStateView: View {
     }
 }
 
+extension View {
+    /// The app's text-field treatment.
+    ///
+    /// `.textFieldStyle(.roundedBorder)` is stock Chrome: on a screen of
+    /// glass cards and rounded brand type it reads as a control borrowed
+    /// from a different app, which is most of what "the fields look weird"
+    /// means. This matches the surfaces around it and is defined once so the
+    /// next field does not get its own idea.
+    func brandFieldStyle() -> some View {
+        font(.brandBody)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
 struct ErrorBanner: View {
     let message: String
 

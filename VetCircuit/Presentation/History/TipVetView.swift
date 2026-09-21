@@ -47,7 +47,7 @@ struct TipVetView: View {
                 HStack {
                     TextField("Custom amount (₹)", text: $customAmountText)
                         .keyboardType(.numberPad)
-                        .textFieldStyle(.roundedBorder)
+                        .brandFieldStyle()
                     Button("Send") {
                         guard !isSubmitting, let rupees = Int(customAmountText), rupees > 0 else { return }
                         Task { await submit(amountMinorUnits: rupees * 100) }

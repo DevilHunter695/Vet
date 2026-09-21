@@ -319,28 +319,36 @@ struct PetDetailView: View {
                     .onChange(of: isNeutered) { _, newValue in viewModel.pet.isNeutered = newValue }
 
                 TextField("Microchip number", text: $microchipText)
-                    .textFieldStyle(.roundedBorder)
+                    .brandFieldStyle()
                     .onChange(of: microchipText) { _, newValue in
                         viewModel.pet.microchipNumber = newValue.isEmpty ? nil : newValue
                     }
 
                 TextField("Allergies", text: $allergiesText)
-                    .textFieldStyle(.roundedBorder)
+                    .brandFieldStyle()
                     .onChange(of: allergiesText) { _, newValue in
                         viewModel.pet.allergies = newValue.isEmpty ? nil : newValue
                     }
 
                 TextField("Chronic conditions", text: $chronicConditionsText)
-                    .textFieldStyle(.roundedBorder)
+                    .brandFieldStyle()
                     .onChange(of: chronicConditionsText) { _, newValue in
                         viewModel.pet.chronicConditions = newValue.isEmpty ? nil : newValue
                     }
 
-                Button(viewModel.isSaving ? "Saving…" : "Save changes") {
+                // A form's commit action is a primary action and should look
+                // like one; this was bare tinted text at the end of a card.
+                Button {
                     Task { await viewModel.save() }
+                } label: {
+                    Text(viewModel.isSaving ? "Saving…" : "Save changes")
+                        .font(.brandHeadline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.primary)
                 .disabled(viewModel.isSaving)
-                .font(.brandBody)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
