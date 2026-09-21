@@ -224,14 +224,22 @@ enum Theme {
         startPoint: .top, endPoint: .bottom
     )
 
-    /// A subtle tinted wash for light mode: the same two hues, at a fraction
-    /// of the saturation, over a near-white ground. Keeps the brand present
-    /// without fighting dark body text for contrast.
+    /// A whisper of brand over white for light mode.
+    ///
+    /// This used to run up to 0.16 saturation, which reads as mint rather
+    /// than as white — so light mode looked like a different app from dark
+    /// mode rather than the same app in a different appearance, and every
+    /// white card on top of it sat there as a hard bright rectangle.
+    ///
+    /// The ground's job in light mode is to stay out of the way: the brand
+    /// is carried by the cards, the accents and the gradient buttons, all of
+    /// which are already doing it. A background that competes with them is
+    /// the thing making the screen feel unresolved.
     static let auroraGradientLight = LinearGradient(
         stops: [
-            .init(color: Color(hue: 0.556, saturation: 0.16, brightness: 0.99), location: 0.0),
-            .init(color: Color(hue: 0.48, saturation: 0.10, brightness: 0.985), location: 0.45),
-            .init(color: Color(hue: 0.42, saturation: 0.07, brightness: 0.975), location: 1.0)
+            .init(color: Color(hue: 0.556, saturation: 0.045, brightness: 1.0), location: 0.0),
+            .init(color: Color(hue: 0.50, saturation: 0.030, brightness: 0.995), location: 0.45),
+            .init(color: Color(hue: 0.42, saturation: 0.022, brightness: 0.99), location: 1.0)
         ],
         startPoint: .topLeading, endPoint: .bottomTrailing
     )

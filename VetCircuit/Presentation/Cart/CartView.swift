@@ -71,6 +71,15 @@ final class CartViewModel {
             .sorted { $0.slot.startTime < $1.slot.startTime }
     }
 
+    /// Whether the typed point count is actually redeemable — a whole
+    /// number, above zero, and not more than the balance. The button used to
+    /// gate on `Int(...) != nil` alone, so "0" and "99999" both looked valid
+    /// and failed on the server instead.
+    var canRedeemPoints: Bool {
+        guard let points = Int(redeemPointsInput.trimmingCharacters(in: .whitespaces)) else { return false }
+        return points > 0 && points <= loyaltyPoints
+    }
+
     /// Everything checkout genuinely needs, checked before the tap.
     var canCheckout: Bool { quote != nil && selectedSlot != nil }
 
@@ -485,13 +494,34 @@ struct CartView: View {
                         // E5: loyalty point redemption at checkout.
                         if viewModel.loyaltyPoints >= LoyaltyRedemptionPolicy.minimumRedeemablePoints, let user = session.currentUser {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("\(viewModel.loyaltyPoints) loyalty points available").font(.brandBody)
-                                HStack {
-                                    TextField("Points to redeem", text: $viewModel.redeemPointsInput)
+                                SectionHeader(
+                                    title: "Loyalty points",
+                                    subtitle: "\(viewModel.loyaltyPoints) available",
+                                    systemImage: "star.circle.fill"
+                                )
+                                HStack(spacing: 10) {
+                                    // A `.roundedBorder` field is the one
+                                    // control on this screen wearing stock
+                                    // Chrome, and a bare Button beside it read
+                                    // as unfinished. Both now match the rest
+                                    // of the app, and the button is a real
+                                    // iOS bordered button.
+                                    TextField("How many?", text: $viewModel.redeemPointsInput)
                                         .keyboardType(.numberPad)
-                                        .textFieldStyle(.roundedBorder)
+                                        .font(.brandBody)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 10)
+                                        .background(Color(.secondarySystemBackground), in: Capsule())
+
                                     Button("Redeem") { Task { await viewModel.redeemPoints(userId: user.id) } }
-                                        .disabled(Int(viewModel.redeemPointsInput) == nil)
+                                        .buttonStyle(.bordered)
+                                        .tint(Theme.primary)
+                                        .disabled(!viewModel.canRedeemPoints)
+                                }
+                                if !viewModel.redeemPointsInput.isEmpty, !viewModel.canRedeemPoints {
+                                    Text("Enter a whole number, up to \(viewModel.loyaltyPoints).")
+                                        .font(.brandCaption)
+                                        .foregroundStyle(Theme.textSecondary)
                                 }
                                 if let redeemMessage = viewModel.redeemMessage {
                                     Text(redeemMessage).font(.brandCaption).foregroundStyle(Theme.textSecondary)
@@ -840,7 +870,8 @@ private struct CouponEntryRow: View {
                     .autocorrectionDisabled()
                     .font(.brandBody)
                 Button("Apply", action: onApply)
-                    .font(.brandBody.bold())
+                    .buttonStyle(.bordered)
+                    .tint(Theme.primary)
                     .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             if let message {
