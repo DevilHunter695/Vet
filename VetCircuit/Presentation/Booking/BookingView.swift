@@ -603,14 +603,6 @@ struct BookingView: View {
                         SlotHoldBanner(secondsRemaining: seconds)
                     }
 
-                    if let errorMessage = viewModel.errorMessage {
-                        ErrorBanner(message: errorMessage)
-                        if viewModel.canRetryPayment {
-                            PrimaryButton(title: "Retry payment", isLoading: viewModel.isLoading) {
-                                Task { await viewModel.retryCheckout() }
-                            }
-                        }
-                    }
                     }
                     .transition(.bookingStep(isAdvancing: isAdvancing))
 
@@ -672,14 +664,6 @@ struct BookingView: View {
                         SlotHoldBanner(secondsRemaining: seconds)
                     }
 
-                    if let errorMessage = viewModel.errorMessage {
-                        ErrorBanner(message: errorMessage)
-                        if viewModel.canRetryPayment {
-                            PrimaryButton(title: "Retry payment", isLoading: viewModel.isLoading) {
-                                Task { await viewModel.retryCheckout() }
-                            }
-                        }
-                    }
                     }
                     .transition(.bookingStep(isAdvancing: isAdvancing))
                 }
@@ -918,6 +902,23 @@ struct BookingView: View {
     /// than no price.
     private var confirmBar: some View {
         VStack(spacing: 10) {
+            // The failure lives with the button that caused it.
+            //
+            // This used to be the last element of a long scrolling stack -
+            // below the summary, the address, the payment choice, the price
+            // breakdown, the recurring card and the hold banner. So a booking
+            // that failed rendered its explanation off-screen while the
+            // customer was looking at the pinned button they had just tapped,
+            // and the app appeared to have done nothing at all.
+            if let errorMessage = viewModel.errorMessage {
+                ErrorBanner(message: errorMessage)
+                if viewModel.canRetryPayment {
+                    PrimaryButton(title: "Retry payment", isLoading: viewModel.isLoading) {
+                        Task { await viewModel.retryCheckout() }
+                    }
+                }
+            }
+
             if step == .confirm, let quote = viewModel.previewQuote {
                 HStack {
                     Text("Total").font(.brandCaption).foregroundStyle(Theme.textSecondary)

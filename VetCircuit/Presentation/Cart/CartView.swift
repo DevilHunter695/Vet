@@ -456,15 +456,6 @@ struct CartView: View {
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         }
 
-                        if let errorMessage = viewModel.errorMessage {
-                            ErrorBanner(message: errorMessage)
-                            if viewModel.canRetryPayment {
-                                PrimaryButton(title: "Retry payment", isLoading: viewModel.isCheckingOut) {
-                                    Task { await viewModel.retryCheckout() }
-                                }
-                            }
-                        }
-
                         // Where the vet is going. Same question the booking
                         // flow asks, on the other route to the same booking —
                         // this one used to check out with addressId: nil.
@@ -609,6 +600,18 @@ struct CartView: View {
     private var checkoutBar: some View {
         if let cart = viewModel.cart, !cart.items.isEmpty {
             VStack(spacing: 10) {
+                // Same reason as BookingView: a checkout failure belongs
+                // beside the button that caused it, not further up a scroll
+                // the customer is no longer looking at.
+                if let errorMessage = viewModel.errorMessage {
+                    ErrorBanner(message: errorMessage)
+                    if viewModel.canRetryPayment {
+                        PrimaryButton(title: "Retry payment", isLoading: viewModel.isCheckingOut) {
+                            Task { await viewModel.retryCheckout() }
+                        }
+                    }
+                }
+
                 HStack(alignment: .firstTextBaseline) {
                     Text("Total").font(.brandCallout).foregroundStyle(Theme.textSecondary)
                     Spacer()
