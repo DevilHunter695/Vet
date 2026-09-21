@@ -981,7 +981,14 @@ struct BookingView: View {
         // the background into the safe area makes it one surface that meets
         // the edge, which is what every system bar does.
         .background {
-            Color.clear
+            // Glass alone is too transparent here. Over a dense scroll you
+            // could read the content behind the bar straight through it -
+            // an address line ghosting up through the total, a card title
+            // through the button - which is the "text bleeding through"
+            // in the screenshots. A faint scrim under the material keeps
+            // the translucency but stops it carrying legible text.
+            Rectangle()
+                .fill(.background.opacity(0.55))
                 .glassEffect(.regular, in: Rectangle())
                 .ignoresSafeArea(edges: .bottom)
         }

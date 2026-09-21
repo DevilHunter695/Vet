@@ -146,11 +146,15 @@ enum Theme {
             ? UIColor(white: 1, alpha: boost ? 0.95 : 0.78)
             : UIColor(white: 0, alpha: boost ? 0.90 : 0.68)
     })
+    /// Light mode was 0.50 alpha, which over white is 3.98:1 — under the
+    /// 4.5:1 floor WCAG sets for body text, and it is used for timestamps,
+    /// captions and helper lines that people do have to read. 0.60 clears it
+    /// at 5.74:1 and still reads as a third step below secondary.
     static let textTertiary = Color(uiColor: UIColor { trait in
         let boost = trait.accessibilityContrast == .high
         return trait.userInterfaceStyle == .dark
-            ? UIColor(white: 1, alpha: boost ? 0.85 : 0.58)
-            : UIColor(white: 0, alpha: boost ? 0.78 : 0.50)
+            ? UIColor(white: 1, alpha: boost ? 0.85 : 0.62)
+            : UIColor(white: 0, alpha: boost ? 0.82 : 0.60)
     })
 
     /// The floor the aurora falls away to. Not pure black — a hair of blue

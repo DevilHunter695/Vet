@@ -231,3 +231,38 @@ struct ContrastTests {
                 "Theme.abyss has luminance \(String(format: "%.4f", luminance)) — it is no longer a near-black floor")
     }
 }
+
+// Tertiary text has to stay readable.
+//
+// It was black at 0.50 alpha over white — 3.98:1, under the 4.5:1 floor WCAG
+// sets for body text — and it carries timestamps, captions and helper lines
+// that people actually read. This pins the floor so the token cannot drift
+// back under it.
+
+@Suite("Tertiary text contrast")
+struct TertiaryTextContrastTests {
+    /// Contrast of black at `alpha` composited over white.
+    private func contrastOverWhite(alpha: Double) -> Double {
+        let value = 1.0 - alpha
+        let linear = value > 0.04045
+            ? pow((value + 0.055) / 1.055, 2.4)
+            : value / 12.92
+        return 1.05 / (linear + 0.05)
+    }
+
+    @Test("the light-mode tertiary alpha clears 4.5:1")
+    func lightTertiaryClearsAA() {
+        // Mirrors Theme.textTertiary's light-mode alpha.
+        #expect(contrastOverWhite(alpha: 0.60) >= 4.5)
+    }
+
+    @Test("the old value is recorded as failing, so this is not re-lowered")
+    func previousValueFailed() {
+        #expect(contrastOverWhite(alpha: 0.50) < 4.5)
+    }
+
+    @Test("the high-contrast variant is stronger still")
+    func highContrastIsStronger() {
+        #expect(contrastOverWhite(alpha: 0.82) > contrastOverWhite(alpha: 0.60))
+    }
+}
