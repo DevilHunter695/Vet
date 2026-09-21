@@ -481,7 +481,12 @@ struct ErrorBanner: View {
 
     var body: some View {
         Label(message, systemImage: "exclamationmark.triangle.fill")
-            .font(.footnote)
+            // `.footnote` alone is the system face, not the rounded one every
+            // other token in this file uses — so an error message rendered in
+            // a different typeface from the screen it appeared on, which is
+            // the last place you want the app to look like it lost its
+            // composure.
+            .font(.system(.footnote, design: .rounded))
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.danger.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))

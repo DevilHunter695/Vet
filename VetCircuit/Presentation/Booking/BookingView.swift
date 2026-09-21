@@ -616,6 +616,8 @@ struct BookingView: View {
 
                 case .confirm:
                     VStack(alignment: .leading, spacing: 20) {
+                    bookingSummary
+
                     addressSection
 
                     if viewModel.canCheckoutWithPayment {
@@ -974,6 +976,37 @@ struct BookingView: View {
         // them, and to let content scroll under it. `.bar` was the old
         // answer; glass is the current one.
         .glassEffect(.regular, in: Rectangle())
+    }
+
+    /// What is actually being confirmed.
+    ///
+    /// The step is titled "Confirm your visit" and showed none of it: not the
+    /// time, not the pet, not the vet. Both choices were made on earlier
+    /// steps and scrolled away, so the screen asked somebody to commit money
+    /// to a booking it would not restate. Every other decision on this screen
+    /// - address, payment timing, recurrence - was visible except the two
+    /// that define the visit.
+    @ViewBuilder
+    private var bookingSummary: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let vet = viewModel.circuit.vet {
+                InfoRow(label: "Vet", value: vet.name, systemImage: "stethoscope")
+            }
+            if let slot = viewModel.selectedSlot {
+                InfoRow(
+                    label: "When",
+                    value: slot.startTime.formatted(date: .abbreviated, time: .shortened),
+                    systemImage: "calendar"
+                )
+            }
+            if let pet = viewModel.selectedPet {
+                InfoRow(label: "For", value: pet.name, systemImage: petIcon(pet))
+            }
+            InfoRow(label: "Area", value: viewModel.circuit.clusterArea, systemImage: "mappin.and.ellipse")
+        }
+        .padding(16)
+        .glassCard()
+        .accessibilityElement(children: .combine)
     }
 
     /// Where the vet should come. On the confirm step, because it belongs
