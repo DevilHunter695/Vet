@@ -44,6 +44,17 @@ jobs:
           xcodebuild -showsdks || true
           xcrun simctl list devices available
 
+      # The app runs on mock repositories, so nothing in the Swift suite ever
+      # touches the database schema: 462 unit tests can be green while
+      # book_visit() - the transaction every booking goes through - is broken.
+      # This applies all 64 migrations to a throwaway Postgres and runs the
+      # behaviour tests against it.
+      - name: Schema and migration tests
+        run: |
+          brew install postgresql@16 || true
+          export PGBIN="$(brew --prefix postgresql@16)/bin"
+          scripts/test-migrations.sh
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
