@@ -282,20 +282,43 @@ final class AppWalkthroughUITests: XCTestCase {
             "Confirm — pay after visit", "Confirm & pay securely", "Confirm booking",
         ]
         var steps = 0
-        while steps < 6 {
+        var trail: [String] = []
+        while steps < 8 {
             guard let next = advanceTitles
                 .map({ app.buttons[$0] })
                 .first(where: { $0.exists && $0.isHittable })
             else { break }
+            trail.append("tapped '\(next.label)'")
             next.tap()
             steps += 1
             // The waiver is a one-time consent sheet in front of the commit.
             let accept = app.buttons["I agree, continue"]
-            if accept.waitForExistence(timeout: 2), accept.isHittable { accept.tap() }
-            if app.staticTexts["Booking requested"].waitForExistence(timeout: 3) { break }
+            if accept.waitForExistence(timeout: 3), accept.isHittable {
+                trail.append("accepted the waiver")
+                accept.tap()
+            }
+            if app.staticTexts["Booking requested"].waitForExistence(timeout: 4) {
+                trail.append("reached the confirmation")
+                break
+            }
         }
 
-        require(app.staticTexts["Booking requested"], "the booking confirmation", timeout: 15)
+        // If this is going to fail, fail with the screen in the message. The
+        // test name alone says nothing about which step it stalled on, and
+        // the full CI log is not downloadable from every environment.
+        if !app.staticTexts["Booking requested"].waitForExistence(timeout: 15) {
+            snapshot(app, "Booking — stalled before confirmation")
+            let visible = app.buttons.allElementsBoundByIndex
+                .prefix(25)
+                .map { "\($0.label)\($0.isHittable ? "" : " (not hittable)")" }
+                .joined(separator: " | ")
+            XCTFail(
+                "The booking never reached its confirmation.\n"
+                + "  steps taken: \(trail.isEmpty ? "none" : trail.joined(separator: " -> "))\n"
+                + "  buttons on screen: \(visible)"
+            )
+            return
+        }
         snapshot(app, "Booking — confirmed")
 
         // The fix this test exists for: the confirmation screen must offer a

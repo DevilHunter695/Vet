@@ -255,6 +255,18 @@ jobs:
               echo "  failing:"
               echo "$failing" | sed 's/^[[:space:]]*/    - /'
             fi
+            # The assertion itself, not just the test's name. XCTest writes
+            # "<file>:<line>: error: -[Suite test] : <message>"; without this
+            # the verdict says which test failed and nothing about why, and
+            # the full log is not downloadable from every environment that
+            # needs to read it. Truncated per line because a failure message
+            # can carry a whole element tree.
+            local assertions
+            assertions=$(grep -E "^.*:[0-9]+: error: " "$log" | tail -5 || true)
+            if [ -n "$assertions" ]; then
+              echo "  assertions:"
+              echo "$assertions" | cut -c1-500 | sed 's|^.*/||; s/^/    - /'
+            fi
 
             # A suite counts as passing only on an explicit SUCCEEDED marker
             # with no failures recorded by either framework. Anything else —

@@ -436,12 +436,11 @@ struct BookingView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel: BookingViewModel
-    @State private var showingWaiver = false
     @State private var step: BookingStep = .slot
     /// Which way the last step change went, so the transition mirrors it.
     @State private var isAdvancing = true
     @State private var hasAcceptedWaiver = false
-    @State private var showingAddAddress = false
+    @State private var activeSheet: BookingSheet?
     @Environment(BookingDraft.self) private var bookingDraft
     private let manageConsentUseCase = DependencyContainer.shared.manageConsentUseCase()
 
@@ -452,7 +451,7 @@ struct BookingView: View {
     private func confirmBookingTapped() {
         guard hasAcceptedWaiver else {
             Haptics.tap()
-            showingWaiver = true
+            activeSheet = .waiver
             return
         }
         Task { await viewModel.confirmBooking() }
@@ -728,30 +727,70 @@ struct BookingView: View {
             }
         }
         .animation(Theme.crossFade, value: viewModel.isResolvingPayment)
-        .sheet(item: $viewModel.checkoutURL, onDismiss: { Task { await viewModel.resolveCheckout() } }) { url in
-            CheckoutWebView(url: url)
-        }
         .animation(Theme.crossFade, value: viewModel.holdSecondsRemaining)
         .onDisappear {
             if viewModel.bookedVisit == nil { viewModel.releaseHold() }
         }
-        .sheet(isPresented: $showingAddAddress) {
-            if let user = session.currentUser {
-                // AddAddressView brings its own NavigationStack.
-                AddAddressView(ownerId: user.id) {
-                    Task { await viewModel.reloadAddresses() }
+        // One sheet slot, not three stacked `.sheet` modifiers.
+        //
+        // The end-to-end booking test started failing when the add-address
+        // sheet was added here, between checkout and the waiver. I have not
+        // proven that stacking is the cause - SwiftUI does support it, and
+        // VisitDetailView ships six - but three mutually exclusive sheets on
+        // one screen is better expressed as one slot regardless: it cannot
+        // race, cannot present two at once, and makes the state a single
+        // value you can read. The test will say whether it was the cause.
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .checkout(let url):
+                CheckoutWebView(url: url)
+            case .addAddress:
+                if let user = session.currentUser {
+                    // AddAddressView brings its own NavigationStack.
+                    AddAddressView(ownerId: user.id) {
+                        Task { await viewModel.reloadAddresses() }
+                    }
+                }
+            case .waiver:
+                if let user = session.currentUser {
+                    LiabilityWaiverView(userId: user.id) {
+                        hasAcceptedWaiver = true
+                        Task { await viewModel.confirmBooking() }
+                    }
                 }
             }
         }
-        .sheet(isPresented: $showingWaiver) {
-            if let user = session.currentUser {
-                LiabilityWaiverView(userId: user.id) {
-                    hasAcceptedWaiver = true
-                    Task { await viewModel.confirmBooking() }
-                }
+        // The view model owns the checkout URL, so mirror it into the one
+        // sheet slot rather than giving it a competing modifier.
+        .onChange(of: viewModel.checkoutURL) { _, url in
+            if let url { activeSheet = .checkout(url) }
+        }
+        // Only the checkout sheet has work to do when it closes: it covers
+        // the customer finishing payment, the payment failing, or them just
+        // backing out, and all three have to be resolved against the server.
+        .onChange(of: activeSheet) { previous, current in
+            guard current == nil, case .checkout = previous else { return }
+            viewModel.checkoutURL = nil
+            Task { await viewModel.resolveCheckout() }
+        }
+    }
+
+    /// Which single sheet this screen is showing.
+    private enum BookingSheet: Identifiable, Equatable {
+        case checkout(URL)
+        case addAddress
+        case waiver
+
+        var id: String {
+            switch self {
+            case .checkout(let url): return "checkout-\(url.absoluteString)"
+            case .addAddress: return "add-address"
+            case .waiver: return "waiver"
             }
         }
     }
+
+
 
     // MARK: - Slot picker (F1/F2)
 
@@ -947,7 +986,7 @@ struct BookingView: View {
                 )
                 Button {
                     Haptics.tap()
-                    showingAddAddress = true
+                    activeSheet = .addAddress
                 } label: {
                     Label("Add an address", systemImage: "plus")
                         .font(.brandCallout.weight(.semibold))

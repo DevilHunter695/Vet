@@ -358,7 +358,20 @@ final class CartViewModel {
 struct CartView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.dismiss) private var dismiss
-    @State private var showingAddAddress = false
+    @State private var activeSheet: CartSheet?
+
+    /// Which single sheet this screen is showing.
+    private enum CartSheet: Identifiable, Equatable {
+        case checkout(URL)
+        case addAddress
+
+        var id: String {
+            switch self {
+            case .checkout(let url): return "checkout-\(url.absoluteString)"
+            case .addAddress: return "add-address"
+            }
+        }
+    }
     @State private var viewModel = CartViewModel()
 
     var body: some View {
@@ -514,18 +527,29 @@ struct CartView: View {
         .navigationTitle("Cart")
         .navigationBarTitleDisplayMode(.inline)
         .task { if let user = session.currentUser { await viewModel.load(userId: user.id) } }
-        .sheet(item: $viewModel.checkoutURL, onDismiss: {
-            guard let user = session.currentUser else { return }
-            Task { await viewModel.resolveCheckout(user: user) }
-        }) { url in
-            CheckoutWebView(url: url)
-        }
-        .sheet(isPresented: $showingAddAddress) {
-            if let user = session.currentUser {
-                AddAddressView(ownerId: user.id) {
-                    Task { await viewModel.reloadAddresses(userId: user.id) }
+        // One sheet slot, for the same reason as BookingView: two mutually
+        // exclusive sheets on one screen are clearer and safer as a single
+        // piece of state than as two independent booleans.
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .checkout(let url):
+                CheckoutWebView(url: url)
+            case .addAddress:
+                if let user = session.currentUser {
+                    AddAddressView(ownerId: user.id) {
+                        Task { await viewModel.reloadAddresses(userId: user.id) }
+                    }
                 }
             }
+        }
+        .onChange(of: viewModel.checkoutURL) { _, url in
+            if let url { activeSheet = .checkout(url) }
+        }
+        .onChange(of: activeSheet) { previous, current in
+            guard current == nil, case .checkout = previous else { return }
+            viewModel.checkoutURL = nil
+            guard let user = session.currentUser else { return }
+            Task { await viewModel.resolveCheckout(user: user) }
         }
         .navigationDestination(item: $viewModel.confirmedVisit) { visit in
             BookingConfirmedView(visit: visit) {
@@ -547,7 +571,7 @@ struct CartView: View {
                 )
                 Button {
                     Haptics.tap()
-                    showingAddAddress = true
+                    activeSheet = .addAddress
                 } label: {
                     Label("Add an address", systemImage: "plus")
                         .font(.brandCallout.weight(.semibold))
