@@ -92,6 +92,9 @@ struct TriageView: View {
             .padding()
         }
         .auroraScreenBackground()
+        // Same reason as the booking screen: a vertical-axis TextField has
+        // no Return key to dismiss with, and there is no keyboard toolbar.
+        .scrollDismissesKeyboard(.interactively)
         .floatingTabBarInset()
         .navigationTitle("Symptom check")
         .navigationBarTitleDisplayMode(.inline)

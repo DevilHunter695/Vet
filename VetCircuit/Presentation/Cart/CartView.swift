@@ -484,6 +484,11 @@ struct CartView: View {
                     .padding(.bottom, 120)
                 }
                 .scrollContentBackground(.hidden)
+                // A vertical-axis TextField has no Return key to dismiss with -
+                // Return inserts a newline - and the app has no keyboard toolbar, so
+                // without this a keyboard opened here covers the pinned action bar
+                // with no way to put it away.
+                .scrollDismissesKeyboard(.interactively)
         .floatingTabBarInset()
                 .animation(Theme.crossFade, value: viewModel.quote)
                 .safeAreaInset(edge: .bottom) { checkoutBar }

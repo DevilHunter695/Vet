@@ -689,6 +689,11 @@ struct BookingView: View {
             .padding(.bottom, 108)
         }
         .scrollContentBackground(.hidden)
+        // A vertical-axis TextField has no Return key to dismiss with -
+        // Return inserts a newline - and the app has no keyboard toolbar, so
+        // without this a keyboard opened here covers the pinned action bar
+        // with no way to put it away.
+        .scrollDismissesKeyboard(.interactively)
         .floatingTabBarInset()
         .auroraScreenBackground()
         .safeAreaInset(edge: .bottom) {
