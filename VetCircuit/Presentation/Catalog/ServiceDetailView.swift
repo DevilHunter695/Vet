@@ -230,16 +230,28 @@ private struct VariantRow: View {
                 }
                 Spacer()
                 Text(variant.priceMinorUnits == 0 ? "Free" : CurrencyFormatter.rupees(variant.priceMinorUnits))
-                    .font(.brandHeadline)
-                    .foregroundStyle(isSelected ? Theme.primary : .secondary)
+                    .font(.brandMono(.body, weight: .semibold))
+                    .foregroundStyle(.primary)
                     .contentTransition(.numericText())
-                    .animation(Theme.springQuick, value: isSelected)
+                // The selected row says so, rather than being 8% tinted.
+                // A wash that faint is not a selection state on a dark
+                // ground - you cannot tell which variant you picked without
+                // comparing rows against each other.
+                Image(systemName: "checkmark")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Theme.primary)
+                    .opacity(isSelected ? 1 : 0)
+                    .frame(width: 18)
+                    .accessibilityHidden(true)
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isSelected ? Theme.primary.opacity(0.08) : Color(.secondarySystemBackground))
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(isSelected ? Theme.primary.opacity(0.14)
+                                     : Color(.secondarySystemGroupedBackground).opacity(0.92))
             )
+            .animation(Theme.springQuick, value: isSelected)
         }
         .buttonStyle(PressableStyle())
         .selectable(isSelected: isSelected)
@@ -268,11 +280,24 @@ private struct CheckboxRow: View {
                 }
                 Spacer()
                 if let trailing {
-                    Text(trailing).font(.brandBody).foregroundStyle(Theme.textSecondary)
+                    Text(trailing)
+                        .font(.brandMono(.body, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
                 }
+                // This is called CheckboxRow and it had no checkbox. Pets
+                // and add-ons were multi-select with nothing on the row to
+                // say what was selected, so the only feedback was whatever
+                // .selectable() drew around the edge.
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? Theme.primary : Theme.textTertiary)
+                    .accessibilityHidden(true)
             }
-            .padding()
-            .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+            .background(Color(.secondarySystemGroupedBackground).opacity(0.92),
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .animation(Theme.springQuick, value: isSelected)
         }
         .buttonStyle(PressableStyle())
         .selectable(isSelected: isSelected)
