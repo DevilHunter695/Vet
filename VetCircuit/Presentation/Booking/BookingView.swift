@@ -1114,10 +1114,12 @@ struct BookingView: View {
                 axis: .vertical
             )
             .lineLimit(3...6)
-            .font(.brandCallout)
             .textInputAutocapitalization(.sentences)
-            .padding(14)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            // brandFieldStyle, not a fourth set of hand-rolled paddings.
+            // This field was using 14pt padding and a 14pt radius while the
+            // shared style used 12 and 12 - the exact drift that style was
+            // added to stop, in a field that was written after it.
+            .brandFieldStyle()
         }
     }
 

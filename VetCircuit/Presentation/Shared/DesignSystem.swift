@@ -531,9 +531,10 @@ extension View {
     /// next field does not get its own idea.
     func brandFieldStyle() -> some View {
         font(.brandBody)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.horizontal, Spacing.row)
+            .padding(.vertical, Spacing.row)
+            .background(Color(.secondarySystemGroupedBackground).opacity(0.92),
+                        in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
     }
 }
 
