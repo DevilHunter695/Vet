@@ -183,16 +183,16 @@ struct ProfileView: View {
                         ProfileLinkRow(title: "Addresses", subtitle: "Where your vet comes to", systemImage: "mappin.and.ellipse") { AddressListView() }
                         ProfileLinkRow(title: "Payment methods", subtitle: "Cards & UPI", systemImage: "creditcard") { PaymentMethodsView() }
                         ProfileLinkRow(title: "Household", subtitle: "Share pets & bookings", systemImage: "person.2") { HouseholdView() }
-                        ProfileLinkRow(title: "Recurring bookings", subtitle: "Pause or cancel a schedule", systemImage: "repeat") { RecurringBookingsView() }
+                        ProfileLinkRow(title: "Recurring bookings", systemImage: "repeat") { RecurringBookingsView() }
                         ProfileLinkRow(title: "Invite friends", subtitle: "Both of you get credit", systemImage: "gift", tint: Theme.accent) { ReferralView() }
                     }
 
                     preferencesSection
 
                     ProfileGroup(title: "Support & legal", systemImage: "lifepreserver") {
-                        ProfileLinkRow(title: "Help centre", subtitle: "Answers to common questions", systemImage: "questionmark.circle") { HelpCenterView() }
-                        ProfileLinkRow(title: "Contact support", subtitle: "Open a ticket with our team", systemImage: "bubble.left.and.text.bubble.right") { ContactSupportView() }
-                        ProfileLinkRow(title: "My tickets", subtitle: "Track what you've raised", systemImage: "tray.full") { MyTicketsView() }
+                        ProfileLinkRow(title: "Help centre", systemImage: "questionmark.circle") { HelpCenterView() }
+                        ProfileLinkRow(title: "Contact support", systemImage: "bubble.left.and.text.bubble.right") { ContactSupportView() }
+                        ProfileLinkRow(title: "My tickets", systemImage: "tray.full") { MyTicketsView() }
                         ProfileLinkRow(title: "Privacy & consent", subtitle: "What we store and why", systemImage: "hand.raised") { PrivacyConsentView() }
                         ProfileLinkRow(title: "Privacy Policy", systemImage: "doc.text") { PrivacyPolicyView() }
                         ProfileLinkRow(title: "Terms of Service", systemImage: "doc.plaintext") { TermsOfServiceView() }
@@ -460,7 +460,7 @@ struct ProfileView: View {
 
             ProfileGroup(title: "Notifications", systemImage: "bell.badge") {
                 ProfileLinkRow(title: "Notification preferences", subtitle: "Choose what reaches you", systemImage: "bell") { NotificationPreferencesView() }
-                ProfileLinkRow(title: "Notification centre", subtitle: "Everything we've sent you", systemImage: "tray") { NotificationCenterView() }
+                ProfileLinkRow(title: "Notification centre", systemImage: "tray") { NotificationCenterView() }
             }
         }
     }
