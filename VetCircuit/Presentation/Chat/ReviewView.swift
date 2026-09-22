@@ -132,7 +132,11 @@ private struct StarRatingButton: View {
             onTap()
         } label: {
             Image(systemName: isFilled ? "star.fill" : "star")
-                .font(.system(size: 34))
+                // scaledIcon so the rating control grows with the text
+                // setting. A star you tap is a control, and a control that
+                // ignores Dynamic Type is a smaller target for exactly the
+                // people who need a bigger one.
+                .scaledIcon(34)
                 .foregroundStyle(isFilled ? Theme.goldTier : Color(.tertiaryLabel))
                 .scaleEffect(isFilled ? 1.08 : 1)
                 .animation(Theme.springQuick, value: rating)

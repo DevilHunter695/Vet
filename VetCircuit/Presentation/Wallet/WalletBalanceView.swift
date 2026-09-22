@@ -39,7 +39,13 @@ struct WalletBalanceView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Wallet balance").font(.brandCaption).foregroundStyle(Theme.textSecondary)
                         Text(CurrencyFormatter.rupees(viewModel.balanceMinorUnits ?? 0))
-                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            // A text style, not a fixed 34pt. This is the
+                            // number the whole screen exists to show, and at
+                            // a pinned size it was the one figure on it that
+                            // Dynamic Type could not reach - the same fault
+                            // the visit code had.
+                            .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                            .minimumScaleFactor(0.7)
                             .foregroundStyle(Theme.primary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
