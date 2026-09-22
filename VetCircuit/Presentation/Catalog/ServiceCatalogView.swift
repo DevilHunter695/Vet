@@ -67,13 +67,18 @@ struct ServiceCatalogView: View {
                                     systemImage: category.systemImage
                                 )
 
-                                ForEach(services) { service in
-                                    NavigationLink {
-                                        ServiceDetailView(service: service, pet: pet)
-                                    } label: {
-                                        ServiceRow(service: service)
+                                // Tight, so a category reads as one group of
+                                // choices rather than a scattering of separate
+                                // things that happen to share a heading.
+                                VStack(spacing: 6) {
+                                    ForEach(services) { service in
+                                        NavigationLink {
+                                            ServiceDetailView(service: service, pet: pet)
+                                        } label: {
+                                            ServiceRow(service: service)
+                                        }
+                                        .buttonStyle(PressableStyle())
                                     }
-                                    .buttonStyle(PressableStyle())
                                 }
                             }
                             .appearAnimation(delay: Theme.staggerDelay(index))
@@ -121,50 +126,55 @@ private struct ServiceRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(service.name)
-                        .font(.brandHeadline)
-                        .foregroundStyle(.primary)
-                    Text(service.summary)
-                        .font(.brandCaption)
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 8)
-                VStack(alignment: .trailing, spacing: 2) {
-                    if let price = service.startingPriceMinorUnits {
-                        Text("from").brandEyebrow()
-                        Text(CurrencyFormatter.rupees(price))
-                            .font(.brandMono(.callout, weight: .bold))
-                            .foregroundStyle(Theme.primary)
-                            .contentTransition(.numericText())
-                    }
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Theme.textTertiary)
-                }
+        // A grouped row, not a card with a pill rack.
+        //
+        // This used to be a glassCard carrying three TagChips - "20 min",
+        // "3 options", "Add-ons" - under the name and price. None of those
+        // is a state, so none of them earns a capsule, and five of these
+        // stacked up made a list of five sibling services look like five
+        // unrelated posters.
+        //
+        // What actually decides which service you tap is the name, what it
+        // is for, and what it costs. Those are the three things here, in
+        // that order of weight. Duration joins the summary line, where it
+        // reads as a fact rather than a badge.
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(service.name)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(secondaryLine)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack(spacing: 8) {
-                if let minutes = shortestDurationMinutes {
-                    TagChip(text: "\(minutes) min", systemImage: "clock", tint: Theme.primary)
-                }
-                if service.variants.count > 1 {
-                    TagChip(text: "\(service.variants.count) options", systemImage: "square.stack", tint: Theme.emerald)
-                }
-                if !service.addons.isEmpty {
-                    TagChip(text: "Add-ons", systemImage: "plus.circle", tint: Theme.accent)
-                }
-                Spacer(minLength: 0)
+            Spacer(minLength: 8)
+
+            if let price = service.startingPriceMinorUnits {
+                Text(CurrencyFormatter.rupees(price))
+                    .font(.brandMono(.body, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .contentTransition(.numericText())
             }
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.textTertiary)
         }
-        .padding(16)
-        .glassCard()
-        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .background(Color(.secondarySystemGroupedBackground).opacity(0.92),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .combine)
+    }
+
+    /// Summary plus duration, which is a fact about the service rather than
+    /// a state, so it reads on the line instead of in a capsule.
+    private var secondaryLine: String {
+        guard let minutes = shortestDurationMinutes else { return service.summary }
+        return "\(service.summary) · \(minutes) min"
     }
 }
 
