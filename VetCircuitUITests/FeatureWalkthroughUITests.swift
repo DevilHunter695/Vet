@@ -114,8 +114,19 @@ final class FeatureWalkthroughUITests: XCTestCase {
     /// what a person would have waited for anyway.
     @MainActor
     private func tapWhenSteady(_ element: XCUIElement) {
+        // Deliberately few samples. `element.frame` is a full accessibility
+        // query, and the first version of this polled twenty times per tap
+        // across fifteen taps - up to three hundred extra tree evaluations
+        // per run, landing immediately before a waitForExistence that then
+        // timed out. That is the same mistake as the waitForNonExistence
+        // removed in e054da7: a fix that pays for itself in query pressure.
+        //
+        // Scroll deceleration settles well inside 400ms, so five samples is
+        // the measurement, and a short settle first means most taps take the
+        // early exit on the second sample.
+        usleep(150_000)
         var previous = element.frame
-        for _ in 0..<20 {
+        for _ in 0..<5 {
             usleep(80_000)
             let current = element.frame
             if current == previous { break }
