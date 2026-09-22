@@ -405,15 +405,27 @@ private struct ActiveVisitCard: View {
             VisitProgressBar(progress: progress)
                 .frame(height: 6)
 
-            HStack(spacing: 10) {
+            // Who and with whom, as text.
+            //
+            // These were two TagChips. A capsule is a way of saying "this is
+            // a state" - confirmed, en route, cancelled. A pet's name is not
+            // a state and neither is a vet's, so putting them in capsules
+            // spends the one signal the card has on the two things that
+            // never change, and leaves the actual status competing with
+            // them.
+            VStack(alignment: .leading, spacing: 1) {
                 if let pet {
-                    TagChip(text: pet.name, systemImage: "pawprint.fill", tint: Theme.primary)
+                    Text(pet.name)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
                 }
                 if let vet {
-                    TagChip(text: vet.name, systemImage: "stethoscope", tint: Theme.emerald)
+                    Text(vet.name)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.textSecondary)
                 }
-                Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             GlassSeam()
 
@@ -422,27 +434,34 @@ private struct ActiveVisitCard: View {
                     VisitDetailView(visit: visit)
                 } label: {
                     Text("Open visit")
-                        .font(.brandCaption)
+                        .font(.body.weight(.semibold))
                         .frame(maxWidth: .infinity)
-                        .frame(minHeight: 44)
+                        .frame(minHeight: 50)
                         .foregroundStyle(.white)
                         .background(Theme.gradient, in: Capsule())
                         .contentShape(Capsule())
                 }
                 .buttonStyle(PressableStyle(scale: 0.96))
 
+                // Secondary, and sized like it.
+                //
+                // "Open visit" and "Message" were both maxWidth: .infinity,
+                // so the card offered two equal halves and no answer to
+                // "what am I meant to do here". Opening the visit is the
+                // task; messaging is a thing you might also want.
                 NavigationLink {
                     ChatView(visitId: visit.id)
                 } label: {
                     Label("Message", systemImage: "bubble.left.fill")
-                        .font(.brandCaption)
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 44)
+                        .labelStyle(.iconOnly)
+                        .font(.body.weight(.semibold))
+                        .frame(width: 44, height: 44)
                         .foregroundStyle(Theme.primary)
-                        .background(Theme.primary.opacity(0.12), in: Capsule())
-                        .contentShape(Capsule())
+                        .background(Theme.primary.opacity(0.12), in: Circle())
+                        .contentShape(Circle())
                 }
                 .buttonStyle(PressableStyle(scale: 0.96))
+                .accessibilityLabel("Message your vet")
 
                 if visit.status == .requested || visit.status == .confirmed {
                     Button {
