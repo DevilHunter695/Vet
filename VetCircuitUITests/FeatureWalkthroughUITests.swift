@@ -100,6 +100,28 @@ final class FeatureWalkthroughUITests: XCTestCase {
         app.buttons.containing(NSPredicate(format: "label BEGINSWITH[c] %@", title)).element(boundBy: 0)
     }
 
+    /// Describes what the runner can actually see, for a failure message.
+    ///
+    /// Every theory I formed about why a tap did not navigate was wrong,
+    /// because the failure text said only that a screen did not open - not
+    /// which control was tapped, what else answered to that name, or where
+    /// the app ended up. Guessing from that is how six wrong explanations
+    /// happen. This makes the test say what it saw.
+    @MainActor
+    private func whatIsOnScreen(_ app: XCUIApplication, matching title: String) -> String {
+        let matches = app.buttons.containing(NSPredicate(format: "label BEGINSWITH[c] %@", title))
+        let labels = (0..<matches.count).map { i -> String in
+            let e = matches.element(boundBy: i)
+            return "    [\(i)] \"\(e.label)\" hittable=\(e.isHittable) frame=\(e.frame)"
+        }
+        let bars = app.navigationBars.allElementsBoundByIndex.map(\.identifier)
+        return """
+          buttons beginning "\(title)" (the tap goes to [0]):
+        \(labels.isEmpty ? "    none" : labels.joined(separator: "\n"))
+          navigation bars now on screen: \(bars.isEmpty ? "none" : bars.joined(separator: ", "))
+        """
+    }
+
     /// Taps a Profile row and asserts the screen it promises actually opens,
     /// on the FIRST tap, then comes back for the next one.
     @MainActor
@@ -116,7 +138,10 @@ final class FeatureWalkthroughUITests: XCTestCase {
                       file: file, line: line)
         control.tap()
         XCTAssertTrue(app.navigationBars[navTitle].waitForExistence(timeout: UITestTimeout.navigation),
-                      "\(feature): tapped \"\(rowTitle)\" once and \"\(navTitle)\" did not open",
+                      """
+                      \(feature): tapped "\(rowTitle)" once and "\(navTitle)" did not open.
+                      \(whatIsOnScreen(app, matching: rowTitle))
+                      """,
                       file: file, line: line)
         // No screenshot here. This helper runs fifteen times across the
         // suite, and a full-resolution capture of a glass-heavy SwiftUI
