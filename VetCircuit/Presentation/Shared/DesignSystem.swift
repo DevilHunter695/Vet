@@ -93,33 +93,31 @@ struct SecondaryButton: View {
     private var tint: Color { role == .destructive ? Theme.danger : Theme.primary }
 
     var body: some View {
-        Button {
+        // Native .bordered, for the same reason as PillButton above: this
+        // was a RoundedRectangle with a hand-drawn fill and stroke standing
+        // in for a control the system already provides, and the imitation
+        // carried none of the behaviour - disabled state, press feedback,
+        // the iOS 26 material.
+        //
+        // `role` is passed to Button rather than being turned into a colour
+        // by hand, so a destructive action gets the system's own destructive
+        // treatment instead of this file's idea of red.
+        Button(role: role) {
             Haptics.tap()
             action()
         } label: {
-            HStack(spacing: 8) {
+            Group {
                 if let systemImage {
-                    Image(systemName: systemImage).scaledIcon(16, weight: .semibold)
+                    Label(title, systemImage: systemImage)
+                } else {
+                    Text(title)
                 }
-                Text(title).font(.brandHeadline)
             }
-            .frame(maxWidth: .infinity, minHeight: 26)
-            .padding(.vertical, 15)
-            .padding(.horizontal, 20)
-            .foregroundStyle(tint)
-            .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(tint.opacity(0.12))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(tint.opacity(0.28), lineWidth: 1)
-                    }
-                    .allowsHitTesting(false)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .frame(maxWidth: .infinity)
         }
-        .buttonStyle(PressableStyle(scale: 0.975))
-        .accessibilityLabel(title)
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .tint(tint)
     }
 }
 
@@ -133,28 +131,44 @@ struct PillButton: View {
     let action: () -> Void
 
     var body: some View {
+        // Apple's button, not a capsule drawn to look like one.
+        //
+        // This was a hand-built Capsule with its own fill, its own
+        // foreground rules and its own press animation - a reimplementation
+        // of .borderedProminent and .bordered with .buttonBorderShape(.capsule).
+        // Rebuilding a standard control means rebuilding everything that
+        // comes with it, and this one had not: no disabled appearance, no
+        // system press or hover behaviour, and none of the Liquid Glass
+        // treatment iOS 26 gives its own buttons.
+        //
+        // The call sites are unchanged; only what they render is.
+        // Branching on the style rather than applying two of them: stacking
+        // .bordered and .borderedProminent leaves which one wins to
+        // resolution order, which is not something a reader should have to
+        // know to predict what this draws.
+        Group {
+            if filled {
+                button.buttonStyle(.borderedProminent)
+            } else {
+                button.buttonStyle(.bordered)
+            }
+        }
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .tint(tint)
+    }
+
+    private var button: some View {
         Button {
             Haptics.tap()
             action()
         } label: {
-            HStack(spacing: 6) {
-                if let systemImage {
-                    Image(systemName: systemImage).scaledIcon(13, weight: .semibold)
-                }
-                Text(title).font(.brandCaption)
+            if let systemImage {
+                Label(title, systemImage: systemImage)
+            } else {
+                Text(title)
             }
-            .padding(.horizontal, 16)
-            .frame(minHeight: 44)
-            .foregroundStyle(filled ? AnyShapeStyle(Theme.onBrightFill) : AnyShapeStyle(tint))
-            .background {
-                Capsule()
-                    .fill(filled ? AnyShapeStyle(tint) : AnyShapeStyle(tint.opacity(0.12)))
-                    .allowsHitTesting(false)
-            }
-            .contentShape(Capsule())
         }
-        .buttonStyle(PressableStyle(scale: 0.94))
-        .accessibilityLabel(title)
     }
 }
 
