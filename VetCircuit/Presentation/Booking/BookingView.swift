@@ -373,7 +373,7 @@ final class BookingViewModel {
                 }
             case .awaitingPayment:
                 pendingVisit = updatedVisit
-                errorMessage = "We haven't heard back from the payment yet. This slot is still held for your booking — resume checkout below when you're ready."
+                errorMessage = "Payment hasn't come back yet. Your slot is still held — resume checkout below."
             case .paymentFailed(let canRetry, let reason):
                 pendingVisit = updatedVisit
                 retryAttempts += 1
@@ -573,7 +573,7 @@ struct BookingView: View {
                         SectionHeader(title: "Which pet?", systemImage: "pawprint.fill")
                         if viewModel.pets.isEmpty {
                             CalloutNote(
-                                text: "You haven't added a pet yet. Add them here and their record will be ready for the vet before they arrive.",
+                                text: "No pets yet. Add one and their record is ready before the vet arrives.",
                                 systemImage: "pawprint.circle.fill", tint: Theme.warning
                             )
                             AddPetField(
@@ -635,7 +635,7 @@ struct BookingView: View {
                         // service/variant to price against, so quoting anything
                         // would be a guess.
                         CalloutNote(
-                            text: "You're requesting this vet directly. They'll confirm the slot, and the price is settled at the visit.",
+                            text: "You're requesting this vet directly. They'll confirm the slot; you pay at the visit.",
                             systemImage: "info.circle.fill"
                         )
                     }

@@ -114,7 +114,7 @@ struct RecurringBookingsView: View {
             }
             Button("Keep it", role: .cancel) { pendingCancel = nil }
         } message: {
-            Text("No further visits will be scheduled. Pause instead if you only want to skip a while — that's reversible.")
+            Text("No further visits. Pause instead to skip a while — that's reversible.")
         }
     }
 }

@@ -217,7 +217,7 @@ struct HouseholdView: View {
                         if let mine = viewModel.myMembership(userId: user.id, phone: user.phone) {
                             pendingLeave = mine
                         } else {
-                            viewModel.errorMessage = "We couldn't find your membership in this household. Pull to refresh, or contact support if it keeps happening."
+                            viewModel.errorMessage = "Couldn't find your membership here. Pull to refresh, or contact support."
                         }
                     }
                 }
@@ -257,7 +257,7 @@ struct HouseholdView: View {
             Button("Stay", role: .cancel) { pendingLeave = nil }
         } message: {
             Text(viewModel.currentUserIsOwner
-                 ? "Everyone loses access to the shared pets and bookings. Your own pets and records stay with you."
+                 ? "Everyone loses the shared pets and bookings. Your own stay with you."
                  : "You'll stop seeing this household's shared pets and bookings.")
         }
         .task {

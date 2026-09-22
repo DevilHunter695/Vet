@@ -159,7 +159,7 @@ struct CircuitsListView: View {
                         systemImage: "map", title: "No circuits available in your area yet",
                         message: viewModel.addresses.isEmpty
                             ? "Add an address to see the circuits serving it."
-                            : "We're expanding fast. Join the waitlist on your address and we'll notify you the moment a vet starts a circuit nearby.",
+                            : "No vets here yet. Join the waitlist and we'll tell you the moment one starts nearby.",
                         actionTitle: viewModel.addresses.isEmpty ? "Add an address" : "View addresses"
                     ) { showingAddresses = true }
                 } else {

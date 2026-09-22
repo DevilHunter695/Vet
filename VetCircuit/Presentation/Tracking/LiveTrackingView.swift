@@ -194,7 +194,7 @@ struct LiveTrackingView: View {
                     .animation(reduceMotion ? nil : Theme.springQuick, value: viewModel.location?.etaMinutes)
 
                     CalloutNote(
-                        text: "Have your pet somewhere calm and easy to reach, and keep your phone handy — the vet will ask for your start-of-visit code on arrival.",
+                        text: "Keep your pet somewhere calm and your phone handy. The vet asks for your start code on arrival.",
                         systemImage: "lightbulb.fill"
                     )
 
