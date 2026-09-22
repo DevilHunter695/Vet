@@ -122,14 +122,14 @@ final class FeatureWalkthroughUITests: XCTestCase {
         // suite, and a full-resolution capture of a glass-heavy SwiftUI
         // screen is not cheap on a CI simulator - the assertion above has
         // already proved the screen opened, which is what the test is for.
-        // Tap the back button, by name, not buttons[0].
+        // Tap the back button by name rather than by index.
         //
-        // Index 0 is only the back button on a screen whose bar has nothing
-        // else on it. "Edit profile" carries a confirmationAction "Save", so
-        // on that one screen index 0 is not necessarily back - and Wallet,
-        // the row opened straight after Edit profile, is the one that failed.
-        // No other destination in this suite has a second bar button, which
-        // is why no other row ever failed this way.
+        // Asking for a specific button is simply more robust than trusting
+        // the ordering of a bar that may carry more than one. It is NOT a
+        // proven explanation of the Wallet failure: "My tickets" also has a
+        // trailing bar button and the row opened straight after it passes,
+        // so a second button plainly does not break the row that follows.
+        // An earlier version of this comment claimed it did - it was wrong.
         let bar = app.navigationBars[navTitle]
         let back = bar.buttons["Profile"].exists ? bar.buttons["Profile"]
                  : bar.buttons["Back"].exists ? bar.buttons["Back"]
