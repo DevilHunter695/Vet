@@ -23,7 +23,7 @@ struct PawMascot: View {
                 .offset(y: bounce ? -size * 0.02 : size * 0.02)
         }
         .onAppear {
-            guard animated, !reduceMotion else { return }
+            guard animated, !AppMotion.loopsDisabled(reduceMotion: reduceMotion) else { return }
             withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
                 bounce = true
             }

@@ -430,7 +430,7 @@ struct AuroraBackground: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .onAppear {
-            guard animated, !reduceMotion else { return }
+            guard animated, !AppMotion.loopsDisabled(reduceMotion: reduceMotion) else { return }
             withAnimation(.easeInOut(duration: 14).repeatForever(autoreverses: true)) {
                 drift = true
             }
@@ -646,7 +646,7 @@ struct ShimmerView: View {
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .allowsHitTesting(false)
             .onAppear {
-                guard !reduceMotion else { return }
+                guard !AppMotion.loopsDisabled(reduceMotion: reduceMotion) else { return }
                 withAnimation(.linear(duration: 1.3).repeatForever(autoreverses: false)) {
                     phase = 1.2
                 }

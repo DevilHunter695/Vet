@@ -149,7 +149,7 @@ struct LivePulse: View {
         .frame(width: 18, height: 18)
         .accessibilityHidden(true)
         .onAppear {
-            guard isAnimating else { return }
+            guard isAnimating, !AppMotion.isUITesting else { return }
             withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) {
                 expanded = true
             }

@@ -619,7 +619,7 @@ private struct PulsingDot: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .onAppear {
-            guard !reduceMotion else { return }
+            guard !AppMotion.loopsDisabled(reduceMotion: reduceMotion) else { return }
             withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { pulse = true }
         }
     }
