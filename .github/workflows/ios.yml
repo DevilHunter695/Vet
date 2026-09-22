@@ -199,6 +199,35 @@ jobs:
             -only-testing:VetCircuitUITests/AppWalkthroughUITests \
             CODE_SIGNING_ALLOWED=NO 2>&1 | tee ui-tests-app.log
 
+      # The two profile-walk tests get their own session.
+      #
+      # Splitting the suite in two already moved the needle exactly as
+      # predicted: the shorter half ran 10 tests in 237s with no failures,
+      # the longer half ran 12 in 422s with one. Same relationship, finer
+      # grain.
+      #
+      # These two are why that half is long. Each opens six screens from
+      # Profile and comes back, twelve navigations apiece, against the four
+      # or fewer every other test in the class does. Running them apart
+      # leaves both sessions near the length that passes.
+      #
+      # The remainder uses -skip-testing rather than a list of the tests it
+      # should run, so a test added to this class tomorrow lands here
+      # automatically instead of silently running in neither session.
+      - name: UI walkthrough — profile walks
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project VetCircuit.xcodeproj \
+            -scheme VetCircuit \
+            -destination "id=${{ steps.destination.outputs.id }}" \
+            -derivedDataPath build \
+            -only-testing:VetCircuitUITests/FeatureWalkthroughUITests/testAccountAndMoneyScreensAreAllReachable \
+            -only-testing:VetCircuitUITests/FeatureWalkthroughUITests/testSupportAndLegalScreensAreAllReachable \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee ui-tests-walks.log
+
       - name: UI walkthrough — features
         timeout-minutes: 18
         continue-on-error: true
@@ -210,6 +239,8 @@ jobs:
             -destination "id=${{ steps.destination.outputs.id }}" \
             -derivedDataPath build \
             -only-testing:VetCircuitUITests/FeatureWalkthroughUITests \
+            -skip-testing:VetCircuitUITests/FeatureWalkthroughUITests/testAccountAndMoneyScreensAreAllReachable \
+            -skip-testing:VetCircuitUITests/FeatureWalkthroughUITests/testSupportAndLegalScreensAreAllReachable \
             CODE_SIGNING_ALLOWED=NO 2>&1 | tee ui-tests-features.log
 
       # The verdict, printed last so it is always in the tail of the log.
@@ -323,6 +354,7 @@ jobs:
           echo "=============== TEST VERDICT ==============="
           verdict "Unit tests" unit-tests.log
           verdict "UI walkthrough — app" ui-tests-app.log
+          verdict "UI walkthrough — profile walks" ui-tests-walks.log
           verdict "UI walkthrough — features" ui-tests-features.log
           echo "==========================================="
           {
@@ -330,6 +362,7 @@ jobs:
             echo '```'
             verdict "Unit tests" unit-tests.log
             verdict "UI walkthrough — app" ui-tests-app.log
+            verdict "UI walkthrough — profile walks" ui-tests-walks.log
             verdict "UI walkthrough — features" ui-tests-features.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
