@@ -759,8 +759,8 @@ private struct ActionRow: View {
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.textTertiary)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.horizontal, Spacing.gutter)
+        .padding(.vertical, Spacing.row)
         // A grouped-list row, not a floating card.
         //
         // This was `.background(.background)` plus a drop shadow, which on
@@ -770,8 +770,8 @@ private struct ActionRow: View {
         // system's grouped-row colour now, the shadow is gone, and the
         // corners are rounder.
         .background(Color(.secondarySystemGroupedBackground).opacity(0.92),
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         .accessibilityElement(children: .combine)
         .animation(Theme.springQuick, value: badgeCount)
     }

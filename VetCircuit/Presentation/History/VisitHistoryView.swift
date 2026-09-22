@@ -235,7 +235,7 @@ struct VisitHistoryView: View {
             VStack(spacing: 14) {
                 ShimmerView(cornerRadius: 20).frame(height: 150)
                 ForEach(0..<3, id: \.self) { _ in
-                    ShimmerView(cornerRadius: 18).frame(height: 84)
+                    ShimmerView(cornerRadius: Spacing.corner).frame(height: 84)
                 }
             }
             .padding(16)
@@ -275,7 +275,7 @@ struct VisitHistoryView: View {
                         // row carries only what makes it different from the
                         // one above it.
                         ForEach(VisitGrouping.byDay(viewModel.upcomingVisits, ascending: true)) { group in
-                            VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: Spacing.snug) {
                                 VisitDayHeader(date: group.date)
                                 ForEach(group.visits) { visit in
                                     VisitRow(
@@ -300,7 +300,7 @@ struct VisitHistoryView: View {
                             systemImage: "clock.arrow.circlepath"
                         )
                         ForEach(Array(VisitGrouping.byDay(viewModel.pastVisits, ascending: false).enumerated()), id: \.element.id) { index, group in
-                            VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: Spacing.snug) {
                                 VisitDayHeader(date: group.date)
                                 ForEach(group.visits) { visit in
                                     VisitRow(
@@ -593,8 +593,8 @@ private struct VisitRow: View {
                 }
             }
             .frame(minHeight: 56)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.horizontal, Spacing.gutter)
+            .padding(.vertical, Spacing.row)
             // A list row, not a pane of glass.
             //
             // Every upcoming and past visit was its own glassCard, so a
@@ -604,8 +604,8 @@ private struct VisitRow: View {
             // toolbar, the accessory - not around each item of the content
             // itself. These are content.
             .background(Color(.secondarySystemGroupedBackground).opacity(0.92),
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         }
         .buttonStyle(PressableStyle(scale: 0.985))
         // These rows are cards in a LazyVStack, not List rows, so

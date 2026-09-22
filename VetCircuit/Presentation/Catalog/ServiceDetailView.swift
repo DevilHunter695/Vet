@@ -244,10 +244,10 @@ private struct VariantRow: View {
                     .frame(width: 18)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 13)
+            .padding(.horizontal, Spacing.gutter)
+            .padding(.vertical, Spacing.row)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous)
                     .fill(isSelected ? Theme.primary.opacity(0.14)
                                      : Color(.secondarySystemGroupedBackground).opacity(0.92))
             )
@@ -293,10 +293,10 @@ private struct CheckboxRow: View {
                     .foregroundStyle(isSelected ? Theme.primary : Theme.textTertiary)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 13)
+            .padding(.horizontal, Spacing.gutter)
+            .padding(.vertical, Spacing.row)
             .background(Color(.secondarySystemGroupedBackground).opacity(0.92),
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
             .animation(Theme.springQuick, value: isSelected)
         }
         .buttonStyle(PressableStyle())

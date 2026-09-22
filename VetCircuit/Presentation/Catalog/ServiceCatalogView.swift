@@ -70,7 +70,7 @@ struct ServiceCatalogView: View {
                                 // Tight, so a category reads as one group of
                                 // choices rather than a scattering of separate
                                 // things that happen to share a heading.
-                                VStack(spacing: 6) {
+                                VStack(spacing: Spacing.snug) {
                                     ForEach(services) { service in
                                         NavigationLink {
                                             ServiceDetailView(service: service, pet: pet)
@@ -162,11 +162,11 @@ private struct ServiceRow: View {
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Theme.textTertiary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
+        .padding(.horizontal, Spacing.gutter)
+        .padding(.vertical, Spacing.row)
         .background(Color(.secondarySystemGroupedBackground).opacity(0.92),
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 
