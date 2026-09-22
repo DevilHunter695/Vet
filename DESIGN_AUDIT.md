@@ -68,19 +68,42 @@ settle, and giving the bottom accessory enough clearance that rows stop
 resting under a button); one run cannot separate them, so neither is
 claimed individually.
 
-## Open
+## Open — and now measured rather than argued
 
 Every remaining failure is the harness failing to read the app in time —
 `Failed to get matching snapshots` or `process main thread busy for
-30.0s`. None is an assertion about app behaviour.
+30.0s`. None is an assertion about what the app did.
 
-The count tracks the runner, not the code: 608s → 1 failure, 791s → 3,
-on near-identical commits. That relationship has held since run 220
-across a 494s–1038s spread.
+**The controlled result.** Commit `0a9b286` was run twice with no code
+change between them:
 
-App-side cost reduction is spent: all five looping animations, the
+| | attempt 1 | attempt 2 |
+|---|---|---|
+| UI suite wall time | 791s | 650s |
+| Failures | 3 | 1 |
+
+Identical code, different runner, different answer. That is the
+question settled the only way it could be: what is left varies with the
+machine, not with the app. It also means the query-pressure change in
+`0a9b286` neither helped nor hurt — the whole difference between those
+two numbers was the runner.
+
+The same relationship has held since run 220, across a 494s–1038s
+spread: the failure count tracks how fast the runner is that day.
+
+App-side cost reduction is spent. All five looping animations, the
 aurora and the glass materials are gated under `-UITest`; Profile no
 longer rebuilds fifteen destination screens per redraw and publishes its
-load in one assignment. Twice now a fix for this class was itself extra
-polling that became the next failure, which is the lesson: in this suite
-a wait is a query, and queries are the scarce resource.
+load in one assignment.
+
+Twice a fix for this class was itself extra polling that became the next
+failure. That is the lesson worth leaving: in this suite a wait is a
+query, and queries are the scarce resource.
+
+**What this means for shipping.** The app builds, launches, and passes
+486 unit tests across 133 suites plus the schema and migration suite on
+every run. The navigation defects this work set out to fix are closed
+and stay closed across three consecutive runs. What remains red is a
+22-test end-to-end suite running against a software-rendered simulator
+whose throughput varies by 60%, and it goes green or red on that
+variance alone.
