@@ -123,6 +123,22 @@ final class FeatureWalkthroughUITests: XCTestCase {
         // screen is not cheap on a CI simulator - the assertion above has
         // already proved the screen opened, which is what the test is for.
         app.navigationBars[navTitle].buttons.element(boundBy: 0).tap()
+
+        // Wait for the pushed screen's bar to go away, not just for
+        // Profile's to come back.
+        //
+        // Profile's navigation bar exists again the moment the pop commits,
+        // while the transition is still running. Returning then means the
+        // next row gets tapped mid-animation and NavigationStack drops the
+        // push - which is exactly "tapped Wallet once and Wallet did not
+        // open", and why it was always the row opened straight after
+        // another one. The old bar disappearing is the signal that the pop
+        // actually finished.
+        //
+        // This does not soften the assertion above: one tap must still open
+        // the screen. It only makes sure we are back on a settled Profile
+        // before claiming the next tap was the first one.
+        _ = app.navigationBars[navTitle].waitForNonExistence(timeout: 10)
         _ = app.navigationBars["Profile"].waitForExistence(timeout: 10)
     }
 
