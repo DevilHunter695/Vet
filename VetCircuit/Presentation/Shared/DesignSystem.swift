@@ -189,11 +189,40 @@ private struct GlassCardModifier: ViewModifier {
     let tint: Color?
 
     func body(content: Content) -> some View {
-        content.glassPanel(
-            cornerRadius: cornerRadius,
-            level: tint == nil ? .surface : .featured,
-            tint: tint
-        )
+        // A content surface, not a pane of glass.
+        //
+        // Apple's iOS 26 guidance puts Liquid Glass in the UI layer that
+        // floats above content - the tab bar, the toolbar, the bottom
+        // accessory, sheets - and keeps the content layer as the app's own
+        // material. This app had it the other way round: twenty-nine cards
+        // of glass, stacked over a gradient, so a list of six things was six
+        // translucent panes each refracting the same background and none of
+        // them reading as more important than the next.
+        //
+        // The chrome is untouched and still gets the real thing from
+        // LiquidGlass. This is the content path, so it is an opaque grouped
+        // surface with a hairline edge, which is what the rows converted in
+        // this pass already use.
+        //
+        // `featuredGlassCard` passes a tint and keeps a brand wash, because
+        // one headline surface per screen is the case where a distinct
+        // material genuinely carries hierarchy.
+        content
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground).opacity(0.92))
+                    .overlay {
+                        if let tint {
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .fill(tint.opacity(0.14))
+                        }
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.07), lineWidth: 0.5)
+                    }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 

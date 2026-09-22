@@ -275,7 +275,7 @@ struct VisitHistoryView: View {
                         // row carries only what makes it different from the
                         // one above it.
                         ForEach(VisitGrouping.byDay(viewModel.upcomingVisits, ascending: true)) { group in
-                            VStack(alignment: .leading, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 6) {
                                 VisitDayHeader(date: group.date)
                                 ForEach(group.visits) { visit in
                                     VisitRow(
@@ -300,7 +300,7 @@ struct VisitHistoryView: View {
                             systemImage: "clock.arrow.circlepath"
                         )
                         ForEach(Array(VisitGrouping.byDay(viewModel.pastVisits, ascending: false).enumerated()), id: \.element.id) { index, group in
-                            VStack(alignment: .leading, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 6) {
                                 VisitDayHeader(date: group.date)
                                 ForEach(group.visits) { visit in
                                     VisitRow(
@@ -593,8 +593,18 @@ private struct VisitRow: View {
                 }
             }
             .frame(minHeight: 56)
-            .padding(14)
-            .glassCard(cornerRadius: 18)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            // A list row, not a pane of glass.
+            //
+            // Every upcoming and past visit was its own glassCard, so a
+            // month of history rendered as thirty floating panes and there
+            // was no way to scan it. Apple's guidance for iOS 26 puts glass
+            // in the UI layer that floats above content - the tab bar, the
+            // toolbar, the accessory - not around each item of the content
+            // itself. These are content.
+            .background(Color(.secondarySystemGroupedBackground).opacity(0.92),
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(PressableStyle(scale: 0.985))
