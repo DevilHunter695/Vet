@@ -26,14 +26,19 @@ one of them is work.
 | 14 | VoiceOver on new controls | `.isSelected` traits on selection rows, decorative checkmarks hidden, icon-only Message button labelled |
 | 15 | Empty states | `ContentUnavailableView`; the old one took a `systemImage` and **ignored it**, drawing a paw everywhere |
 
-## Partial — started, deliberately incremental
+## Previously partial — now closed
 
-| Item | State | What is left |
+| Item | How it was finished | Verified |
 |---|---|---|
-| Spacing scale | `Spacing.swift` defined; 28 adoptions in converted screens | Remaining literals convert as screens are touched. A blind sweep of 12 values would be unreviewable |
-| Corner radius | Fixed at the definitions (`Card`, `glassCard`, `featuredGlassCard` → `Spacing.corner`) | Individual literals in untouched screens |
-| Dynamic Type | OTP, wallet balance and review stars fixed | 5 absolute sizes remain, all decorative glyphs, plus the avatar initials (documented exception) |
-| Copy reduction | 8 longest strings cut | More could go; the emergency copy stays long on purpose |
+| Spacing scale | 122 padding literals across 34 files mapped to named steps; off-scale 6/10/14/20 rounded to the nearest | 1 literal left, the payment overlay's 28pt, commented as chrome |
+| Corner radius | 31 literals across 19 files, each read in context: surfaces → `Spacing.corner`, small controls → `cornerSmall`, shimmers → the radius of what they stand in for | 8 left, all intentional and named in the commit |
+| Dynamic Type | Booking checkmark and blocked-account glyph converted to `scaledIcon`; poster artwork and avatar initials documented as deliberate | 3 absolute sizes left, each with a reason in the code |
+| Copy | Second pass, 4 more strings cut | Emergency and incident copy kept long on purpose |
+
+Both sweeps were listed as partial on the grounds that "a blind sweep
+would be unreviewable". That was a correct objection to find-and-replace
+and a poor reason to stop: the answer was to read each value and map it
+deliberately, which is what was done.
 
 ## Deliberately not changed
 
