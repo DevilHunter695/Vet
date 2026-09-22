@@ -95,6 +95,35 @@ final class FeatureWalkthroughUITests: XCTestCase {
         return element.exists && element.isHittable
     }
 
+    /// Taps `element` only once it has stopped moving.
+    ///
+    /// scrollToVisible returns the instant a row becomes hittable, which is
+    /// while the scroll view is still decelerating from the swipe that got
+    /// it there. XCUIElement.tap() then resolves the element's frame and
+    /// taps those coordinates - and by the time the tap lands, the row has
+    /// travelled and something else is underneath.
+    ///
+    /// On Profile the thing above the row list is the upcoming-visit card,
+    /// which is why the failure was always "tapped Wallet, ended up on
+    /// Visit details" and why neither the selector fix nor any timeout
+    /// touched it. It is not a stale query; it is a stale coordinate.
+    ///
+    /// A real finger does not hit this: tapping a decelerating scroll view
+    /// on iOS stops the scroll rather than activating what is under it.
+    /// A synthetic tap has no such courtesy, so the test has to wait for
+    /// what a person would have waited for anyway.
+    @MainActor
+    private func tapWhenSteady(_ element: XCUIElement) {
+        var previous = element.frame
+        for _ in 0..<20 {
+            usleep(80_000)
+            let current = element.frame
+            if current == previous { break }
+            previous = current
+        }
+        element.tap()
+    }
+
     @MainActor
     private func row(_ title: String, in app: XCUIApplication) -> XCUIElement {
         // matching, not containing.
@@ -150,7 +179,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
         XCTAssertTrue(control.isHittable,
                       "\(feature): \"\(rowTitle)\" is drawn but not hittable — the 'tap it three times' bug",
                       file: file, line: line)
-        control.tap()
+        tapWhenSteady(control)
         XCTAssertTrue(app.navigationBars[navTitle].waitForExistence(timeout: UITestTimeout.navigation),
                       "\(feature): tapped \"\(rowTitle)\" once and \"\(navTitle)\" did not open. \(whatIsOnScreen(app, matching: rowTitle))",
                       file: file, line: line)
@@ -235,7 +264,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
         goToProfile(app)
         let wallet = row("Wallet", in: app)
         XCTAssertTrue(scrollToVisible(wallet, in: app), "Wallet row not reachable")
-        wallet.tap()
+        tapWhenSteady(wallet)
         XCTAssertTrue(app.navigationBars["Wallet"].waitForExistence(timeout: UITestTimeout.navigation),
                       "Wallet didn't open. \(whatIsOnScreen(app, matching: "Wallet"))")
 
