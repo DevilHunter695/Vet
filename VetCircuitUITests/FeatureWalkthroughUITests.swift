@@ -193,7 +193,17 @@ final class FeatureWalkthroughUITests: XCTestCase {
         //
         // The verdict step prints the last marker in each log, so the answer
         // arrives in the tail rather than in an artifact download.
-        print("UITEST-STEP: \(feature) \(rowTitle)")
+        // The test's own name is in the marker, and it has to be.
+        //
+        // The first version printed only the row, and the verdict printed
+        // the last marker in the log - which is the last marker of the last
+        // test that ran, not of the test that failed. With
+        // continueAfterFailure = false the failing test stops where it
+        // broke and a later test then prints past it, so run 257 reported
+        // "Terms of Service" for a failure in a test that never opens Terms
+        // of Service. That is a diagnostic that reads like an answer and is
+        // not one, which is worse than no diagnostic at all.
+        print("UITEST-STEP: \(name) | \(feature) \(rowTitle)")
 
         let control = row(rowTitle, in: app)
         XCTAssertTrue(scrollToVisible(control, in: app),
