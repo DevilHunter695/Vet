@@ -118,7 +118,10 @@ final class FeatureWalkthroughUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars[navTitle].waitForExistence(timeout: 10),
                       "\(feature): tapped \"\(rowTitle)\" once and \"\(navTitle)\" did not open",
                       file: file, line: line)
-        snapshot(app, "\(feature) — \(navTitle)")
+        // No screenshot here. This helper runs fifteen times across the
+        // suite, and a full-resolution capture of a glass-heavy SwiftUI
+        // screen is not cheap on a CI simulator - the assertion above has
+        // already proved the screen opened, which is what the test is for.
         app.navigationBars[navTitle].buttons.element(boundBy: 0).tap()
         _ = app.navigationBars["Profile"].waitForExistence(timeout: 10)
     }

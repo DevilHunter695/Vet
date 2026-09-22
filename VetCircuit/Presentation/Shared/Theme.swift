@@ -429,6 +429,7 @@ struct AuroraBackground: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
         .onAppear {
             guard animated, !AppMotion.loopsDisabled(reduceMotion: reduceMotion) else { return }
             withAnimation(.easeInOut(duration: 14).repeatForever(autoreverses: true)) {
@@ -609,6 +610,7 @@ struct SelectableCardStyle: ViewModifier {
                 // that overhangs the corner must not steal taps from whatever
                 // sits beside it.
                 .allowsHitTesting(false)
+        .accessibilityHidden(true)
             }
             // No scale on selection: a selected card that grows shifts the
             // hit-test geometry of every card after it in the stack, which
@@ -645,6 +647,7 @@ struct ShimmerView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .allowsHitTesting(false)
+        .accessibilityHidden(true)
             .onAppear {
                 guard !AppMotion.loopsDisabled(reduceMotion: reduceMotion) else { return }
                 withAnimation(.linear(duration: 1.3).repeatForever(autoreverses: false)) {
