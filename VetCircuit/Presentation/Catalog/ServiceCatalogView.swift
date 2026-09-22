@@ -99,14 +99,14 @@ struct ServiceCatalogView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 // D4: packages/bundles, one tap from the à la carte catalog.
+                // A plain toolbar item. It was carrying its own font,
+                // foreground, minimum height, hit shape and press animation
+                // - five overrides to arrive somewhere near what a toolbar
+                // button already does, while losing the system's own tint
+                // and press behaviour on the way.
                 NavigationLink { PackagesView(vertical: vertical, pet: pet) } label: {
                     Label("Packages", systemImage: "shippingbox")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.primaryLight)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(PressableStyle(scale: 0.94))
             }
         }
         .task { await viewModel.load(vertical: vertical, species: pet?.species) }
