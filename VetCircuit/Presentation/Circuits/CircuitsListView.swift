@@ -688,12 +688,6 @@ struct CircuitRow: View {
                             Text("(\(vet.reviewCount))")
                                 .font(.brandCaption2)
                                 .foregroundStyle(Theme.textSecondary)
-                            if let years = vet.yearsOfExperience {
-                                Text("·").foregroundStyle(Theme.textTertiary)
-                                Text("\(years) yrs")
-                                    .font(.brandCaption2)
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
                         }
                     }
                 }
@@ -704,7 +698,7 @@ struct CircuitRow: View {
                     if let startingPriceMinorUnits {
                         Text("from").brandEyebrow()
                         Text(CurrencyFormatter.rupees(startingPriceMinorUnits))
-                            .font(.brandMono(.callout, weight: .bold))
+                            .font(.brandMono(.title3, weight: .bold))
                             .foregroundStyle(.primary)
                     }
                     Image(systemName: "chevron.right")
@@ -717,7 +711,7 @@ struct CircuitRow: View {
 
             HStack(spacing: 10) {
                 Label(slotText, systemImage: "clock.fill")
-                    .font(.brandCaption)
+                    .font(.brandCallout.weight(.semibold))
                     .foregroundStyle(nextSlot == nil ? Color.secondary : Theme.emeraldLight)
                     .lineLimit(1)
                     // "Tomorrow, 4:30 PM" is the answer the screen exists to
