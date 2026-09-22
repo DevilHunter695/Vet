@@ -70,7 +70,25 @@ struct LiquidGlassModifier<S: InsettableShape>: ViewModifier {
     var compact: Bool = false
 
     func body(content: Content) -> some View {
-        if level.isFloatingChrome {
+        // Under the UI test runner, both branches below become a plain fill.
+        //
+        // glassEffect and .regularMaterial are both backdrop blurs, and this
+        // modifier is on every card and every piece of floating chrome in
+        // the app - dozens per screen. A device does them on the GPU. The CI
+        // simulator does them in software, and the result is an app that
+        // periodically stops answering: "process main thread busy for 30.0s"
+        // in run 219, query timeouts in most runs since, and a navigation
+        // that missed a 40-second wait in run 221.
+        //
+        // Same bargain as AppMotion and the aurora: the walkthrough suite
+        // checks that screens are reachable, not what they look like, and it
+        // cannot check either while the app is wedged. Nothing here changes
+        // what ships.
+        if AppMotion.isUITesting {
+            content
+                .background(Color(.secondarySystemBackground), in: shape)
+                .background { if let tint { shape.fill(tint.opacity(0.14)) } }
+        } else if level.isFloatingChrome {
             content.glassEffect(level.glass(tint: tint, interactive: compact), in: shape)
         } else {
             // Content layer: a standard material, which is what Apple points
