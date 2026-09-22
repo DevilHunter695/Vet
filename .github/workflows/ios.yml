@@ -288,6 +288,13 @@ jobs:
             echo "  summary: ${summary:-none}"
             echo "  xctest : ${xctest:-none}"
             grep -c "✘" "$log" 2>/dev/null | sed 's/^/  failures (✘ lines): /' || true
+            # The last screen the walkthrough tried to open before it stopped.
+            # The remaining failure is a query-evaluator timeout, which is
+            # raised without an assertion message, so this is the only way to
+            # learn which step it died on without downloading the xcresult.
+            local laststep
+            laststep=$(grep -E "^UITEST-STEP: " "$log" | tail -1 || true)
+            [ -n "$laststep" ] && echo "  last step : ${laststep#UITEST-STEP: }"
             # The names, not just the count. Without these the only way to
             # learn *which* test failed is to download the full log, and the
             # artifact/log download host is not reachable from every

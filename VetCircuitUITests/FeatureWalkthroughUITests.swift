@@ -183,6 +183,18 @@ final class FeatureWalkthroughUITests: XCTestCase {
         _ rowTitle: String, expecting navTitle: String, feature: String,
         in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
     ) {
+        // A progress marker, because the failure that is left cannot carry a
+        // message. "Failed to get matching snapshots" is raised by the query
+        // evaluator itself, not by an assertion, so it fails the test at
+        // whatever line was executing with no indication of which row was
+        // being opened. Two structurally identical tests - six
+        // openFromProfile calls each - behave differently, and without this
+        // there is no way to tell which of the six is the one that hurts.
+        //
+        // The verdict step prints the last marker in each log, so the answer
+        // arrives in the tail rather than in an artifact download.
+        print("UITEST-STEP: \(feature) \(rowTitle)")
+
         let control = row(rowTitle, in: app)
         XCTAssertTrue(scrollToVisible(control, in: app),
                       "\(feature): the \"\(rowTitle)\" row never became reachable on Profile",
