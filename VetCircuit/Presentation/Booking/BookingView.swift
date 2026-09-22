@@ -390,7 +390,7 @@ final class BookingViewModel {
     func retryCheckout() async {
         guard let visit = pendingVisit, let quote = lastQuote else { return }
         guard !quote.isExpired else {
-            errorMessage = "This price quote has expired — go back and start the booking again for a fresh price."
+            errorMessage = "This quote expired. Go back and start again for a fresh price."
             canRetryPayment = false
             return
         }
@@ -803,7 +803,7 @@ struct BookingView: View {
 
             if available.isEmpty {
                 CalloutNote(
-                    text: "This circuit has no open slots left. Try another vet in your area, or check back — schedules are published a week ahead.",
+                    text: "No open slots left here. Try another vet, or check back — schedules go up a week ahead.",
                     systemImage: "calendar.badge.exclamationmark", tint: Theme.warning
                 )
             } else {
@@ -1087,7 +1087,7 @@ struct BookingView: View {
                 // discovered afterwards.
                 if let selected = viewModel.selectedAddress, !selected.isServed {
                     CalloutNote(
-                        text: "We don't cover \(selected.label) yet. You can still book — the vet will call to work out whether they can reach you.",
+                        text: "We don't cover \(selected.label) yet. You can still book — the vet will call to confirm they can reach you.",
                         systemImage: "exclamationmark.triangle.fill", tint: Theme.warning
                     )
                 }
@@ -1336,7 +1336,7 @@ struct BookingConfirmedView: View {
 
                 VStack(spacing: 8) {
                     Text("Booking requested").font(.brandLargeTitle).brandDisplayText()
-                    Text("We'll notify you the moment a vet confirms your slot — usually within a few minutes.")
+                    Text("We'll tell you as soon as a vet confirms — usually a few minutes.")
                         .font(.brandCallout)
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)

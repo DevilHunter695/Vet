@@ -699,7 +699,7 @@ struct CartView: View {
 
                 if let selected = viewModel.selectedAddress, !selected.isServed {
                     CalloutNote(
-                        text: "We don't cover \(selected.label) yet. You can still book — the vet will call to work out whether they can reach you.",
+                        text: "We don't cover \(selected.label) yet. You can still book — the vet will call to confirm they can reach you.",
                         systemImage: "exclamationmark.triangle.fill", tint: Theme.warning
                     )
                 }
