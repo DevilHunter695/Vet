@@ -44,17 +44,40 @@ final class ProfileViewModel {
             // includeArchived: this list is the pet-management screen, not a
             // booking picker — an archived pet still needs to be visible so
             // its owner can open its record or bring it back (B8).
-            pets = try await managePetsUseCase.list(ownerId: userId, includeArchived: true)
-            subscription = try await subscriptionRepository.currentSubscription(userId: userId)
-            loyaltyAccount = try await getLoyaltyAccountUseCase.execute(userId: userId)
+            // Everything is gathered into locals first and published in one
+            // go, rather than assigned as each await returns.
+            //
+            // Assigned one at a time, this ran the body again after every
+            // one of them, and the screen reflowed six or seven times while
+            // somebody was already looking at it. The upcoming-visit card
+            // was the worst of them: it is set last and it sits above the
+            // row list, so when it arrived every row below jumped down.
+            //
+            // That is a real mis-tap. You reach for a row, the card lands,
+            // the row moves out from under your finger and you open whatever
+            // took its place - which on this screen is the visit card. The
+            // UI suite hit exactly that and reported the app sitting on
+            // "Visit details" after tapping "Wallet".
+            //
+            // One assignment, one layout.
+            let loadedPets = try await managePetsUseCase.list(ownerId: userId, includeArchived: true)
+            let loadedSubscription = try await subscriptionRepository.currentSubscription(userId: userId)
+            let loadedLoyalty = try await getLoyaltyAccountUseCase.execute(userId: userId)
             // Best-effort: a wallet or history hiccup should degrade the
             // summary tiles, never fail the whole profile load.
-            walletBalanceMinorUnits = (try? await getWalletBalanceUseCase.balance(userId: userId)) ?? 0
+            let loadedBalance = (try? await getWalletBalanceUseCase.balance(userId: userId)) ?? 0
             let history = (try? await getVisitHistoryUseCase.execute(userId: userId)) ?? []
-            completedVisitCount = history.filter { $0.status == .completed }.count
-            upcomingVisit = history
+            let loadedCompleted = history.filter { $0.status == .completed }.count
+            let loadedUpcoming = history
                 .filter { $0.scheduledAt > .now && $0.status.isUpcoming }
                 .min { $0.scheduledAt < $1.scheduledAt }
+
+            pets = loadedPets
+            subscription = loadedSubscription
+            loyaltyAccount = loadedLoyalty
+            walletBalanceMinorUnits = loadedBalance
+            completedVisitCount = loadedCompleted
+            upcomingVisit = loadedUpcoming
             if let subscription {
                 // H5: the profile tab is a routine, frequently-visited screen
                 // (same trigger-point pattern F4/I8 used on VisitHistoryView),
