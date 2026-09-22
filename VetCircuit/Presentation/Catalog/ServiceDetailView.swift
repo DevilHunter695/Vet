@@ -323,7 +323,7 @@ private struct FAQRow: View {
             Text(faq.question).font(.brandBody)
         }
         .padding()
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         .animation(Theme.springQuick, value: isExpanded)
     }
 }

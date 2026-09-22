@@ -65,6 +65,6 @@ struct StatStrip: View {
                 .padding(.vertical, 14)
             }
         }
-        .glassCard(cornerRadius: 22)
+        .glassCard(cornerRadius: Spacing.corner)
     }
 }

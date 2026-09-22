@@ -225,7 +225,7 @@ struct ManageSubscriptionView: View {
                 }
             } else if viewModel.isLoading {
                 ForEach(0..<3, id: \.self) { _ in
-                    ShimmerView(cornerRadius: 12).frame(height: 28)
+                    ShimmerView(cornerRadius: Spacing.corner).frame(height: 28)
                 }
             } else {
                 EmptyStateView(systemImage: "creditcard", title: "No active subscription",

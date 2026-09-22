@@ -383,7 +383,7 @@ struct ProfileView: View {
                     }
                     .padding(16)
                     .featuredGlassCard(tint: Theme.emerald)
-                    .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                 }
                 .buttonStyle(PressableStyle())
             }
@@ -774,7 +774,7 @@ private struct NextVisitCard: View {
             }
             .padding(16)
             .featuredGlassCard(tint: Theme.emerald)
-            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         }
         .buttonStyle(PressableStyle())
         .accessibilityLabel("Next visit \(visit.scheduledAt.formatted(date: .abbreviated, time: .shortened)), \(visit.status.displayText)")
@@ -805,7 +805,7 @@ struct ProfileGroup<Content: View>: View {
             // card's shape and simply disappears. The alternative — telling
             // each row whether it is last — means every group in the app has
             // to count its own children.
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         }
     }
 }
@@ -858,7 +858,7 @@ struct ProfileLinkRow<Destination: View>: View {
                     .scaledIcon(15, weight: .medium)
                     .foregroundStyle(tint)
                     .frame(width: 30, height: 30)
-                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: Spacing.cornerSmall, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.brandCallout).foregroundStyle(.primary)
@@ -968,7 +968,7 @@ struct PetCard: View {
         }
         .frame(width: 152, alignment: .leading)
         .padding(14)
-        .glassCard(cornerRadius: 18)
+        .glassCard(cornerRadius: Spacing.corner)
         .opacity(pet.isArchived ? 0.72 : 1)
     }
 }

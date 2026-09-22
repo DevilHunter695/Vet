@@ -116,7 +116,7 @@ struct VetDetailView: View {
                     // The screen used to render nothing at all while reviews
                     // loaded, so a slow connection looked like a vet with no
                     // reviews until they arrived.
-                    ShimmerView(cornerRadius: 18)
+                    ShimmerView(cornerRadius: Spacing.corner)
                         .frame(height: 96)
                         .accessibilityLabel("Loading reviews")
                 } else if let errorMessage = viewModel.errorMessage {
@@ -215,7 +215,7 @@ struct VetDetailView: View {
                         .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 }
                 .padding(12)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
             }
         }
         .appearAnimation(delay: 0.1)
@@ -267,7 +267,7 @@ struct VetDetailView: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
             }
         }
         .appearAnimation(delay: 0.2)

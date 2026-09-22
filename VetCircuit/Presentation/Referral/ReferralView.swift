@@ -56,13 +56,13 @@ struct ReferralView: View {
                     // An empty `code` used to render an empty pill and share
                     // a blank invite. Shimmer until it lands.
                     if viewModel.code.isEmpty {
-                        ShimmerView(cornerRadius: 12)
+                        ShimmerView(cornerRadius: Spacing.corner)
                             .frame(width: 168, height: 44)
                     } else {
                         Text(viewModel.code)
                             .font(.system(.title2, design: .monospaced, weight: .bold))
                             .padding(.horizontal, 16).padding(.vertical, 10)
-                            .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+                            .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                             .textSelection(.enabled)
                     }
 
@@ -104,7 +104,7 @@ struct ReferralView: View {
             Section("Your invites") {
                 if viewModel.isLoading && viewModel.referrals.isEmpty {
                     ForEach(0..<2, id: \.self) { _ in
-                        ShimmerView(cornerRadius: 10).frame(height: 40)
+                        ShimmerView(cornerRadius: Spacing.cornerSmall).frame(height: 40)
                     }
                 } else if viewModel.referrals.isEmpty {
                     Text("No invites sent yet. Share your code above and you'll both get a discounted visit.")

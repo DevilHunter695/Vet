@@ -413,7 +413,7 @@ private struct EmergencyBanner: View {
             Image(systemName: "chevron.right").foregroundStyle(.white.opacity(0.85))
         }
         .padding(14)
-        .background(Theme.danger, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Theme.danger, in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
     }
 }
 
@@ -743,7 +743,7 @@ struct CircuitRow: View {
         }
         .padding(16)
         .glassCard()
-        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
     }

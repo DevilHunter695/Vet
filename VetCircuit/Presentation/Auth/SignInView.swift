@@ -87,7 +87,7 @@ struct SignInView: View {
                                 .focused($focusedField, equals: .phone)
                                 .foregroundStyle(.white)
                                 .padding(14)
-                                .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
+                                .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                                 .accessibilityLabel("Phone number")
 
                             if viewModel.isOTPSent {
@@ -96,7 +96,7 @@ struct SignInView: View {
                                     .focused($focusedField, equals: .otp)
                                     .foregroundStyle(.white)
                                     .padding(14)
-                                    .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
+                                    .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                                     .accessibilityLabel("One-time passcode")
                                     .transition(.move(edge: .top).combined(with: .opacity))
 

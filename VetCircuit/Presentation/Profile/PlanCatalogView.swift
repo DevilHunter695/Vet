@@ -147,7 +147,7 @@ private struct ActionRow2: View {
                 .scaledIcon(16, weight: .medium)
                 .foregroundStyle(Theme.primary)
                 .frame(width: 34, height: 34)
-                .background(Theme.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Theme.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: Spacing.cornerSmall, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.brandHeadline).foregroundStyle(.primary)
                 if let subtitle {
@@ -162,8 +162,8 @@ private struct ActionRow2: View {
             Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Theme.textTertiary)
         }
         .padding(16)
-        .glassCard(cornerRadius: 16)
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassCard(cornerRadius: Spacing.corner)
+        .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
     }
 }
 

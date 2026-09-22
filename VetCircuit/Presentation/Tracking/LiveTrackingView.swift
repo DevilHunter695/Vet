@@ -211,8 +211,8 @@ struct LiveTrackingView: View {
                             .frame(minHeight: 26)
                             .padding(.vertical, 14)
                             .foregroundStyle(.white)
-                            .background(Theme.danger, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .background(Theme.danger, in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
+                            .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                     }
                     .buttonStyle(PressableStyle(scale: 0.975))
                     .disabled(viewModel.isSendingSOS)

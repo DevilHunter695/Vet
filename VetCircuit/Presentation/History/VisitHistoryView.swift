@@ -233,7 +233,7 @@ struct VisitHistoryView: View {
     private var loadingPlaceholder: some View {
         ScrollView {
             VStack(spacing: 14) {
-                ShimmerView(cornerRadius: 20).frame(height: 150)
+                ShimmerView(cornerRadius: Spacing.corner).frame(height: 150)
                 ForEach(0..<3, id: \.self) { _ in
                     ShimmerView(cornerRadius: Spacing.corner).frame(height: 84)
                 }

@@ -44,7 +44,7 @@ struct EmergencyView: View {
                     }
                     .font(.brandBody)
                     .padding()
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                 }
                 .buttonStyle(PressableStyle())
 

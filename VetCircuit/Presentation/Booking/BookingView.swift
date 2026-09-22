@@ -822,7 +822,7 @@ struct BookingView: View {
                         }
                     }
                     .padding(14)
-                    .glassCard(cornerRadius: 18)
+                    .glassCard(cornerRadius: Spacing.corner)
                 }
             }
         }
@@ -858,7 +858,7 @@ struct BookingView: View {
     @ViewBuilder
     private var priceBreakdown: some View {
         if viewModel.isPricing && viewModel.previewQuote == nil {
-            ShimmerView(cornerRadius: 18).frame(height: 120)
+            ShimmerView(cornerRadius: Spacing.corner).frame(height: 120)
         } else if let quote = viewModel.previewQuote {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "What you'll pay", systemImage: "indianrupeesign.circle.fill")
@@ -1216,16 +1216,16 @@ private struct SlotChip: View {
             .frame(minHeight: 44)
             .foregroundStyle(isSelected ? .white : .primary)
             .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: Spacing.cornerSmall, style: .continuous)
                     .fill(isSelected ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color.primary.opacity(0.07)))
                     .allowsHitTesting(false)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: Spacing.cornerSmall, style: .continuous)
                     .strokeBorder(isSelected ? Color.clear : Color.primary.opacity(0.10), lineWidth: 1)
                     .allowsHitTesting(false)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Spacing.cornerSmall, style: .continuous))
         }
         .buttonStyle(PressableStyle(scale: 0.93))
         .animation(Theme.springQuick, value: isSelected)
@@ -1275,8 +1275,8 @@ private struct SelectableRow: View {
             }
             .padding(14)
             .frame(minHeight: 44)
-            .glassCard(cornerRadius: 14)
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .glassCard(cornerRadius: Spacing.corner)
+            .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         }
         .buttonStyle(PressableStyle(scale: 0.985))
         .selectable(isSelected: isSelected)

@@ -92,7 +92,7 @@ struct ReviewView: View {
                     TextField("Leave a comment (optional)", text: $viewModel.comment, axis: .vertical)
                         .font(.brandBody)
                         .padding(12)
-                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                         .lineLimit(3...6)
 
                     if let errorMessage = viewModel.errorMessage {

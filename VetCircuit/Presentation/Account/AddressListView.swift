@@ -56,7 +56,7 @@ struct AddressListView: View {
             // as nothing at all.
             if viewModel.isLoading && viewModel.addresses.isEmpty {
                 ForEach(0..<3, id: \.self) { _ in
-                    ShimmerView(cornerRadius: 12)
+                    ShimmerView(cornerRadius: Spacing.corner)
                         .frame(height: 56)
                         .listRowBackground(Color.clear)
                 }

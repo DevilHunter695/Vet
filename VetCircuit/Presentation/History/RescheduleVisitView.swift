@@ -75,7 +75,7 @@ struct RescheduleVisitView: View {
                                         Spacer()
                                     }
                                     .padding()
-                                    .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .background(.background, in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                                 }
                                 .buttonStyle(PressableStyle())
                                 .selectable(isSelected: viewModel.selectedSlot?.id == slot.id)

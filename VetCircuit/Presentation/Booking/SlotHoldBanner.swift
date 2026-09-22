@@ -42,7 +42,7 @@ struct SlotHoldBanner: View {
                 .accessibilityHidden(true)
         }
         .padding(12)
-        .background(Theme.inProgress.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Theme.inProgress.opacity(0.10), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         .transition(.opacity)
         .accessibilityElement(children: .combine)
     }
@@ -97,7 +97,7 @@ struct SlotHoldExpiredBanner: View {
             .disabled(isExtending)
         }
         .padding(12)
-        .background(Theme.warning.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Theme.warning.opacity(0.10), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         .transition(.opacity)
     }
 }

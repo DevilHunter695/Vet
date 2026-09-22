@@ -84,7 +84,7 @@ struct CorporateSeatAssignmentView: View {
             Section("Assigned") {
                 if viewModel.isLoading && viewModel.assignments.isEmpty {
                     ForEach(0..<3, id: \.self) { _ in
-                        ShimmerView(cornerRadius: 10).frame(height: 28)
+                        ShimmerView(cornerRadius: Spacing.cornerSmall).frame(height: 28)
                     }
                 } else {
                     ForEach(viewModel.assignments) { assignment in

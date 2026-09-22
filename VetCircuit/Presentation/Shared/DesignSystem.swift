@@ -52,13 +52,13 @@ struct PrimaryButton: View {
             .padding(.horizontal, 20)
             .foregroundStyle(.white)
             .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous)
                     .fill(Theme.gradient)
                     .overlay {
                         // A one-pixel light catch along the top edge. Real
                         // raised surfaces catch light on the edge facing it;
                         // without this the button reads as a flat sticker.
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous)
                             .strokeBorder(
                                 LinearGradient(
                                     colors: [.white.opacity(0.45), .white.opacity(0.05)],
@@ -70,7 +70,7 @@ struct PrimaryButton: View {
                     .allowsHitTesting(false)
             }
             .shadow(color: Theme.primary.opacity(isEnabled ? 0.35 : 0), radius: 14, y: 7)
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         }
         .buttonStyle(PressableStyle(scale: 0.975))
         .disabled(isLoading || !isEnabled)
@@ -377,7 +377,7 @@ struct CalloutNote: View {
             Spacer(minLength: 0)
         }
         .padding(12)
-        .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: Spacing.cornerSmall, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
@@ -454,22 +454,22 @@ struct ChatBubble: View {
                         case .failure:
                             Image(systemName: "photo.badge.exclamationmark").font(.title).foregroundStyle(Theme.textSecondary)
                         default:
-                            ShimmerView(cornerRadius: 18)
+                            ShimmerView(cornerRadius: Spacing.corner)
                         }
                     }
                     .frame(width: 180, height: 180)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                 } else {
                     Text(message.body)
                         .font(.brandBody)
                         .padding(.horizontal, 14).padding(.vertical, 10)
                         .background {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous)
                                 .fill(isMine ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(.ultraThinMaterial))
                                 .allowsHitTesting(false)
                         }
                         .foregroundStyle(isMine ? .white : .primary)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                         .shadow(color: isMine ? Theme.primary.opacity(0.25) : .clear, radius: 8, y: 4)
                 }
             }
@@ -551,9 +551,9 @@ struct ErrorBanner: View {
             .font(.system(.footnote, design: .rounded))
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.danger.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(Theme.danger.opacity(0.14), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous)
                     .strokeBorder(Theme.danger.opacity(0.3), lineWidth: 1)
                     .allowsHitTesting(false)
             }

@@ -368,7 +368,7 @@ struct PetDetailView: View {
                 }
 
                 if viewModel.isLoading && viewModel.weightHistory.isEmpty {
-                    ShimmerView(cornerRadius: 12).frame(height: 140)
+                    ShimmerView(cornerRadius: Spacing.corner).frame(height: 140)
                 } else if viewModel.weightHistory.isEmpty {
                     Text("No weight readings yet.").font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 } else {
@@ -451,7 +451,7 @@ struct PetDetailView: View {
                 if viewModel.isLoading && viewModel.vaccinations.isEmpty {
                     // Don't claim there are no records until we know.
                     ForEach(0..<3, id: \.self) { _ in
-                        ShimmerView(cornerRadius: 10).frame(height: 34)
+                        ShimmerView(cornerRadius: Spacing.cornerSmall).frame(height: 34)
                     }
                 } else if viewModel.vaccinations.isEmpty {
                     Text("No vaccination records yet.").font(.brandCaption).foregroundStyle(Theme.textSecondary)

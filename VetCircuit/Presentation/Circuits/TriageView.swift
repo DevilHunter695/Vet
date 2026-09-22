@@ -59,7 +59,7 @@ struct TriageView: View {
                 TextField("e.g. Not eating since yesterday, seems tired", text: $viewModel.symptoms, axis: .vertical)
                     .font(.brandBody)
                     .padding(12)
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                     .lineLimit(3...6)
 
                 if let errorMessage = viewModel.errorMessage {
@@ -170,11 +170,11 @@ private struct TriageResultCard: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 6)
                         .background {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous)
                                 .fill(accent)
                                 .allowsHitTesting(false)
                         }
-                        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                     }
                     .buttonStyle(PressableStyle(scale: 0.975))
                     .accessibilityLabel("Browse circuits to book a visit")

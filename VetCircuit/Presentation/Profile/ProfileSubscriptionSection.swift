@@ -70,7 +70,7 @@ struct ProfileSubscriptionSection: View {
                     }
                     .padding(16)
                     .featuredGlassCard(tint: Theme.emerald)
-                    .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                 }
                 .buttonStyle(PressableStyle())
             }

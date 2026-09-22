@@ -119,7 +119,7 @@ struct PaymentMethodsView: View {
                 }
                 if viewModel.isLoading && viewModel.methods.isEmpty {
                     ForEach(0..<2, id: \.self) { _ in
-                        ShimmerView(cornerRadius: 12).frame(height: 44)
+                        ShimmerView(cornerRadius: Spacing.corner).frame(height: 44)
                     }
                 } else if viewModel.methods.isEmpty {
                     EmptyStateView(
@@ -189,10 +189,10 @@ struct SavedPaymentMethodPickerRow: View {
                             Spacer()
                         }
                         .padding(10)
-                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                     }
                     .buttonStyle(PressableStyle())
-                    .selectable(isSelected: selectedMethodId == method.id, cornerRadius: 12)
+                    .selectable(isSelected: selectedMethodId == method.id, cornerRadius: Spacing.corner)
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(selectedMethodId == method.id ? .isSelected : [])
                 }
