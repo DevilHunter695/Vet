@@ -806,11 +806,24 @@ struct ProfileLinkRow<Destination: View>: View {
     var subtitle: String? = nil
     let systemImage: String
     var tint: Color = Theme.primary
-    @ViewBuilder let destination: Destination
+    // Stored as a closure, not as a built view.
+    //
+    // As `let destination: Destination` this was a stored property, so every
+    // destination on the screen was constructed each time Profile's body ran
+    // - fifteen whole screens, including their view models, to draw a list of
+    // rows. And Profile's body runs again the moment the wallet balance
+    // arrives, because that balance is this row's subtitle. Tapping Wallet
+    // during that rebuild is how "tapped Wallet once and Wallet did not open"
+    // happens, and why it is always Wallet: it is the row whose own data
+    // triggers the rebuild.
+    //
+    // Behind a closure the destination is built when somebody navigates to
+    // it. Callers are unchanged - the trailing closure is still the builder.
+    @ViewBuilder var destination: () -> Destination
 
     var body: some View {
         NavigationLink {
-            destination
+            destination()
         } label: {
             HStack(spacing: 14) {
                 Image(systemName: systemImage)
