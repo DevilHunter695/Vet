@@ -304,8 +304,15 @@ struct VisitDetailView: View {
                             Label("Read this code to your vet", systemImage: "lock.shield")
                                 .font(.brandHeadline).foregroundStyle(Theme.primary)
                             Text(visitOTP.code)
-                                .font(.system(size: 40, weight: .bold, design: .rounded))
+                                // A text style, not a fixed 40pt. This code
+                                // is read aloud to the vet at the door, so
+                                // it is the single string on this screen
+                                // somebody most needs to be able to enlarge
+                                // - and pinned at 40pt it was the one thing
+                                // Dynamic Type could not touch.
+                                .font(.system(.largeTitle, design: .rounded, weight: .bold))
                                 .kerning(8)
+                                .minimumScaleFactor(0.6)
                             Text("This confirms the visit actually started — a quick anti-fraud check.")
                                 .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                                 .multilineTextAlignment(.center)
@@ -738,7 +745,9 @@ private struct ActionRow: View {
             // Four discs stacked down the screen is four more shapes than
             // the list needs; the colour alone already separates them.
             Image(systemName: systemImage)
-                .font(.system(size: 17, weight: .semibold))
+                // scaledIcon, not a pinned 17pt - this file already has the
+                // helper for exactly this and I used a literal an hour ago.
+                .scaledIcon(17, weight: .semibold)
                 .foregroundStyle(tint)
                 .frame(width: 28, alignment: .center)
 

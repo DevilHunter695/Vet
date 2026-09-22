@@ -700,6 +700,11 @@ private struct ProfileHeroCard: View {
                 .clipShape(Circle())
             } else {
                 Text(initials)
+                    // Deliberately absolute. These initials sit inside a
+                    // fixed-size avatar circle, so scaling the text with
+                    // Dynamic Type would push it out of its own container.
+                    // The circle is decoration; the name it stands for is
+                    // spelled out in text beside it, which does scale.
                     .font(.system(size: 34, design: .rounded).weight(.bold))
                     .foregroundStyle(.white)
             }
