@@ -172,21 +172,16 @@ final class FeatureWalkthroughUITests: XCTestCase {
                  : bar.buttons.element(boundBy: 0)
         back.tap()
 
-        // Wait for the pushed screen's bar to go away, not just for
-        // Profile's to come back.
+        // Waiting for Profile's bar is enough; there is deliberately no
+        // wait for the pushed bar to disappear.
         //
-        // Profile's navigation bar exists again the moment the pop commits,
-        // while the transition is still running. Returning then means the
-        // next row gets tapped mid-animation and NavigationStack drops the
-        // push - which is exactly "tapped Wallet once and Wallet did not
-        // open", and why it was always the row opened straight after
-        // another one. The old bar disappearing is the signal that the pop
-        // actually finished.
-        //
-        // This does not soften the assertion above: one tap must still open
-        // the screen. It only makes sure we are back on a settled Profile
-        // before claiming the next tap was the first one.
-        _ = app.navigationBars[navTitle].waitForNonExistence(timeout: UITestTimeout.navigation)
+        // I added one, on the theory that a push arriving during a pop gets
+        // dropped. That theory was wrong - testSupportAndLegalScreensAre
+        // AllReachable opens four screens back to back and passes - and the
+        // real cause turned out to be this helper's own selector. The wait
+        // then became the problem itself: waitForNonExistence polls a
+        // full-tree query for up to forty seconds, and on a slow runner
+        // that is what exhausted the query evaluator in run 225.
         _ = app.navigationBars["Profile"].waitForExistence(timeout: UITestTimeout.navigation)
     }
 
