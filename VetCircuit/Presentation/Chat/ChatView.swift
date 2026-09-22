@@ -135,6 +135,7 @@ struct ChatView: View {
                 }
                 .auroraScreenBackground()
         .floatingTabBarInset()
+                .scrollDismissesKeyboard(.interactively)
                 .onChange(of: viewModel.messages.count) {
                     if let last = viewModel.messages.last {
                         withAnimation(Theme.springQuick) { proxy.scrollTo(last.id, anchor: .bottom) }
@@ -187,6 +188,9 @@ struct ChatView: View {
                 .disabled(!viewModel.isChatOpen)
 
                 TextField("Message", text: $viewModel.draft, axis: .vertical)
+                    // Grows with a long message, but stops at five lines so
+                    // the composer can never eat the whole thread.
+                    .lineLimit(1...5)
                     .font(.brandBody)
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .background(Color(.secondarySystemBackground), in: Capsule())
