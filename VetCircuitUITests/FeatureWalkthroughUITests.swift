@@ -59,7 +59,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
     @MainActor
     private func goToTab(_ title: String, in app: XCUIApplication) {
         let button = tabButton(title, in: app)
-        XCTAssertTrue(button.waitForExistence(timeout: 10), "The \(title) tab was not reachable")
+        XCTAssertTrue(button.waitForExistence(timeout: UITestTimeout.navigation), "The \(title) tab was not reachable")
         XCTAssertTrue(button.isHittable, "The \(title) tab is drawn but not hittable")
         button.tap()
     }
@@ -115,7 +115,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
                       "\(feature): \"\(rowTitle)\" is drawn but not hittable — the 'tap it three times' bug",
                       file: file, line: line)
         control.tap()
-        XCTAssertTrue(app.navigationBars[navTitle].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.navigationBars[navTitle].waitForExistence(timeout: UITestTimeout.navigation),
                       "\(feature): tapped \"\(rowTitle)\" once and \"\(navTitle)\" did not open",
                       file: file, line: line)
         // No screenshot here. This helper runs fifteen times across the
@@ -150,14 +150,14 @@ final class FeatureWalkthroughUITests: XCTestCase {
         // This does not soften the assertion above: one tap must still open
         // the screen. It only makes sure we are back on a settled Profile
         // before claiming the next tap was the first one.
-        _ = app.navigationBars[navTitle].waitForNonExistence(timeout: 10)
-        _ = app.navigationBars["Profile"].waitForExistence(timeout: 10)
+        _ = app.navigationBars[navTitle].waitForNonExistence(timeout: UITestTimeout.navigation)
+        _ = app.navigationBars["Profile"].waitForExistence(timeout: UITestTimeout.navigation)
     }
 
     @MainActor
     private func goToProfile(_ app: XCUIApplication) {
         goToTab("Profile", in: app)
-        XCTAssertTrue(app.navigationBars["Profile"].waitForExistence(timeout: 10), "Profile never opened")
+        XCTAssertTrue(app.navigationBars["Profile"].waitForExistence(timeout: UITestTimeout.navigation), "Profile never opened")
     }
 
     // MARK: - Account & money (A5, A8, G6, N1, O1, J7, O5)
@@ -205,7 +205,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
         let wallet = row("Wallet", in: app)
         XCTAssertTrue(scrollToVisible(wallet, in: app), "Wallet row not reachable")
         wallet.tap()
-        XCTAssertTrue(app.navigationBars["Wallet"].waitForExistence(timeout: 10), "Wallet didn't open")
+        XCTAssertTrue(app.navigationBars["Wallet"].waitForExistence(timeout: UITestTimeout.navigation), "Wallet didn't open")
 
         // A wallet screen whose only content is a balance tells the customer
         // nothing about where their money went.
@@ -228,7 +228,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
             return XCTFail("B1: no pet card on Profile — the demo account has three pets")
         }
         pet.tap()
-        XCTAssertTrue(app.navigationBars["Bruno"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.navigationBars["Bruno"].waitForExistence(timeout: UITestTimeout.navigation),
                       "B2: tapping a pet did not open its detail screen")
         snapshot(app, "B2 — pet detail")
 
@@ -255,7 +255,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
             throw XCTSkip("No route into the service catalog from the Book tab")
         }
         services.tap()
-        XCTAssertTrue(app.navigationBars["Services"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.navigationBars["Services"].waitForExistence(timeout: UITestTimeout.navigation),
                       "D1: the service catalog did not open")
         snapshot(app, "D1 — service catalog")
 
@@ -285,13 +285,13 @@ final class FeatureWalkthroughUITests: XCTestCase {
         let services = row("Services", in: app)
         guard scrollToVisible(services, in: app) else { throw XCTSkip("No route into the catalog") }
         services.tap()
-        _ = app.navigationBars["Services"].waitForExistence(timeout: 10)
+        _ = app.navigationBars["Services"].waitForExistence(timeout: UITestTimeout.navigation)
 
         let packages = app.buttons["Packages"].firstMatch
-        guard packages.waitForExistence(timeout: 10) else { throw XCTSkip("No Packages toolbar item") }
+        guard packages.waitForExistence(timeout: UITestTimeout.navigation) else { throw XCTSkip("No Packages toolbar item") }
         XCTAssertTrue(packages.isHittable, "D4: the Packages toolbar item is drawn but not hittable")
         packages.tap()
-        XCTAssertTrue(app.navigationBars["Packages"].waitForExistence(timeout: 10), "D4: Packages did not open")
+        XCTAssertTrue(app.navigationBars["Packages"].waitForExistence(timeout: UITestTimeout.navigation), "D4: Packages did not open")
 
         // D4: a package card that only names the bundle is not something
         // anyone spends money on — it has to list what is inside.
@@ -311,13 +311,13 @@ final class FeatureWalkthroughUITests: XCTestCase {
         let services = row("Services", in: app)
         guard scrollToVisible(services, in: app) else { throw XCTSkip("No route into the catalog") }
         services.tap()
-        _ = app.navigationBars["Services"].waitForExistence(timeout: 10)
+        _ = app.navigationBars["Services"].waitForExistence(timeout: UITestTimeout.navigation)
 
         let cart = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Cart'")).element(boundBy: 0)
-        guard cart.waitForExistence(timeout: 10) else { return XCTFail("E1: no cart affordance on the catalog screen") }
+        guard cart.waitForExistence(timeout: UITestTimeout.navigation) else { return XCTFail("E1: no cart affordance on the catalog screen") }
         XCTAssertTrue(cart.isHittable, "E1: the cart button is drawn but not hittable — it used to read as disabled")
         cart.tap()
-        XCTAssertTrue(app.navigationBars["Cart"].waitForExistence(timeout: 10), "E1: the cart did not open")
+        XCTAssertTrue(app.navigationBars["Cart"].waitForExistence(timeout: UITestTimeout.navigation), "E1: the cart did not open")
 
         // The cart used to render literally nothing when it was empty and the
         // load had finished. A screen with no text at all is the bug.
@@ -332,7 +332,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
     func testVisitsTabCarriesRealVisitsAndOpensOneOnTheFirstTap() throws {
         let app = launchApp()
         goToTab("Visits", in: app)
-        XCTAssertTrue(app.navigationBars["Your visits"].waitForExistence(timeout: 10), "Visits tab did not open")
+        XCTAssertTrue(app.navigationBars["Your visits"].waitForExistence(timeout: UITestTimeout.navigation), "Visits tab did not open")
 
         // The seeded account has fourteen visits across the state machine, so
         // an empty state here means the seed stopped reaching the repository.
@@ -346,7 +346,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
         guard scrollToVisible(visit, in: app) else { throw XCTSkip("No visit row to open") }
         XCTAssertTrue(visit.isHittable, "I1: a visit row is drawn but not hittable")
         visit.tap()
-        XCTAssertTrue(app.navigationBars["Visit details"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.navigationBars["Visit details"].waitForExistence(timeout: UITestTimeout.navigation),
                       "I1: tapping a visit once did not open its detail screen")
         snapshot(app, "I1 — visit detail")
     }
@@ -355,12 +355,12 @@ final class FeatureWalkthroughUITests: XCTestCase {
     func testAVisitDetailOffersItsTimelineAndACancelPath() throws {
         let app = launchApp()
         goToTab("Visits", in: app)
-        _ = app.navigationBars["Your visits"].waitForExistence(timeout: 10)
+        _ = app.navigationBars["Your visits"].waitForExistence(timeout: UITestTimeout.navigation)
 
         let visit = app.buttons.containing(NSPredicate(format: "label CONTAINS[c] 'Bruno'")).element(boundBy: 0)
         guard scrollToVisible(visit, in: app) else { throw XCTSkip("No visit row to open") }
         visit.tap()
-        guard app.navigationBars["Visit details"].waitForExistence(timeout: 10) else {
+        guard app.navigationBars["Visit details"].waitForExistence(timeout: UITestTimeout.navigation) else {
             return XCTFail("Visit detail did not open")
         }
 
@@ -368,11 +368,11 @@ final class FeatureWalkthroughUITests: XCTestCase {
         let timeline = app.buttons.containing(NSPredicate(format: "label CONTAINS[c] 'timeline'")).element(boundBy: 0)
         if scrollToVisible(timeline, in: app) {
             timeline.tap()
-            XCTAssertTrue(app.navigationBars["Status timeline"].waitForExistence(timeout: 10),
+            XCTAssertTrue(app.navigationBars["Status timeline"].waitForExistence(timeout: UITestTimeout.navigation),
                           "I2: the status timeline did not open")
             snapshot(app, "I2 — status timeline")
             app.navigationBars["Status timeline"].buttons.element(boundBy: 0).tap()
-            _ = app.navigationBars["Visit details"].waitForExistence(timeout: 10)
+            _ = app.navigationBars["Visit details"].waitForExistence(timeout: UITestTimeout.navigation)
         } else {
             XCTFail("I2: no route to the status timeline from a visit")
         }
@@ -387,7 +387,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
             cancel.tap()
             let dialogAppeared = app.staticTexts.containing(
                 NSPredicate(format: "label CONTAINS[c] 'refund' OR label CONTAINS[c] 'no refund'")
-            ).element(boundBy: 0).waitForExistence(timeout: 10)
+            ).element(boundBy: 0).waitForExistence(timeout: UITestTimeout.navigation)
             XCTAssertTrue(dialogAppeared,
                           "F4: cancelling did not state the refund consequence before confirming")
             snapshot(app, "F4 — cancel consequence")
@@ -403,14 +403,14 @@ final class FeatureWalkthroughUITests: XCTestCase {
 
         // C11: the emergency path is safety-critical and must be present
         // without scrolling.
-        XCTAssertTrue(app.staticTexts["This is an emergency"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.staticTexts["This is an emergency"].waitForExistence(timeout: UITestTimeout.navigation),
                       "C11: the emergency entry point is missing from the Book tab")
 
         let filters = app.buttons.containing(NSPredicate(format: "label BEGINSWITH[c] 'Filter'")).element(boundBy: 0)
         if filters.waitForExistence(timeout: 5) {
             XCTAssertTrue(filters.isHittable, "C3: the filters control is drawn but not hittable")
             filters.tap()
-            XCTAssertTrue(app.navigationBars["Filters"].waitForExistence(timeout: 10), "C3: filters did not open")
+            XCTAssertTrue(app.navigationBars["Filters"].waitForExistence(timeout: UITestTimeout.navigation), "C3: filters did not open")
             snapshot(app, "C3 — filters")
         } else {
             XCTFail("C3: no filters control on the Book tab")
@@ -424,7 +424,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
         let emergency = app.buttons.containing(NSPredicate(format: "label CONTAINS[c] 'emergency'")).element(boundBy: 0)
         guard scrollToVisible(emergency, in: app) else { throw XCTSkip("No emergency control found") }
         emergency.tap()
-        XCTAssertTrue(app.navigationBars["Emergency"].waitForExistence(timeout: 10),
+        XCTAssertTrue(app.navigationBars["Emergency"].waitForExistence(timeout: UITestTimeout.navigation),
                       "C11: the emergency screen did not open")
         // L8: the "we are not an emergency service" disclaimer.
         XCTAssertTrue(

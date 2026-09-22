@@ -78,7 +78,7 @@ final class AppWalkthroughUITests: XCTestCase {
     @MainActor
     private func goToTab(_ title: String, in app: XCUIApplication) {
         let button = tabButton(title, in: app)
-        XCTAssertTrue(button.waitForExistence(timeout: 10), "The \(title) tab was not reachable")
+        XCTAssertTrue(button.waitForExistence(timeout: UITestTimeout.navigation), "The \(title) tab was not reachable")
         XCTAssertTrue(button.isHittable, "The \(title) tab is drawn but not hittable")
         button.tap()
     }
@@ -178,7 +178,7 @@ final class AppWalkthroughUITests: XCTestCase {
         app.swipeDown()
 
         let profile = tabButton("Profile", in: app)
-        XCTAssertTrue(profile.waitForExistence(timeout: 10),
+        XCTAssertTrue(profile.waitForExistence(timeout: UITestTimeout.navigation),
                       "The tab bar did not come back after scrolling up — tabs are now unreachable")
         XCTAssertTrue(profile.isHittable, "The tab bar returned but its tabs are not hittable")
         snapshot(app, "Tab bar — restored")
@@ -340,7 +340,7 @@ final class AppWalkthroughUITests: XCTestCase {
         // And leaving it actually leaves: we are back in the app, not stuck
         // behind a screen that re-presents itself.
         XCTAssertTrue(
-            app.staticTexts["Booking requested"].waitForNonExistence(timeout: 10),
+            app.staticTexts["Booking requested"].waitForNonExistence(timeout: UITestTimeout.navigation),
             "Tapping Done left the confirmation screen on screen"
         )
         snapshot(app, "Booking — left the confirmation")
