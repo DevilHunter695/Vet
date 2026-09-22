@@ -154,10 +154,29 @@ enum FloatingChrome {
     /// Kept at zero rather than deleted so the constant's callers still read.
     static let tabBarInset: CGFloat = 0
 
-    /// Height of the tab bar's bottom accessory, plus a little breathing
-    /// room. Deliberately modest: too much and every screen ends in a band of
-    /// dead space, which is its own complaint.
-    static let accessoryClearance: CGFloat = 56
+    /// The accessory's own height, so the two cannot drift apart.
+    /// `TabBarAccessoryStrip` frames itself at this.
+    static let accessoryHeight: CGFloat = 44
+
+    /// Room for the bottom accessory, measured rather than estimated.
+    ///
+    /// This was 56, described as "deliberately modest". Too modest: the
+    /// strip is 44pt and the system pads above and below it inside the
+    /// accessory container, so 56 left the last row of a screen overlapping
+    /// the accessory by roughly a dozen points.
+    ///
+    /// That is not only a cosmetic clip. The accessory floats above the
+    /// content and its whole surface is a button that opens the active
+    /// visit, so a row resting under it is a row whose tap can land on the
+    /// accessory instead - you reach for the row you can see and the visit
+    /// opens. The UI suite hit exactly that, tapping "Wallet" and landing
+    /// on "Visit details".
+    ///
+    /// 44 + 16 above + 16 below clears it with the app's own gutter either
+    /// side. Because this is `contentMargins` rather than `padding`, the
+    /// extra room only appears at the end of the scroll, which is where it
+    /// is needed and nowhere else.
+    static let accessoryClearance: CGFloat = accessoryHeight + Spacing.gutter * 2
 }
 
 extension View {

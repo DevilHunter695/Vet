@@ -83,7 +83,10 @@ struct TabBarAccessoryStrip: View {
                     .foregroundStyle(Theme.textTertiary)
             }
             .padding(.horizontal, Spacing.gutter)
-            .frame(height: 44)
+            // Shared with FloatingChrome.accessoryClearance, which reserves
+            // room for this strip - a literal here and a literal there is
+            // how the content ended up sitting underneath it.
+            .frame(height: FloatingChrome.accessoryHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(GlassPressStyle())
