@@ -380,6 +380,27 @@ struct AuroraBackground: View {
     }
 
     var body: some View {
+        // Under the UI test runner this draws the base fill and nothing else.
+        //
+        // The lights below are three circles the size of the screen, each
+        // with a gaussian blur of roughly a quarter of that. On a device
+        // that is a GPU pass nobody notices. A CI simulator renders it in
+        // software, on every screen in the app, and the main thread never
+        // gets an idle moment - which is what
+        // "process main thread busy for 30.0s" is.
+        //
+        // Same reasoning as AppMotion for the animations: the walkthrough
+        // suite is testing that screens are reachable, not what they look
+        // like, and it cannot test either if the app will not answer. What
+        // ships is unchanged.
+        if AppMotion.isUITesting {
+            baseFill.ignoresSafeArea().allowsHitTesting(false).accessibilityHidden(true)
+        } else {
+            lights
+        }
+    }
+
+    private var lights: some View {
         GeometryReader { proxy in
             let w = proxy.size.width
             let h = proxy.size.height
