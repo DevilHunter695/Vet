@@ -41,7 +41,7 @@ struct SlotHoldBanner: View {
                 // otherwise read the same time twice.
                 .accessibilityHidden(true)
         }
-        .padding(12)
+        .padding(Spacing.row)
         .background(Theme.inProgress.opacity(0.10), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         .transition(.opacity)
         .accessibilityElement(children: .combine)
@@ -96,7 +96,7 @@ struct SlotHoldExpiredBanner: View {
             .tint(Theme.warning)
             .disabled(isExtending)
         }
-        .padding(12)
+        .padding(Spacing.row)
         .background(Theme.warning.opacity(0.10), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         .transition(.opacity)
     }

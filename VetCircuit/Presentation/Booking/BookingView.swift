@@ -668,7 +668,7 @@ struct BookingView: View {
                     .transition(.bookingStep(isAdvancing: isAdvancing))
                 }
             }
-            .padding(16)
+            .padding(Spacing.gutter)
             // Room for the pinned action bar, so the last card is never
             // stranded underneath it.
             .padding(.bottom, 108)
@@ -821,7 +821,7 @@ struct BookingView: View {
                             }
                         }
                     }
-                    .padding(14)
+                    .padding(Spacing.gutter)
                     .glassCard(cornerRadius: Spacing.corner)
                 }
             }
@@ -884,7 +884,7 @@ struct BookingView: View {
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(16)
+                .padding(Spacing.gutter)
                 .featuredGlassCard()
             }
         }
@@ -969,7 +969,7 @@ struct BookingView: View {
                     .transition(.opacity)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Spacing.gutter)
         .padding(.top, 12)
         .padding(.bottom, 8)
         // The material has to reach the physical bottom of the screen.
@@ -1020,7 +1020,7 @@ struct BookingView: View {
             }
             InfoRow(label: "Area", value: viewModel.circuit.clusterArea, systemImage: "mappin.and.ellipse")
         }
-        .padding(16)
+        .padding(Spacing.gutter)
         .glassCard()
         .accessibilityElement(children: .combine)
     }
@@ -1045,7 +1045,7 @@ struct BookingView: View {
                     Label("Add an address", systemImage: "plus")
                         .font(.brandCallout.weight(.semibold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, Spacing.row)
                 }
                 .buttonStyle(.bordered)
                 .tint(Theme.primary)
@@ -1078,7 +1078,7 @@ struct BookingView: View {
                             .scaledIcon(12)
                             .foregroundStyle(Theme.textTertiary)
                     }
-                    .padding(.horizontal, 2)
+                    .padding(.horizontal, Spacing.hairline)
                 }
 
                 // A saved address outside every served cluster is the one
@@ -1212,7 +1212,7 @@ private struct SlotChip: View {
                         .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Theme.warning)
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, Spacing.gutter)
             .frame(minHeight: 44)
             .foregroundStyle(isSelected ? .white : .primary)
             .background {
@@ -1273,7 +1273,7 @@ private struct SelectableRow: View {
                 }
                 Spacer(minLength: 8)
             }
-            .padding(14)
+            .padding(Spacing.gutter)
             .frame(minHeight: 44)
             .glassCard(cornerRadius: Spacing.corner)
             .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
@@ -1351,7 +1351,7 @@ struct BookingConfirmedView: View {
                     // here so it isn't a silent side effect.
                     InfoRow(label: "Confirmation", value: "Sent to your phone", systemImage: "bell.badge")
                 }
-                .padding(16)
+                .padding(Spacing.gutter)
                 .glassCard()
 
                 CalloutNote(
@@ -1371,7 +1371,7 @@ struct BookingConfirmedView: View {
                         Text("Track this visit")
                             .font(.brandHeadline)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, Spacing.gutter)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Theme.primary)
@@ -1383,14 +1383,14 @@ struct BookingConfirmedView: View {
                         Text("Done")
                             .font(.brandCallout)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
+                            .padding(.vertical, Spacing.row)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(Theme.textSecondary)
                 }
                 .padding(.top, 4)
             }
-            .padding(24)
+            .padding(Spacing.section)
             .appearAnimation()
         }
         .navigationBarBackButtonHidden()

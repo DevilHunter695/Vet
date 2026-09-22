@@ -28,7 +28,7 @@ struct AccountBlockedView: View {
                     .font(.brandBody)
                     .foregroundStyle(.white.opacity(0.85))
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, Spacing.major)
 
                 Button {
                     Haptics.tap()
@@ -42,7 +42,7 @@ struct AccountBlockedView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.white)
                 .foregroundStyle(Theme.primary)
-                .padding(.horizontal, 32)
+                .padding(.horizontal, Spacing.major)
                 .padding(.top, 8)
 
                 Button("Sign out", action: onSignOut)

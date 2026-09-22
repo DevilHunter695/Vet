@@ -49,7 +49,7 @@ struct PrimaryButton: View {
             }
             .frame(maxWidth: .infinity, minHeight: 26)
             .padding(.vertical, 15)
-            .padding(.horizontal, 20)
+            .padding(.horizontal, Spacing.gutter)
             .foregroundStyle(.white)
             .background {
                 RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous)
@@ -246,7 +246,7 @@ struct Card<Content: View>: View {
 
     var body: some View {
         content
-            .padding(16)
+            .padding(Spacing.gutter)
             .glassCard(cornerRadius: cornerRadius)
     }
 }
@@ -292,7 +292,7 @@ struct SectionHeader: View {
                     Text(actionTitle)
                         .font(.brandCaption)
                         .foregroundStyle(Theme.primary)
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, Spacing.row)
                         .frame(minHeight: 44)
                         .contentShape(Rectangle())
                 }
@@ -349,8 +349,8 @@ struct TagChip: View {
             }
             Text(text).font(.brandCaption2)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, Spacing.snug)
+        .padding(.vertical, Spacing.snug)
         .background(tint.opacity(0.14), in: Capsule())
         .foregroundStyle(tint)
         .accessibilityElement(children: .combine)
@@ -376,7 +376,7 @@ struct CalloutNote: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .padding(12)
+        .padding(Spacing.row)
         .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: Spacing.cornerSmall, style: .continuous))
         .accessibilityElement(children: .combine)
     }
@@ -421,7 +421,7 @@ struct StatusBadge: View {
     var body: some View {
         Label(status.displayText, systemImage: icon)
             .font(.brandCaption)
-            .padding(.horizontal, 10).padding(.vertical, 6)
+            .padding(.horizontal, Spacing.row).padding(.vertical, Spacing.snug)
             .background {
                 ZStack {
                     Capsule().fill(color.opacity(0.16))
@@ -462,7 +462,7 @@ struct ChatBubble: View {
                 } else {
                     Text(message.body)
                         .font(.brandBody)
-                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .padding(.horizontal, Spacing.gutter).padding(.vertical, Spacing.row)
                         .background {
                             RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous)
                                 .fill(isMine ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(.ultraThinMaterial))
@@ -549,7 +549,7 @@ struct ErrorBanner: View {
             // the last place you want the app to look like it lost its
             // composure.
             .font(.system(.footnote, design: .rounded))
-            .padding(12)
+            .padding(Spacing.row)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.danger.opacity(0.14), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
             .overlay {

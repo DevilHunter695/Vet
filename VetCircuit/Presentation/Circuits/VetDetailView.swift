@@ -214,7 +214,7 @@ struct VetDetailView: View {
                     Text("\(slot.remainingCapacity) spot\(slot.remainingCapacity == 1 ? "" : "s") left")
                         .font(.brandCaption).foregroundStyle(Theme.textSecondary)
                 }
-                .padding(12)
+                .padding(Spacing.row)
                 .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
             }
         }
@@ -265,7 +265,7 @@ struct VetDetailView: View {
                     Text(review.createdAt.formatted(date: .abbreviated, time: .omitted))
                         .font(.caption2).foregroundStyle(Theme.textSecondary)
                 }
-                .padding(12)
+                .padding(Spacing.row)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
             }

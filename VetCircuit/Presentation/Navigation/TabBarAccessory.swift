@@ -82,7 +82,7 @@ struct TabBarAccessoryStrip: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(Theme.textTertiary)
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, Spacing.gutter)
             .frame(height: 44)
             .contentShape(Rectangle())
         }
@@ -113,7 +113,7 @@ struct TabBarAccessoryInline: View {
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.row)
             .frame(height: 40)
             .contentShape(Capsule(style: .continuous))
         }

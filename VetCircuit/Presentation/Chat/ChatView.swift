@@ -158,7 +158,7 @@ struct ChatView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(12)
+                .padding(Spacing.row)
                 .background(Color(.secondarySystemBackground))
             }
 
@@ -190,7 +190,7 @@ struct ChatView: View {
                     // the composer can never eat the whole thread.
                     .lineLimit(1...5)
                     .font(.brandBody)
-                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .padding(.horizontal, Spacing.gutter).padding(.vertical, Spacing.row)
                     .background(Color(.secondarySystemBackground), in: Capsule())
                     .accessibilityLabel("Message input")
                     .disabled(!viewModel.isChatOpen)
@@ -215,8 +215,8 @@ struct ChatView: View {
                 .animation(Theme.springQuick, value: canSend)
                 .accessibilityLabel("Send message")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, Spacing.row)
+            .padding(.vertical, Spacing.row)
             .background(.bar)
             }
         }

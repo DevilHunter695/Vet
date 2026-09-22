@@ -98,7 +98,7 @@ private struct EmergencyClinicCard: View {
                     Text(clinic.name).font(.brandHeadline)
                     if clinic.isOpen24x7 {
                         Text("24×7").font(.caption2.weight(.bold))
-                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .padding(.horizontal, Spacing.snug).padding(.vertical, Spacing.hairline)
                             .background(Theme.success.opacity(0.15), in: Capsule())
                             .foregroundStyle(Theme.success)
                     }

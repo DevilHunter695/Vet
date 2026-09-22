@@ -562,7 +562,7 @@ struct CartView: View {
                             }
                         }
                     }
-                    .padding(16)
+                    .padding(Spacing.gutter)
                     .padding(.bottom, 120)
                 }
                 .scrollContentBackground(.hidden)
@@ -683,7 +683,7 @@ struct CartView: View {
                     Label("Add an address", systemImage: "plus")
                         .font(.brandCallout.weight(.semibold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, Spacing.row)
                 }
                 .buttonStyle(.bordered)
                 .tint(Theme.primary)
@@ -769,7 +769,7 @@ struct CartView: View {
                         .foregroundStyle(Theme.primary)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.gutter)
             .padding(.top, 12)
             .padding(.bottom, 8)
         // The material has to reach the physical bottom of the screen.

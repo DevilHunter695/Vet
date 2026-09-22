@@ -98,7 +98,7 @@ struct LabTestReportsView: View {
         let (text, color): (String, Color) = status == .ready ? ("Ready", Theme.success) : ("Pending", Theme.warning)
         Text(text)
             .font(.brandCaption.weight(.semibold))
-            .padding(.horizontal, 10).padding(.vertical, 4)
+            .padding(.horizontal, Spacing.row).padding(.vertical, Spacing.tight)
             .background(color.opacity(0.15), in: Capsule())
             .foregroundStyle(color)
     }

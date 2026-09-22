@@ -344,7 +344,7 @@ struct PetDetailView: View {
                     Text(viewModel.isSaving ? "Saving…" : "Save changes")
                         .font(.brandHeadline)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .padding(.vertical, Spacing.row)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.primary)
@@ -612,7 +612,7 @@ private struct VaccinationRow: View {
             }
             .accessibilityLabel("Share vaccination certificate")
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.tight)
         .sheet(item: $certificateURL) { item in
             ShareSheet(activityItems: [item.url])
         }

@@ -36,7 +36,7 @@ struct ForceUpdateView: View {
                     .font(.brandBody)
                     .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, Spacing.major)
 
                 switch mode {
                 case .forceUpgrade:
@@ -51,7 +51,7 @@ struct ForceUpdateView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Theme.primary)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, Spacing.major)
                     .padding(.top, 8)
 
                 case .maintenance:
@@ -78,7 +78,7 @@ struct ForceUpdateView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(Theme.primary)
                         .disabled(isRetrying)
-                        .padding(.horizontal, 32)
+                        .padding(.horizontal, Spacing.major)
                         .padding(.top, 8)
                     }
                 }

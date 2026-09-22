@@ -46,7 +46,7 @@ struct ProfileSubscriptionSection: View {
                     }
                     .buttonStyle(PressableStyle())
                 }
-                .padding(16)
+                .padding(Spacing.gutter)
                 .featuredGlassCard()
             } else {
                 // H1: full inclusions + fair-use limits shown before purchase,
@@ -68,7 +68,7 @@ struct ProfileSubscriptionSection: View {
                         Spacer(minLength: 4)
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.textSecondary)
                     }
-                    .padding(16)
+                    .padding(Spacing.gutter)
                     .featuredGlassCard(tint: Theme.emerald)
                     .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                 }

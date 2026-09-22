@@ -42,6 +42,9 @@ struct PaymentResolvingOverlay: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            // 28, off the scale on purpose: this is a modal overlay, not a
+            // content surface, and it is padded to sit inside its own 28pt
+            // corner rather than to line up with the rows behind it.
             .padding(28)
             .frame(maxWidth: 320)
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28, style: .continuous))

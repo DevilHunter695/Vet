@@ -156,7 +156,7 @@ private struct MedicationReminderRow: View {
                 Text("Ongoing").font(.brandCaption).foregroundStyle(Theme.textTertiary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.tight)
     }
 }
 

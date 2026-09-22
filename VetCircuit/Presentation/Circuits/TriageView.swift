@@ -58,7 +58,7 @@ struct TriageView: View {
 
                 TextField("e.g. Not eating since yesterday, seems tired", text: $viewModel.symptoms, axis: .vertical)
                     .font(.brandBody)
-                    .padding(12)
+                    .padding(Spacing.row)
                     .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                     .lineLimit(3...6)
 
@@ -167,8 +167,8 @@ private struct TriageResultCard: View {
                         }
                         .foregroundStyle(Color.white)
                         .frame(maxWidth: .infinity, minHeight: 44)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, Spacing.gutter)
+                        .padding(.vertical, Spacing.snug)
                         .background {
                             RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous)
                                 .fill(accent)

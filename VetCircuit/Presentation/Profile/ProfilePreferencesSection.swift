@@ -51,7 +51,7 @@ struct ProfilePreferencesSection: View {
                 .tint(Theme.primary)
                 .onChange(of: biometricLockEnabled) { _, _ in Haptics.selection() }
             }
-            .padding(16)
+            .padding(Spacing.gutter)
             .glassCard()
 
             ProfileGroup(title: "Notifications", systemImage: "bell.badge") {

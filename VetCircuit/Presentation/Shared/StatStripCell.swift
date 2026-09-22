@@ -30,7 +30,7 @@ struct StatStripCell: View {
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                 .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.8)
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, Spacing.snug)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(item.accessibilityName ?? item.label): \(item.value)")

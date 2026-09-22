@@ -131,7 +131,7 @@ private struct PlanCatalogCard: View {
             PrimaryButton(title: "Subscribe", isLoading: isSubscribing, action: onSubscribe)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(Spacing.gutter)
         .featuredGlassCard()
     }
 }
@@ -161,7 +161,7 @@ private struct ActionRow2: View {
             Spacer(minLength: 8)
             Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Theme.textTertiary)
         }
-        .padding(16)
+        .padding(Spacing.gutter)
         .glassCard(cornerRadius: Spacing.corner)
         .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
     }

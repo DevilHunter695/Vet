@@ -91,7 +91,7 @@ struct ReviewView: View {
 
                     TextField("Leave a comment (optional)", text: $viewModel.comment, axis: .vertical)
                         .font(.brandBody)
-                        .padding(12)
+                        .padding(Spacing.row)
                         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                         .lineLimit(3...6)
 

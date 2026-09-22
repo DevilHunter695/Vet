@@ -86,7 +86,7 @@ struct SignInView: View {
                                 .keyboardType(.phonePad)
                                 .focused($focusedField, equals: .phone)
                                 .foregroundStyle(.white)
-                                .padding(14)
+                                .padding(Spacing.gutter)
                                 .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                                 .accessibilityLabel("Phone number")
 
@@ -95,7 +95,7 @@ struct SignInView: View {
                                     .keyboardType(.numberPad)
                                     .focused($focusedField, equals: .otp)
                                     .foregroundStyle(.white)
-                                    .padding(14)
+                                    .padding(Spacing.gutter)
                                     .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                                     .accessibilityLabel("One-time passcode")
                                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -119,14 +119,14 @@ struct SignInView: View {
                         }
                         .animation(Theme.springQuick, value: viewModel.isOTPSent)
                     }
-                    .padding(20)
+                    .padding(Spacing.gutter)
                     .glassCard(cornerRadius: 24)
                     .environment(\.colorScheme, .dark)
                     .appearAnimation(delay: 0.15)
 
                     Spacer(minLength: 32)
                 }
-                .padding(24)
+                .padding(Spacing.section)
             }
             .toolbar(.hidden, for: .navigationBar)
             .onTapGesture { focusedField = nil }

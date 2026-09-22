@@ -189,7 +189,7 @@ struct VisitDetailView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+                    .padding(Spacing.gutter)
                     .glassCard()
                 } else if cancelledStatus == .cancelledByUser {
                     CalloutNote(text: "This visit is cancelled. Any refund due goes back to your original payment method, usually within 5–7 business days.", systemImage: "checkmark.circle.fill")
@@ -757,7 +757,7 @@ private struct ActionRow: View {
                 Text("\(badgeCount)")
                     .font(.brandCaption.bold())
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .padding(.horizontal, Spacing.snug).padding(.vertical, Spacing.tight)
                     .background(Theme.danger, in: Capsule())
                     .contentTransition(.numericText())
                     .accessibilityLabel("\(badgeCount) unread messages")

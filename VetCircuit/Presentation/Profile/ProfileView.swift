@@ -190,7 +190,7 @@ struct ProfileView: View {
                                 progress: tierProgress(loyalty),
                                 pointsToNextTier: pointsToNextTier(loyalty)
                             )
-                            .padding(16)
+                            .padding(Spacing.gutter)
                             .glassCard()
                         }
                         .transition(.opacity.combined(with: .move(edge: .top)))
@@ -240,7 +240,7 @@ struct ProfileView: View {
                             .padding(.top, 4)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, Spacing.gutter)
                 .padding(.top, 8)
                 .padding(.bottom, 8)
             }
@@ -359,7 +359,7 @@ struct ProfileView: View {
                     }
                     .buttonStyle(PressableStyle())
                 }
-                .padding(16)
+                .padding(Spacing.gutter)
                 .featuredGlassCard()
             } else {
                 // H1: full inclusions + fair-use limits shown before purchase,
@@ -381,7 +381,7 @@ struct ProfileView: View {
                         Spacer(minLength: 4)
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.textSecondary)
                     }
-                    .padding(16)
+                    .padding(Spacing.gutter)
                     .featuredGlassCard(tint: Theme.emerald)
                     .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                 }
@@ -417,8 +417,8 @@ struct ProfileView: View {
                             .buttonStyle(PressableStyle())
                         }
                     }
-                    .padding(.horizontal, 2)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, Spacing.hairline)
+                    .padding(.vertical, Spacing.tight)
                 }
                 // The card row overflows its container horizontally by
                 // design; without this the scroll view clips the shadows.
@@ -478,7 +478,7 @@ struct ProfileView: View {
                 .tint(Theme.primary)
                 .onChange(of: biometricLockEnabled) { _, _ in Haptics.selection() }
             }
-            .padding(16)
+            .padding(Spacing.gutter)
             .glassCard()
 
             ProfileGroup(title: "Notifications", systemImage: "bell.badge") {
@@ -571,7 +571,7 @@ private struct TierBadge: View {
     var body: some View {
         Text(tier.rawValue.capitalized)
             .font(.brandCaption)
-            .padding(.horizontal, 10).padding(.vertical, 4)
+            .padding(.horizontal, Spacing.row).padding(.vertical, Spacing.tight)
             .background(color.opacity(0.15))
             .foregroundStyle(color)
             .clipShape(Capsule())
@@ -659,7 +659,7 @@ private struct ProfileHeroCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, Spacing.gutter)
         .background {
             // The light lives *behind* the header rather than being a tint on
             // it, so the glass above still reads as glass instead of as a
@@ -772,7 +772,7 @@ private struct NextVisitCard: View {
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
-            .padding(16)
+            .padding(Spacing.gutter)
             .featuredGlassCard(tint: Theme.emerald)
             .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         }
@@ -874,7 +874,7 @@ struct ProfileLinkRow<Destination: View>: View {
                     .font(.caption2)
                     .foregroundStyle(Theme.textTertiary)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.gutter)
             .frame(minHeight: 56)
             .overlay(alignment: .bottom) {
                 // Inset to the text column, the way iOS insets its own list
@@ -967,7 +967,7 @@ struct PetCard: View {
             }
         }
         .frame(width: 152, alignment: .leading)
-        .padding(14)
+        .padding(Spacing.gutter)
         .glassCard(cornerRadius: Spacing.corner)
         .opacity(pet.isArchived ? 0.72 : 1)
     }
@@ -1023,7 +1023,7 @@ struct AddPetField: View {
             }
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.9), value: canAdd)
-        .padding(16)
+        .padding(Spacing.gutter)
         .glassCard()
     }
 

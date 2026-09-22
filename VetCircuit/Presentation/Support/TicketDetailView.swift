@@ -69,7 +69,7 @@ struct TicketDetailView: View {
                     Text(viewModel.ticket.createdAt.formatted(date: .abbreviated, time: .shortened))
                         .font(.brandCaption).foregroundStyle(Theme.textTertiary)
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Spacing.tight)
             }
 
             if let errorMessage = viewModel.errorMessage {
@@ -102,7 +102,7 @@ struct TicketDetailView: View {
                                 Text(audit.createdAt.formatted(date: .abbreviated, time: .shortened))
                                     .font(.brandCaption).foregroundStyle(Theme.textTertiary)
                             }
-                            .padding(.vertical, 2)
+                            .padding(.vertical, Spacing.hairline)
                         }
                     }
                 }

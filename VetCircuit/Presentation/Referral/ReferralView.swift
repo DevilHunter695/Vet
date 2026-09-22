@@ -61,7 +61,7 @@ struct ReferralView: View {
                     } else {
                         Text(viewModel.code)
                             .font(.system(.title2, design: .monospaced, weight: .bold))
-                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .padding(.horizontal, Spacing.gutter).padding(.vertical, Spacing.row)
                             .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                             .textSelection(.enabled)
                     }
@@ -78,7 +78,7 @@ struct ReferralView: View {
                     .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, Spacing.row)
                 .appearAnimation()
             }
             .listRowBackground(Color.clear)

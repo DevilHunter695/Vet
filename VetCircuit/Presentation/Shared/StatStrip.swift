@@ -48,8 +48,8 @@ struct StatStrip: View {
                         StatStripCell(item: item)
                     }
                 }
-                .padding(.vertical, 16)
-                .padding(.horizontal, 8)
+                .padding(.vertical, Spacing.gutter)
+                .padding(.horizontal, Spacing.snug)
             } else {
                 HStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
@@ -62,7 +62,7 @@ struct StatStrip: View {
                         StatStripCell(item: item)
                     }
                 }
-                .padding(.vertical, 14)
+                .padding(.vertical, Spacing.gutter)
             }
         }
         .glassCard(cornerRadius: Spacing.corner)

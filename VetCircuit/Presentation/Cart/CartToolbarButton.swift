@@ -35,7 +35,7 @@ struct CartToolbarButton: View {
                         .font(.caption2.bold())
                         .monospacedDigit()
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, Spacing.snug)
                         .padding(.vertical, 1)
                         .background(Theme.accent, in: Capsule())
                         .offset(x: -4, y: 4)

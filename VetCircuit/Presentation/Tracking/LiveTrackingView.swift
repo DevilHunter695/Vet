@@ -209,7 +209,7 @@ struct LiveTrackingView: View {
                             .font(.brandHeadline)
                             .frame(maxWidth: .infinity)
                             .frame(minHeight: 26)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, Spacing.gutter)
                             .foregroundStyle(.white)
                             .background(Theme.danger, in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                             .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
@@ -218,10 +218,10 @@ struct LiveTrackingView: View {
                     .disabled(viewModel.isSendingSOS)
                     .opacity(viewModel.isSendingSOS ? 0.6 : 1)
                 }
-                .padding(16)
+                .padding(Spacing.gutter)
                 .glassCard()
             }
-            .padding(16)
+            .padding(Spacing.gutter)
         }
         .navigationTitle("Vet en route")
         .navigationBarTitleDisplayMode(.inline)

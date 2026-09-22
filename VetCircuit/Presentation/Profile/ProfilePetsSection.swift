@@ -32,8 +32,8 @@ struct ProfilePetsSection: View {
                             .buttonStyle(PressableStyle())
                         }
                     }
-                    .padding(.horizontal, 2)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, Spacing.hairline)
+                    .padding(.vertical, Spacing.tight)
                 }
                 // The card row overflows its container horizontally by
                 // design; without this the scroll view clips the shadows.

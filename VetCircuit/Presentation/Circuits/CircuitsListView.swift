@@ -217,8 +217,8 @@ struct CircuitsListView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+                        .padding(.horizontal, Spacing.gutter)
+                        .padding(.vertical, Spacing.row)
                     }
                     .floatingTabBarScroll()
                     .auroraScreenBackground()
@@ -369,7 +369,7 @@ struct CircuitsListView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     if let circuits = result?.circuits, !circuits.isEmpty {
-                        Text("Vets & circuits").font(.brandHeadline).padding(.horizontal, 4)
+                        Text("Vets & circuits").font(.brandHeadline).padding(.horizontal, Spacing.tight)
                         ForEach(circuits) { circuit in
                             NavigationLink(value: circuit) {
                                 CircuitRow(circuit: circuit, startingPriceMinorUnits: viewModel.startingPriceMinorUnits)
@@ -378,19 +378,19 @@ struct CircuitsListView: View {
                         }
                     }
                     if let services = result?.services, !services.isEmpty {
-                        Text("Services").font(.brandHeadline).padding(.horizontal, 4).padding(.top, 8)
+                        Text("Services").font(.brandHeadline).padding(.horizontal, Spacing.tight).padding(.top, 8)
                         ForEach(services) { service in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(service.name).font(.brandBody)
                                 Text(service.summary).font(.brandCaption).foregroundStyle(Theme.textSecondary)
                             }
-                            .padding(12)
+                            .padding(Spacing.row)
                             .glassCard()
                         }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, Spacing.gutter)
+                .padding(.vertical, Spacing.row)
             }
             .floatingTabBarScroll()
         }
@@ -412,7 +412,7 @@ private struct EmergencyBanner: View {
             Spacer()
             Image(systemName: "chevron.right").foregroundStyle(.white.opacity(0.85))
         }
-        .padding(14)
+        .padding(Spacing.gutter)
         .background(Theme.danger, in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
     }
 }
@@ -555,7 +555,7 @@ private struct RebookCard: View {
                 Spacer()
                 Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Theme.textTertiary)
             }
-            .padding(14)
+            .padding(Spacing.gutter)
             .glassCard()
             .accessibilityElement(children: .combine)
         }
@@ -571,7 +571,7 @@ private struct RecentlyViewedSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Recently viewed").font(.brandHeadline).padding(.horizontal, 4)
+            Text("Recently viewed").font(.brandHeadline).padding(.horizontal, Spacing.tight)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(circuits) { circuit in
@@ -583,7 +583,7 @@ private struct RecentlyViewedSection: View {
                                     .font(.caption).foregroundStyle(Theme.textSecondary)
                                     .lineLimit(1).minimumScaleFactor(0.85)
                             }
-                            .padding(12)
+                            .padding(Spacing.row)
                             .frame(width: 160, alignment: .leading)
                             .glassCard()
                             .accessibilityElement(children: .combine)
@@ -591,7 +591,7 @@ private struct RecentlyViewedSection: View {
                         .buttonStyle(PressableStyle())
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, Spacing.tight)
             }
         }
     }
@@ -741,7 +741,7 @@ struct CircuitRow: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.gutter)
         .glassCard()
         .contentShape(RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
         .accessibilityElement(children: .combine)

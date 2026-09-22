@@ -188,7 +188,7 @@ struct SavedPaymentMethodPickerRow: View {
                             Text(method.displayLabel).font(.brandBody).foregroundStyle(.primary)
                             Spacer()
                         }
-                        .padding(10)
+                        .padding(Spacing.row)
                         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: Spacing.corner, style: .continuous))
                     }
                     .buttonStyle(PressableStyle())

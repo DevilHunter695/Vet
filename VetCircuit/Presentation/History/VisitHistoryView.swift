@@ -238,7 +238,7 @@ struct VisitHistoryView: View {
                     ShimmerView(cornerRadius: Spacing.corner).frame(height: 84)
                 }
             }
-            .padding(16)
+            .padding(Spacing.gutter)
         }
         .scrollContentBackground(.hidden)
     }
@@ -320,7 +320,7 @@ struct VisitHistoryView: View {
                     ErrorBanner(message: error)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Spacing.gutter)
             .padding(.top, 8)
             .padding(.bottom, 8)
         }
@@ -480,7 +480,7 @@ private struct ActiveVisitCard: View {
                 }
             }
         }
-        .padding(16)
+        .padding(Spacing.gutter)
         .featuredGlassCard(tint: visit.status.isLive ? Theme.inProgress : Theme.emerald)
     }
 }

@@ -137,7 +137,7 @@ struct PackagesView: View {
                                             }
                                         }
                                     }
-                                    .padding(.horizontal, 2)
+                                    .padding(.horizontal, Spacing.hairline)
                                 }
                             }
                         }
@@ -244,7 +244,7 @@ private struct PackageCard: View {
                     if discount > 0 {
                         Text("Save \(CurrencyFormatter.rupees(discount))")
                             .font(.brandCaption)
-                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .padding(.horizontal, Spacing.snug).padding(.vertical, Spacing.tight)
                             .background(Theme.success.opacity(0.15), in: Capsule())
                             .foregroundStyle(Theme.success)
                     }
@@ -266,7 +266,7 @@ private struct PackageCard: View {
                             }
                         }
                     }
-                    .padding(.vertical, 2)
+                    .padding(.vertical, Spacing.hairline)
                     .accessibilityElement(children: .combine)
                 }
 
