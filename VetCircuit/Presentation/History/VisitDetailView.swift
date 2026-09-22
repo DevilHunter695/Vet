@@ -551,6 +551,10 @@ struct VisitDetailView: View {
         .confirmationDialog(
             "Cancel this visit?",
             isPresented: Binding(get: { pendingCancellation != nil }, set: { if !$0 { pendingCancellation = nil } }),
+            // Without this the dialog shows only the refund line and a red
+            // button - the question it is asking is invisible, so the first
+            // thing you read is a number and the second is "Cancel visit".
+            titleVisibility: .visible,
             presenting: pendingCancellation
         ) { outcome in
             Button("Cancel visit", role: .destructive) {
@@ -730,13 +734,15 @@ private struct ActionRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(tint.opacity(0.15))
-                Image(systemName: systemImage).foregroundStyle(tint)
-            }
-            .frame(width: 36, height: 36)
+            // A plain tinted symbol, not a symbol inside a tinted disc.
+            // Four discs stacked down the screen is four more shapes than
+            // the list needs; the colour alone already separates them.
+            Image(systemName: systemImage)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 28, alignment: .center)
 
-            Text(title).font(.brandHeadline).foregroundStyle(.primary)
+            Text(title).font(.body).foregroundStyle(.primary)
             Spacer()
             if badgeCount > 0 {
                 Text("\(badgeCount)")
@@ -753,9 +759,19 @@ private struct ActionRow: View {
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.textTertiary)
             }
         }
-        .padding()
-        .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: Theme.cardShadow, radius: 8, y: 3)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        // A grouped-list row, not a floating card.
+        //
+        // This was `.background(.background)` plus a drop shadow, which on
+        // the dark ground resolves to near-black - so four sibling actions
+        // read as four black slabs hovering over the gradient rather than as
+        // one list of things you can do with this visit. The fill is the
+        // system's grouped-row colour now, the shadow is gone, and the
+        // corners are rounder.
+        .background(Color(.secondarySystemGroupedBackground).opacity(0.92),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .combine)
         .animation(Theme.springQuick, value: badgeCount)
     }

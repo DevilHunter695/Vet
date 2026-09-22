@@ -133,8 +133,6 @@ struct ChatView: View {
                     .padding()
                     .animation(Theme.springQuick, value: viewModel.messages.count)
                 }
-                .auroraScreenBackground()
-        .floatingTabBarInset()
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: viewModel.messages.count) {
                     if let last = viewModel.messages.last {
@@ -217,10 +215,19 @@ struct ChatView: View {
                 .animation(Theme.springQuick, value: canSend)
                 .accessibilityLabel("Send message")
             }
-            .padding()
-            .background(.regularMaterial)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(.bar)
             }
         }
+        // The background belongs to the screen, not to the message list.
+        //
+        // It used to sit on the ScrollView alone, inside this VStack, so the
+        // composer below it had no background and rendered as a black band
+        // across the bottom of the thread. It also carried
+        // floatingTabBarInset(), which reserves room for a tab bar that this
+        // pushed screen does not show.
+        .auroraScreenBackground()
         .hidesFloatingTabBar()
         .navigationTitle("Chat")
         .navigationBarTitleDisplayMode(.inline)

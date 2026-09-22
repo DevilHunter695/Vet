@@ -448,31 +448,33 @@ struct EmptyStateView: View {
     var action: (() -> Void)? = nil
 
     var body: some View {
-        VStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(Theme.primary.opacity(0.22))
-                    .frame(width: 128, height: 128)
-                    .blur(radius: 18)
-                PawMascot(size: 72, animated: true)
-            }
-            .allowsHitTesting(false)
-
-            Text(title)
-                .font(.brandTitle3)
-                .multilineTextAlignment(.center)
+        // ContentUnavailableView is Apple's own empty state, and using it
+        // fixes a real bug as well as the look: this view took a
+        // `systemImage` and then ignored it, drawing the paw mascot on every
+        // empty screen in the app. An empty cart, an empty address book and
+        // an empty ticket list all showed the same paw, so the illustration
+        // told you nothing about where you were.
+        //
+        // The blurred circle behind it was the other half of the problem -
+        // a 128pt teal blur on a dark ground reads as a glow sitting in a
+        // black rectangle rather than as part of the screen.
+        //
+        // Now the symbol the caller passes is the symbol you see, tinted
+        // with the brand accent, on Apple's layout with Apple's metrics and
+        // Dynamic Type behaviour.
+        ContentUnavailableView {
+            Label(title, systemImage: systemImage)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Theme.primary)
+        } description: {
             Text(message)
-                .font(.brandCallout)
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+        } actions: {
             if let actionTitle, let action {
-                PillButton(title: actionTitle, tint: Theme.primary, filled: true, action: action)
-                    .padding(.top, 4)
+                Button(actionTitle, action: action)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.primary)
             }
         }
-        .padding(32)
-        .frame(maxWidth: .infinity)
     }
 }
 
