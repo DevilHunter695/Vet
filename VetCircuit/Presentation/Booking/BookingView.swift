@@ -1313,7 +1313,10 @@ struct BookingConfirmedView: View {
                         .opacity(1 - ringOpacity)
 
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 68))
+                        // scaledIcon: this sits alone on a confirmation
+                        // screen with room around it, so there is no layout
+                        // reason to pin it - it was pinned by habit.
+                        .scaledIcon(68)
                         .foregroundStyle(Theme.success)
                         .scaleEffect(checkmarkScale)
                         .shadow(color: Theme.success.opacity(0.5), radius: 16, y: 6)

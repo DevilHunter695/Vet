@@ -162,6 +162,11 @@ struct PosterHeader<Overlay: View>: View {
             // Oversized and cropped by the poster's own bounds, so it reads
             // as artwork rather than as a placeholder icon centred in a box.
             Image(systemName: fallbackSymbol)
+                // Pinned deliberately. This pair is artwork: a 150pt
+                // watermark offset behind a 56pt symbol. Scaling either
+                // with the text setting pulls the composition apart, and
+                // neither carries information the header does not also say
+                // in type that does scale.
                 .font(.system(size: 150, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.16))
                 .offset(x: 70, y: 40)

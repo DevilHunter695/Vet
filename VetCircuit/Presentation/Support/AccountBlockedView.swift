@@ -15,7 +15,9 @@ struct AccountBlockedView: View {
             Theme.heroGradient.ignoresSafeArea()
             VStack(spacing: 20) {
                 Image(systemName: "hand.raised.fill")
-                    .font(.system(size: 56))
+                    // scaledIcon, same reasoning: centred on an otherwise
+                    // empty screen, nothing constrains it.
+                    .scaledIcon(56)
                     .foregroundStyle(.white)
 
                 Text(title)
