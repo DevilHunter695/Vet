@@ -112,14 +112,15 @@ final class FeatureWalkthroughUITests: XCTestCase {
         let matches = app.buttons.containing(NSPredicate(format: "label BEGINSWITH[c] %@", title))
         let labels = (0..<matches.count).map { i -> String in
             let e = matches.element(boundBy: i)
-            return "    [\(i)] \"\(e.label)\" hittable=\(e.isHittable) frame=\(e.frame)"
+            return "[\(i)]\"\(e.label)\" hit=\(e.isHittable) y=\(Int(e.frame.origin.y)) h=\(Int(e.frame.height))"
         }
         let bars = app.navigationBars.allElementsBoundByIndex.map(\.identifier)
-        return """
-          buttons beginning "\(title)" (the tap goes to [0]):
-        \(labels.isEmpty ? "    none" : labels.joined(separator: "\n"))
-          navigation bars now on screen: \(bars.isEmpty ? "none" : bars.joined(separator: ", "))
-        """
+        // One line, deliberately. The CI verdict step extracts the first
+        // line of each failing assertion, so a multi-line message loses
+        // everything after the first - which is how run 222 reported this
+        // diagnostic and told me nothing.
+        let buttons = labels.isEmpty ? "none" : labels.joined(separator: " ")
+        return "MATCHES(tap goes to [0]): \(buttons) || BARS: \(bars.isEmpty ? "none" : bars.joined(separator: ","))"
     }
 
     /// Taps a Profile row and asserts the screen it promises actually opens,
@@ -138,10 +139,7 @@ final class FeatureWalkthroughUITests: XCTestCase {
                       file: file, line: line)
         control.tap()
         XCTAssertTrue(app.navigationBars[navTitle].waitForExistence(timeout: UITestTimeout.navigation),
-                      """
-                      \(feature): tapped "\(rowTitle)" once and "\(navTitle)" did not open.
-                      \(whatIsOnScreen(app, matching: rowTitle))
-                      """,
+                      "\(feature): tapped \"\(rowTitle)\" once and \"\(navTitle)\" did not open. \(whatIsOnScreen(app, matching: rowTitle))",
                       file: file, line: line)
         // No screenshot here. This helper runs fifteen times across the
         // suite, and a full-resolution capture of a glass-heavy SwiftUI
@@ -230,7 +228,8 @@ final class FeatureWalkthroughUITests: XCTestCase {
         let wallet = row("Wallet", in: app)
         XCTAssertTrue(scrollToVisible(wallet, in: app), "Wallet row not reachable")
         wallet.tap()
-        XCTAssertTrue(app.navigationBars["Wallet"].waitForExistence(timeout: UITestTimeout.navigation), "Wallet didn't open")
+        XCTAssertTrue(app.navigationBars["Wallet"].waitForExistence(timeout: UITestTimeout.navigation),
+                      "Wallet didn't open. \(whatIsOnScreen(app, matching: "Wallet"))")
 
         // A wallet screen whose only content is a balance tells the customer
         // nothing about where their money went.
