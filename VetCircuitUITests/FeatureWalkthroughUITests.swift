@@ -122,7 +122,19 @@ final class FeatureWalkthroughUITests: XCTestCase {
         // suite, and a full-resolution capture of a glass-heavy SwiftUI
         // screen is not cheap on a CI simulator - the assertion above has
         // already proved the screen opened, which is what the test is for.
-        app.navigationBars[navTitle].buttons.element(boundBy: 0).tap()
+        // Tap the back button, by name, not buttons[0].
+        //
+        // Index 0 is only the back button on a screen whose bar has nothing
+        // else on it. "Edit profile" carries a confirmationAction "Save", so
+        // on that one screen index 0 is not necessarily back - and Wallet,
+        // the row opened straight after Edit profile, is the one that failed.
+        // No other destination in this suite has a second bar button, which
+        // is why no other row ever failed this way.
+        let bar = app.navigationBars[navTitle]
+        let back = bar.buttons["Profile"].exists ? bar.buttons["Profile"]
+                 : bar.buttons["Back"].exists ? bar.buttons["Back"]
+                 : bar.buttons.element(boundBy: 0)
+        back.tap()
 
         // Wait for the pushed screen's bar to go away, not just for
         // Profile's to come back.
