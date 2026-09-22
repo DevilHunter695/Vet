@@ -47,7 +47,40 @@ deliberately, which is what was done.
 - **Packages stay cards.** A bundle is a distinct object with contents, a price and a saving, which is the brief's own test for when a card earns its place.
 - **Cancellation stays a native `confirmationDialog`.** Its anchored placement is the system's; the brief asks for native controls over imitations.
 
+## Verified in CI
+
+Run 251 and run 252 both tested HEAD with every redesign commit in place:
+
+| Stage | 251 | 252 |
+|---|---|---|
+| Schema & migration tests | pass | pass |
+| Build (all design commits) | pass | pass |
+| App install & launch | pass | pass |
+| Unit tests (486, 133 suites) | pass | pass |
+| UI walkthrough | 21/22 | 19/22 |
+| UI suite wall time | 608s | 791s |
+
+**The navigation failures are gone.** Across both runs there is not one
+"tapped X and Y did not open" and not one "BARS: Visit details". That
+class of failure — the one this investigation spent most of its life on
+— is closed. Two changes could have done it (waiting for the row to
+settle, and giving the bottom accessory enough clearance that rows stop
+resting under a button); one run cannot separate them, so neither is
+claimed individually.
+
 ## Open
 
-- **One UI test failing:** `testAccountAndMoneyScreensAreAllReachable`, tapping Wallet. Current explanation is a stale tap coordinate from scroll deceleration (`tapWhenSteady`, `5080eda`), pushed and unverified. Previous explanations of this failure were wrong several times over, so it is not closed until a run says so.
-- **CI backlog:** the redesign commits are queued behind a contended runner. Build and unit tests have passed on the batches that have run.
+Every remaining failure is the harness failing to read the app in time —
+`Failed to get matching snapshots` or `process main thread busy for
+30.0s`. None is an assertion about app behaviour.
+
+The count tracks the runner, not the code: 608s → 1 failure, 791s → 3,
+on near-identical commits. That relationship has held since run 220
+across a 494s–1038s spread.
+
+App-side cost reduction is spent: all five looping animations, the
+aurora and the glass materials are gated under `-UITest`; Profile no
+longer rebuilds fifteen destination screens per redraw and publishes its
+load in one assignment. Twice now a fix for this class was itself extra
+polling that became the next failure, which is the lesson: in this suite
+a wait is a query, and queries are the scarce resource.
