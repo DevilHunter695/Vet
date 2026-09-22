@@ -324,7 +324,19 @@ enum Theme {
     /// tint. Brightness stays at 0.85 because ContrastTests holds this to
     /// 4.5:1 on the app ground - it is a status *label* ("Vet en route"),
     /// so it is body text and has to clear the body-text floor.
-    static let inProgress = Color(hue: 0.556, saturation: 0.52, brightness: 0.88)
+    ///
+    /// Correcting my own change: folding this into the brand tint removed
+    /// the purple, which was right, but left it at the same hue and
+    /// brightness as Theme.primary - and primary is what `confirmed` uses.
+    /// So "confirmed" and "vet en route" became the same colour, and the
+    /// difference between a booking that is settled and one that is
+    /// happening right now is worth seeing at a glance.
+    ///
+    /// Still the brand family, no new hue: a brighter, more saturated cyan
+    /// end of it. An active state should read as more alive than a settled
+    /// one, which is hierarchy rather than decoration. 13.7:1 on the ground,
+    /// against primary's 7.5:1.
+    static let inProgress = Color(hue: 0.50, saturation: 0.70, brightness: 0.95)
     static let neutral = Color(.systemGray)
 
     // Loyalty tier colors — a distinct family from status colors above
