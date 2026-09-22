@@ -169,12 +169,25 @@ jobs:
             -only-testing:VetCircuitTests \
             CODE_SIGNING_ALLOWED=NO 2>&1 | tee unit-tests.log
 
-      - name: UI walkthrough
-        # Drives the real app in the simulator — the only check that proves a
-        # screen renders, a control is reachable, and a tap registers first
-        # time. Kept in its own step so its failures are attributable and
-        # cannot cancel the unit suite above.
-        timeout-minutes: 25
+      # The UI walkthrough runs as two shorter sessions rather than one long
+      # one, and the reason is measured rather than assumed.
+      #
+      # Every remaining failure in this suite is the harness failing to read
+      # the app in time, and the count tracks the length of the run, not the
+      # code. The same commit was run twice: 791s gave three failures, 650s
+      # gave one. Across the whole investigation the spread is 494s to 1038s
+      # and the failures follow it.
+      #
+      # Twenty-two end-to-end tests in a single xcodebuild invocation share
+      # one app process and one simulator session for the whole run, so
+      # whatever accumulates has the entire suite to accumulate over. Split
+      # by class, each session is roughly half as long and starts fresh.
+      #
+      # Separate logs, not one appended file: the verdict below reads the
+      # last marker in a log, so two invocations writing to one log would
+      # report only the second suite and quietly hide the first.
+      - name: UI walkthrough — app
+        timeout-minutes: 18
         continue-on-error: true
         run: |
           set -o pipefail
@@ -183,8 +196,21 @@ jobs:
             -scheme VetCircuit \
             -destination "id=${{ steps.destination.outputs.id }}" \
             -derivedDataPath build \
-            -only-testing:VetCircuitUITests \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tee ui-tests.log
+            -only-testing:VetCircuitUITests/AppWalkthroughUITests \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee ui-tests-app.log
+
+      - name: UI walkthrough — features
+        timeout-minutes: 18
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project VetCircuit.xcodeproj \
+            -scheme VetCircuit \
+            -destination "id=${{ steps.destination.outputs.id }}" \
+            -derivedDataPath build \
+            -only-testing:VetCircuitUITests/FeatureWalkthroughUITests \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee ui-tests-features.log
 
       # The verdict, printed last so it is always in the tail of the log.
       #
@@ -296,13 +322,15 @@ jobs:
           fi
           echo "=============== TEST VERDICT ==============="
           verdict "Unit tests" unit-tests.log
-          verdict "UI walkthrough" ui-tests.log
+          verdict "UI walkthrough — app" ui-tests-app.log
+          verdict "UI walkthrough — features" ui-tests-features.log
           echo "==========================================="
           {
             echo "### Test verdict"
             echo '```'
             verdict "Unit tests" unit-tests.log
-            verdict "UI walkthrough" ui-tests.log
+            verdict "UI walkthrough — app" ui-tests-app.log
+            verdict "UI walkthrough — features" ui-tests-features.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
