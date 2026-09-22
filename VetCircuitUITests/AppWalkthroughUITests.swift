@@ -87,7 +87,10 @@ final class AppWalkthroughUITests: XCTestCase {
     private func snapshot(_ app: XCUIApplication, _ name: String) {
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = name
-        shot.lifetime = .keepAlways
+        // Retained only when the test fails, which is when a screenshot is
+        // actually worth looking at. Keeping every one of them alive across a
+        // 22-test, 15-minute run is what starves the runner.
+        shot.lifetime = .deleteOnSuccess
         add(shot)
     }
 
