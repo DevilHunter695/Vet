@@ -159,13 +159,27 @@ enum Theme {
 
     /// The floor the aurora falls away to. Not pure black — a hair of blue
     /// keeps it from looking like a dead pixel field next to the hues above.
-    static let abyss = Color(hue: 0.60, saturation: 0.45, brightness: 0.055)
-    static let abyssSoft = Color(hue: 0.60, saturation: 0.38, brightness: 0.12)
+    ///
+    /// Lifted from 0.055. At that brightness this is black for practical
+    /// purposes, which is why the empty screens in the screenshots read as
+    /// black bands with a glow floating in them rather than as one surface.
+    /// A little more light keeps the gradient continuous top to bottom.
+    static let abyss = Color(hue: 0.60, saturation: 0.42, brightness: 0.095)
+    static let abyssSoft = Color(hue: 0.60, saturation: 0.36, brightness: 0.155)
 
-    /// Warm coral, kept deliberately scarce — the one warm note in a cool
-    /// palette, so it reads as "look here" without needing extra size.
-    static let accent = Color(hue: 0.03, saturation: 0.74, brightness: 0.96)
-    static let accentSoft = Color(hue: 0.03, saturation: 0.30, brightness: 0.99)
+    /// Folded into the brand tint.
+    ///
+    /// This was a warm coral, described as "kept deliberately scarce". It was
+    /// not scarce: it tinted lab reports, vials, catalog icons and a dozen
+    /// other things that have no warm meaning, so a screen could show a
+    /// coral icon, a purple one, a blue one and a red one in four consecutive
+    /// rows with none of those colours saying anything.
+    ///
+    /// Red now means one thing in this app - destructive or wrong - and the
+    /// brand tint carries everything decorative. The names stay so the call
+    /// sites do not all have to change; the colour is what changed.
+    static let accent = primary
+    static let accentSoft = primaryLight
 
     // MARK: Gradients
 
@@ -292,16 +306,25 @@ enum Theme {
     /// instead of clashing system defaults (a raw system `.orange` reads harsh
     /// and disconnected next to this palette).
     static let warning = Color(hue: 0.09, saturation: 0.72, brightness: 0.94)
-    static let danger = Color(hue: 0.985, saturation: 0.74, brightness: 0.90)
+    /// Brightened and desaturated slightly when the ground was lifted.
+    /// At the old values it measured 4.55:1 against the new ground - over
+    /// the 4.5:1 floor, but by 0.05, which is not a margin. 5.37:1 is.
+    static let danger = Color(hue: 0.985, saturation: 0.68, brightness: 0.95)
     /// "Good" state — deliberately the same emerald as the aurora's second
     /// pole, so success reads as part of the brand rather than a stock green.
     static let success = emerald
-    /// Raised from brightness 0.78, which measured 4.33:1 against the app's
-    /// ground — under the 4.5:1 body-text floor. It reads as a status *label*
-    /// ("Vet en route"), so it is body text and has to clear it. The hue is
-    /// unchanged so it stays distinguishable from the blue and green either
-    /// side of it; `ContrastTests` is what caught this and what keeps it fixed.
-    static let inProgress = Color(hue: 0.72, saturation: 0.50, brightness: 0.85)
+    /// "In progress" - a vet on the way, a visit under way.
+    ///
+    /// This was purple (hue 0.72), which is not a status colour in this
+    /// palette or in Apple's. It sat next to the blue and the green and the
+    /// red and added a fourth hue that meant nothing, which is most of why
+    /// the visit screen read as noisy.
+    ///
+    /// In-progress is the app's own active state, so it takes the brand
+    /// tint. Brightness stays at 0.85 because ContrastTests holds this to
+    /// 4.5:1 on the app ground - it is a status *label* ("Vet en route"),
+    /// so it is body text and has to clear the body-text floor.
+    static let inProgress = Color(hue: 0.556, saturation: 0.52, brightness: 0.88)
     static let neutral = Color(.systemGray)
 
     // Loyalty tier colors — a distinct family from status colors above
