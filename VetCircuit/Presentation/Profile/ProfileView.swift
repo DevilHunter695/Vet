@@ -955,7 +955,13 @@ struct PetCard: View {
             } else if pet.allergies?.isEmpty == false {
                 TagChip(text: "Allergies on file", systemImage: "exclamationmark.triangle.fill", tint: Theme.warning)
             } else if let weight = pet.weightKg {
-                TagChip(text: String(format: "%.1f kg", weight), systemImage: "scalemass", tint: Theme.emerald)
+                // Text, not a capsule. A capsule on this row means "there is
+                // something to know about this pet" - archived, allergies on
+                // file. A weight is just a fact, and dressing it like a state
+                // makes a healthy pet look flagged.
+                Text(String(format: "%.1f kg", weight))
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
             } else {
                 TagChip(text: "Tap to complete", systemImage: "plus.circle", tint: Theme.primary)
             }

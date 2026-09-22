@@ -731,7 +731,13 @@ struct CircuitRow: View {
                         systemImage: "flame.fill", tint: Theme.warning
                     )
                 } else if let languages = circuit.vet?.languages, !languages.isEmpty {
-                    TagChip(text: languages.prefix(2).joined(separator: ", "), systemImage: "globe", tint: Theme.primary)
+                    // Text, not a capsule. "1 spot left" above is a state and
+                    // earns one; the languages a vet speaks is a fact about
+                    // them. Two capsules side by side, one urgent and one
+                    // not, teaches you to ignore both.
+                    Label(languages.prefix(2).joined(separator: ", "), systemImage: "globe")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
                 }
             }
         }

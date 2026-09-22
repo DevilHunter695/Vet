@@ -159,7 +159,12 @@ struct HouseholdView: View {
                                     }
                                 }
                                 Spacer()
-                                TagChip(text: pet.species.displayName, systemImage: pet.species.symbolName)
+                                // The species is a fact about the pet, not a
+                                // state of it, so it reads as a symbol and a
+                                // word rather than a capsule.
+                                Label(pet.species.displayName, systemImage: pet.species.symbolName)
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                         }
                     }
