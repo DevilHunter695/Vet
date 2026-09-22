@@ -181,13 +181,13 @@ struct PillButton: View {
 /// edge and fades into shadow on the other, and that highlight has to dim
 /// with the surrounding material, not stay flat white.
 extension View {
-    func glassCard(cornerRadius: CGFloat = 20) -> some View {
+    func glassCard(cornerRadius: CGFloat = Spacing.corner) -> some View {
         modifier(GlassCardModifier(cornerRadius: cornerRadius, tint: nil))
     }
 
     /// Glass with a faint brand wash through it — for the one card on a
     /// screen that should feel like the headline.
-    func featuredGlassCard(cornerRadius: CGFloat = 20, tint: Color = Theme.primary) -> some View {
+    func featuredGlassCard(cornerRadius: CGFloat = Spacing.corner, tint: Color = Theme.primary) -> some View {
         modifier(GlassCardModifier(cornerRadius: cornerRadius, tint: tint))
     }
 }
@@ -241,7 +241,7 @@ private struct GlassCardModifier: ViewModifier {
 }
 
 struct Card<Content: View>: View {
-    var cornerRadius: CGFloat = 20
+    var cornerRadius: CGFloat = Spacing.corner
     @ViewBuilder let content: Content
 
     var body: some View {

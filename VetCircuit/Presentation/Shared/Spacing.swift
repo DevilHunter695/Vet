@@ -33,5 +33,16 @@ enum Spacing {
     /// The corner radius for a content surface — a card, a grouped row, a
     /// selection row. One value, so surfaces at different sizes still look
     /// like the same family. Chrome keeps the system's own radii.
+    ///
+    /// The same audit that found twelve spacing steps found eleven corner
+    /// radii: 9, 10, 12, 14, 16, 18, 20, 24, 26, 28 and 30. Most of those
+    /// are content surfaces that differ by two points for no reason, which
+    /// is not a difference anybody sees as intentional — it just stops the
+    /// screen from looking assembled by one person.
     static let corner: CGFloat = 18
+
+    /// For things a finger does not treat as a surface: an icon badge, a
+    /// chip, a small swatch. Kept separate because sweeping these up to the
+    /// card radius would turn a 30pt icon tile into a blob.
+    static let cornerSmall: CGFloat = 10
 }
