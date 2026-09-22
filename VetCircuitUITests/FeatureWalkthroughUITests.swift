@@ -97,7 +97,20 @@ final class FeatureWalkthroughUITests: XCTestCase {
 
     @MainActor
     private func row(_ title: String, in app: XCUIApplication) -> XCUIElement {
-        app.buttons.containing(NSPredicate(format: "label BEGINSWITH[c] %@", title)).element(boundBy: 0)
+        // matching, not containing.
+        //
+        // containing() matches an element whose DESCENDANTS satisfy the
+        // predicate, so any container wrapping the Wallet row matched too -
+        // and an ancestor comes before its child in tree order, so
+        // element(boundBy: 0) was the container, not the row. Tapping a
+        // container taps its centre, which on Profile is the upcoming-visit
+        // card. That is why run 224 reported the app sitting on "Visit
+        // details" with no Wallet button in sight, and why no timeout ever
+        // helped: the tap worked, it just opened the wrong screen.
+        //
+        // matching() tests the element's own label, so this can only ever
+        // return the row itself.
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] %@", title)).element(boundBy: 0)
     }
 
     /// Describes what the runner can actually see, for a failure message.

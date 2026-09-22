@@ -365,7 +365,7 @@ final class AppWalkthroughUITests: XCTestCase {
         snapshot(app, "Profile — top")
 
         // Every grouped row must be reachable in one tap.
-        let editProfile = app.buttons.containing(NSPredicate(format: "label BEGINSWITH[c] 'Edit profile'")).element(boundBy: 0)
+        let editProfile = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Edit profile'")).element(boundBy: 0)
         XCTAssertTrue(scrollToVisible(editProfile, in: app), "Couldn't bring the Edit profile row on screen")
         tapAndExpect(editProfile, "the Edit profile row",
                      toReveal: app.navigationBars.firstMatch, "the Edit profile screen")
@@ -376,7 +376,7 @@ final class AppWalkthroughUITests: XCTestCase {
     func testAddressesScreenHasAContentStateNotABlankScreen() throws {
         let app = launchApp()
         goToTab("Profile", in: app)
-        let addresses = app.buttons.containing(NSPredicate(format: "label BEGINSWITH[c] 'Addresses'")).element(boundBy: 0)
+        let addresses = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'Addresses'")).element(boundBy: 0)
         guard scrollToVisible(addresses, in: app) else { throw XCTSkip("Addresses row not reachable") }
         addresses.tap()
 
